@@ -1,0 +1,4 @@
+package blacked
+
+func main() {
+}
