@@ -7,6 +7,10 @@
 *.dll
 *.so
 *.dylib
+*.db
+*.db.wal
+*.dat
+*.json
 
 # Test binary, built with `go test -c`
 *.test
@@ -16,6 +20,8 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+/features/entries/providers/oisd/responses
+/responses
 
 # Go workspace file
 go.work
