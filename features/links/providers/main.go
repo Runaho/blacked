@@ -1,8 +1,8 @@
 package providers
 
 import (
-	"blacked/features/black_links/providers/oisd"
-	"blacked/features/black_links/providers/phishtank"
+	"blacked/features/links/providers/oisd"
+	"blacked/features/links/providers/phishtank"
 	"io"
 )
 
