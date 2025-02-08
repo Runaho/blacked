@@ -1,6 +1,7 @@
-package entries
+package utils
 
 import (
+	"net/url"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -9,7 +10,7 @@ import (
 
 // Given a full host (like “foo.bar.example.co.uk”),
 // return domain = “example.co.uk”, subdomains = []string{"foo", "bar"}.
-func extractDomainAndSubDomains(host string) (domain string, subs []string, err error) {
+func ExtractDomainAndSubDomains(host string) (domain string, subs []string, err error) {
 	// 1) Try to determine the “effective top-level domain + 1” using the PSL library.
 	eTLDPlusOne, err := publicsuffix.EffectiveTLDPlusOne(host)
 	if err != nil {
@@ -50,4 +51,26 @@ func extractDomainAndSubDomains(host string) (domain string, subs []string, err 
 	}
 
 	return eTLDPlusOne, subs, nil
+}
+
+func NormalizeURL(link string) string {
+	// 1. Convert to lowercase:
+	link = strings.ToLower(link)
+
+	// 2. Parse the URL to handle encoding and path manipulation correctly:
+	parsedURL, err := url.Parse(link)
+	if err != nil {
+		// Handle the error appropriately (e.g., log it, return an empty string, etc.)
+		// A malformed URL cannot be reliably normalized.
+		// Returning the original link might be appropriate, depending on your use case.
+		return link // Or "" or handle the error as needed
+	}
+
+	// 3. Normalize the path (remove trailing slashes, etc.):
+	parsedURL.Path = strings.TrimRight(parsedURL.Path, "/")
+
+	// 4. Re-encode the URL to ensure consistent encoding (be careful about double-encoding):
+	normalizedURL := parsedURL.String()
+
+	return normalizedURL
 }
