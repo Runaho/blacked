@@ -1,6 +1,7 @@
 package entries
 
 import (
+	"blacked/internal/utils"
 	"net/url"
 	"strings"
 	"time"
@@ -49,7 +50,7 @@ func (b *Entry) SetURL(link string) error {
 	b.Host = u.Host
 
 	// Extract domain + subdomains properly via PSL
-	domain, subdomains, err := extractDomainAndSubDomains(u.Host)
+	domain, subdomains, err := utils.ExtractDomainAndSubDomains(u.Host)
 	if err != nil {
 		return err
 	}
