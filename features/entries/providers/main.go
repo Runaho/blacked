@@ -2,6 +2,8 @@ package providers
 
 import (
 	"blacked/features/entries/providers/oisd"
+	"blacked/features/entries/providers/openphish"
+	"blacked/features/entries/providers/urlhaus"
 	"blacked/features/entries/repository"
 	"blacked/internal/collector"
 	"blacked/internal/colly"
@@ -40,6 +42,8 @@ func NewProviders(db *sql.DB) (providers *Providers, err error) {
 	providers = &Providers{
 		oisd.NewOISDBigProvider(&cfg.Collector, cc, repository),
 		oisd.NewOISDNSFWProvider(&cfg.Collector, cc, repository),
+		openphish.NewOpenPhishFeedProvider(&cfg.Collector, cc, repository),
+		urlhaus.NewURLHausProvider(&cfg.Collector, cc, repository),
 		//&oisd.OISDNSFW{},
 		//&phishtank.OnlineValid{},
 	}
@@ -91,7 +95,11 @@ func (p Providers) Process() error {
 			return err
 		}
 
-		utils.RemoveStoredResponse(name)
+		cfg := config.GetConfig()
+
+		if cfg.APP.Environtment != "development" {
+			utils.RemoveStoredResponse(name)
+		}
 
 		log.Info().Str("process_id", strProcessID).Str("source", source).Str("name", name).TimeDiff("duration", time.Now(), startedAt).Msg("finished processing data")
 	}
@@ -119,6 +127,7 @@ func (p Providers) Sources() []string {
 	for _, provider := range p {
 		result = append(result, provider.Source())
 	}
+
 	return result
 }
 
@@ -133,6 +142,12 @@ func (p Providers) SourceDomains() (result []string, e error) {
 
 		result = append(result, uri.Host)
 	}
+
+	uri, e := url.Parse("https://raw.githubusercontent.com")
+	if e != nil {
+		log.Error().Err(e).Msg("error parsing source url")
+	}
+	result = append(result, uri.Host)
 
 	return
 }
