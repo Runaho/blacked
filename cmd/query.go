@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"blacked/features/entries"
 	"blacked/features/entries/enums"
 	"blacked/features/entries/repository"
 	"blacked/internal/db"
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/rs/zerolog/log"
@@ -27,6 +29,18 @@ var QueryCommand = &cli.Command{
 			Aliases: []string{"t"},
 			Usage:   "Type of URL query: [full, host, domain, path, mixed]",
 			Value:   "mixed",
+		},
+		&cli.BoolFlag{
+			Name:    "json",
+			Aliases: []string{"j"},
+			Usage:   "Output results in JSON format.",
+			Value:   false,
+		},
+		&cli.BoolFlag{
+			Name:    "verbose",
+			Aliases: []string{"v"},
+			Usage:   "Enable verbose logging. Shows all of the found entries. default only show first with count.",
+			Value:   false,
 		},
 	},
 	Action: queryBlacklist,
@@ -60,13 +74,25 @@ func queryBlacklist(c *cli.Context) error {
 		return fmt.Errorf("failed to query blacklist entries: %w", err)
 	}
 
-	log.Info().Any("Hits", hits).Msg("Query results")
+	verbose := c.Bool("verbose")
 
-	log.Info().
-		Str("Query Type", queryTypeString).
-		Str("URL", urlToQuery).
-		Int("Hits Count", len(hits)).
-		Msg("Blacklist query completed successfully.")
+	queryResponse := entries.NewURLQueryResponse(urlToQuery, hits, *queryType, verbose)
 
+	if c.Bool("json") {
+		jsonData, err := json.MarshalIndent(queryResponse, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
+		}
+		log.Print(string(jsonData))
+		return nil
+	} else {
+		log.Info().
+			Bool("Verbose", verbose).
+			Str("URL", queryResponse.URL).
+			Int("Total Hits", queryResponse.Count).
+			Str("Query Type", queryResponse.QueryType.String()).
+			Interface("Hits", queryResponse.Hits).
+			Msg("Query response")
+	}
 	return nil
 }
