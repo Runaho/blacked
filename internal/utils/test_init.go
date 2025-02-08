@@ -26,5 +26,7 @@ func Initialize(t *testing.T) (ctx context.Context, _db *sql.DB, cc *colly.Colle
 	cc, err = ic.InitCollyClient()
 	assert.NoError(t, err, "Expected no error while initializing colly client")
 
+	ctx = context.Background()
+
 	return
 }
