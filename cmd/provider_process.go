@@ -27,7 +27,6 @@ var ProcessCommand = &cli.Command{
 	Action: processBlacklist,
 }
 
-
 func processBlacklist(c *cli.Context) error {
 	providersList := providers.GetProviders()
 	if providersList == nil {

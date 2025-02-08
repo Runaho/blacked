@@ -2,6 +2,7 @@ package repository
 
 import (
 	"blacked/features/entries"
+	"blacked/features/entries/enums"
 	"context"
 )
 
@@ -17,4 +18,5 @@ type BlacklistRepository interface {
 	ClearAllEntries(ctx context.Context) error                           // Soft Delete All
 	SoftDeleteEntryByID(ctx context.Context, id string) error
 	QueryLink(ctx context.Context, link string) ([]entries.Hit, error)
+	QueryLinkByType(ctx context.Context, link string, queryType *enums.QueryType) ([]entries.Hit, error)
 }

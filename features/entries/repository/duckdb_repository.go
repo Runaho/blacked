@@ -2,6 +2,7 @@ package repository
 
 import (
 	"blacked/features/entries"
+	"blacked/features/entries/enums"
 	"blacked/internal/utils"
 	"context"
 	"database/sql"
@@ -419,6 +420,61 @@ func (r *DuckDBRepository) QueryLink(ctx context.Context, link string) (
 	if path != "" && len(path) != 0 && path != "/" {
 		hits = append(hits, r.queryPathMatch(ctx, path)...)
 	}
+
+	return hits, nil
+}
+
+// QueryLinkByType queries blacklist entries based on URL criteria and query type.  If queryType is nil, it defaults to a full URL query.
+func (r *DuckDBRepository) QueryLinkByType(ctx context.Context, link string, queryType *enums.QueryType) (
+	hits []entries.Hit,
+	err error) {
+	if queryType == nil || *queryType == enums.QueryTypeMixed {
+		return r.QueryLink(ctx, link)
+	}
+
+	startTime := time.Now()
+	var query string
+
+	switch *queryType {
+	case enums.QueryTypeFull:
+		query = "SELECT id FROM blacklist_entries WHERE source_url = ? AND deleted_at IS NULL"
+	case enums.QueryTypeHost:
+		query = "SELECT id FROM blacklist_entries WHERE host = ? AND deleted_at IS NULL"
+	case enums.QueryTypeDomain:
+		query = "SELECT id FROM blacklist_entries WHERE domain = ? AND deleted_at IS NULL"
+	case enums.QueryTypePath:
+		query = "SELECT id FROM blacklist_entries WHERE path = ? AND deleted_at IS NULL"
+	default:
+		return nil, fmt.Errorf("invalid query type: %v", queryType)
+	}
+	log.Debug().Str("query", query).Str("type", queryType.String()).Msg("starting query")
+	rows, err := r.db.QueryContext(ctx, query, link)
+	if err != nil {
+		log.Error().Err(err).Msg("Query failed")
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id string
+		err := rows.Scan(&id)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to scan row")
+			return nil, err
+		}
+		hits = append(hits, entries.Hit{
+			ID:           id,
+			MatchType:    queryType.String(),
+			MatchedValue: link,
+		})
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Error().Err(err).Msg("Error iterating rows")
+		return nil, err
+	}
+
+	log.Debug().Dur("duration", time.Since(startTime)).Str("query_type", queryType.String()).Msg("Query completed")
 
 	return hits, nil
 }
