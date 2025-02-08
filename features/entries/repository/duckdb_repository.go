@@ -2,11 +2,15 @@ package repository
 
 import (
 	"blacked/features/entries"
+	"blacked/internal/utils"
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 // DuckDBRepository is the concrete implementation of BlacklistRepository using DuckDB.
@@ -65,17 +69,18 @@ func (r *DuckDBRepository) GetEntryByID(ctx context.Context, id string) (*entrie
 	var deletedAt sql.NullTime // For nullable DATETIME
 
 	err := row.Scan(
-		&entry.ID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
+		&entry.ID, &entry.ProcessID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
 		&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
 		&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, // Scan deletedAt
 	)
+
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil // Entry not found
 		}
 		return nil, fmt.Errorf("failed to query entry by ID from DuckDB: %w", err)
 	}
-	entry.SubDomains = strings.Split(subDomainsStr, ",")
+	entry.SubDomains = strings.Split(subDomainsStr, ",") // Split the string
 	if entry.SubDomains[0] == "" {
 		entry.SubDomains = nil
 	}
@@ -85,6 +90,65 @@ func (r *DuckDBRepository) GetEntryByID(ctx context.Context, id string) (*entrie
 		entry.DeletedAt = nil
 	}
 	return &entry, nil
+}
+
+func (r *DuckDBRepository) GetEntriesByIDs(ctx context.Context, ids []string) ([]*entries.Entry, error) {
+	if len(ids) == 0 {
+		return []*entries.Entry{}, nil // Return empty slice if no IDs provided
+	}
+
+	// Construct the query with a WHERE id IN (...) clause
+	query := `
+		SELECT id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, category, confidence, created_at, updated_at, deleted_at
+		FROM blacklist_entries
+		WHERE id IN (` + strings.Join(strings.Split(strings.Repeat("?", len(ids)), ""), ", ") + `)` // Generate placeholders
+	// AND deleted_at IS NULL -- If you only want active entries
+
+	// Convert the slice of IDs to a slice of interfaces for the query
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query entries by IDs from DuckDB: %w", err)
+	}
+	defer rows.Close()
+
+	var entriesList []*entries.Entry
+	for rows.Next() {
+		var entry entries.Entry
+		var subDomainsStr string
+		var deletedAt sql.NullTime // For nullable DATETIME
+
+		err := rows.Scan(
+			&entry.ID, &entry.ProcessID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
+			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
+			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, // Scan deletedAt
+		)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to scan row from DuckDB")
+			continue // Skip to the next row
+		}
+
+		entry.SubDomains = strings.Split(subDomainsStr, ",")
+		if entry.SubDomains[0] == "" {
+			entry.SubDomains = nil
+		}
+		if deletedAt.Valid {
+			entry.DeletedAt = &deletedAt.Time
+		} else {
+			entry.DeletedAt = nil
+		}
+		entriesList = append(entriesList, &entry)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error from DuckDB: %w", err)
+	}
+
+	return entriesList, nil
 }
 
 // GetEntriesBySource retrieves all active blacklist entries for a given source from DuckDB.
@@ -238,6 +302,8 @@ func (r *DuckDBRepository) BatchSaveEntries(ctx context.Context, entries []entri
 	defer stmt.Close() // Ensure statement closure
 
 	for _, entry := range entries {
+		log.Debug().Interface("entry", entry).Msg("About to insert entry") // Print the entry data
+
 		_, err := stmt.ExecContext(ctx,
 			entry.ID, entry.ProcessID, entry.Scheme, entry.Domain, entry.Host, strings.Join(entry.SubDomains, ","), // Include processID here
 			entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Category, entry.Confidence,
@@ -300,16 +366,6 @@ func (r *DuckDBRepository) ClearAllEntries(ctx context.Context) error {
 	return tx.Commit()
 }
 
-// CheckIfHostExists checks if an active entry with the given host exists in the blacklist.
-func (r *DuckDBRepository) CheckIfHostExists(ctx context.Context, host string) (bool, error) {
-	var exists bool
-	err := r.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM blacklist_entries WHERE host = ? AND deleted_at IS NULL)", host).Scan(&exists) // Added WHERE deleted_at IS NULL
-	if err != nil {
-		return false, fmt.Errorf("failed to check if active host exists in DuckDB: %w", err)
-	}
-	return exists, nil
-}
-
 // SoftDeleteEntryByID soft deletes a entries.Entry by its ID.
 func (r *DuckDBRepository) SoftDeleteEntryByID(ctx context.Context, id string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -325,4 +381,190 @@ func (r *DuckDBRepository) SoftDeleteEntryByID(ctx context.Context, id string) e
 	}
 
 	return tx.Commit()
+}
+
+func (r *DuckDBRepository) QueryLink(ctx context.Context, link string) (
+	hits []entries.Hit,
+	err error) {
+	parsedURL, err := url.Parse(link)
+	if err != nil {
+		return nil, fmt.Errorf("invalid URL: %w", err)
+	}
+
+	normalizedLink := utils.NormalizeURL(link)
+	host := parsedURL.Hostname()
+	domain := "" // Extract domain here.  You'll need to use your extractDomain function.
+
+	d, _, err := utils.ExtractDomainAndSubDomains(parsedURL.Host)
+
+	if err != nil {
+		log.Error().Err(err).Msg("error extracting domain and subdomains")
+	} else {
+		domain = d
+	}
+	path := parsedURL.Path
+
+	// Exact URL match
+	hits = append(hits, r.queryExactURLMatch(ctx, normalizedLink)...)
+
+	// Host match
+	hits = append(hits, r.queryHostMatch(ctx, host)...)
+
+	// Domain match
+	hits = append(hits, r.queryDomainMatch(ctx, domain)...)
+
+	// Path match
+	// query if path is empty or "/" and skip if so
+	// TODO Make path match optional or configurable
+	if path != "" && len(path) != 0 && path != "/" {
+		hits = append(hits, r.queryPathMatch(ctx, path)...)
+	}
+
+	return hits, nil
+}
+
+func (r *DuckDBRepository) queryExactURLMatch(ctx context.Context, normalizedLink string) []entries.Hit {
+	startTime := time.Now()
+	query := "SELECT id FROM blacklist_entries WHERE source_url = ? AND deleted_at IS NULL"
+	rows, err := r.db.QueryContext(ctx, query, normalizedLink)
+	if err != nil {
+		log.Error().Err(err).Msg("Exact URL match query failed")
+		return nil
+	}
+	defer rows.Close()
+
+	var hits []entries.Hit
+
+	for rows.Next() {
+		var id string
+		err := rows.Scan(&id)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to scan row in queryExactURLMatch")
+			continue // Or handle the error as appropriate
+		}
+		hits = append(hits, entries.Hit{
+			ID:           id,
+			MatchType:    "EXACT_URL",
+			MatchedValue: normalizedLink,
+		})
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Error().Err(err).Msg("Error iterating rows in queryExactURLMatch")
+		return nil
+	}
+
+	duration := time.Since(startTime)
+	log.Debug().Dur("duration", duration).Str("match_type", "EXACT_URL").Msg("Exact URL match query completed")
+
+	return hits
+}
+
+func (r *DuckDBRepository) queryHostMatch(ctx context.Context, host string) []entries.Hit {
+	startTime := time.Now()
+	query := "SELECT id FROM blacklist_entries WHERE host = ? AND deleted_at IS NULL"
+	rows, err := r.db.QueryContext(ctx, query, host)
+	if err != nil {
+		log.Error().Err(err).Msg("Host match query failed")
+		return nil
+	}
+	defer rows.Close()
+
+	var hits []entries.Hit
+
+	for rows.Next() {
+		var id string
+		err := rows.Scan(&id)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to scan row in queryHostMatch")
+			continue // Or handle the error as appropriate
+		}
+		hits = append(hits, entries.Hit{
+			ID:           id,
+			MatchType:    "HOST",
+			MatchedValue: host,
+		})
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Error().Err(err).Msg("Error iterating rows in queryHostMatch")
+		return nil
+	}
+
+	duration := time.Since(startTime)
+	log.Debug().Dur("duration", duration).Str("match_type", "HOST").Msg("Host match query completed")
+
+	return hits
+}
+
+func (r *DuckDBRepository) queryDomainMatch(ctx context.Context, domain string) []entries.Hit {
+	startTime := time.Now()
+	query := "SELECT id FROM blacklist_entries WHERE domain = ? AND deleted_at IS NULL"
+	rows, err := r.db.QueryContext(ctx, query, domain)
+	if err != nil {
+		log.Error().Err(err).Msg("Domain match query failed")
+		return nil
+	}
+	defer rows.Close()
+
+	var hits []entries.Hit
+
+	for rows.Next() {
+		var id string
+		err := rows.Scan(&id)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to scan row in queryDomainMatch")
+			continue // Or handle the error as appropriate
+		}
+		hits = append(hits, entries.Hit{
+			ID:           id,
+			MatchType:    "DOMAIN",
+			MatchedValue: domain,
+		})
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Error().Err(err).Msg("Error iterating rows in queryDomainMatch")
+		return nil
+	}
+
+	log.Debug().Dur("duration", time.Since(startTime)).Str("match_type", "DOMAIN").Msg("Domain match query completed")
+
+	return hits
+}
+
+func (r *DuckDBRepository) queryPathMatch(ctx context.Context, path string) []entries.Hit {
+	startTime := time.Now()
+	query := "SELECT id FROM blacklist_entries WHERE path = ? AND deleted_at IS NULL"
+	rows, err := r.db.QueryContext(ctx, query, path)
+	if err != nil {
+		log.Error().Err(err).Msg("Path match query failed")
+		return nil
+	}
+	defer rows.Close()
+
+	var hits []entries.Hit
+
+	for rows.Next() {
+		var id string
+		err := rows.Scan(&id)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to scan row in queryPathMatch")
+			continue // Or handle the error as appropriate
+		}
+		hits = append(hits, entries.Hit{
+			ID:           id,
+			MatchType:    "PATH",
+			MatchedValue: path,
+		})
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Error().Err(err).Msg("Error iterating rows in queryPathMatch")
+		return nil
+	}
+
+	log.Debug().Dur("duration", time.Since(startTime)).Str("match_type", "PATH").Msg("Path match query completed")
+
+	return hits
 }
