@@ -60,7 +60,7 @@ func before(c *cli.Context) error {
 	}
 
 	log.Info().Msg("Initializing providers")
-	_, err = providers.NewProviders(dbConn)
+	_, err = providers.InitProviders(dbConn)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to initialize providers")
 		return err
