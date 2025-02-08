@@ -1,12 +1,15 @@
 package providers
 
 import (
+	"blacked/features/entries"
+	"blacked/features/entries/repository"
 	"blacked/internal/db"
 	"blacked/internal/logger"
 	"blacked/internal/utils"
 	"os"
 	"testing"
 
+	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -61,4 +64,92 @@ func TestProvidersProcess(t *testing.T) {
 	//   assert.NoError(t, err)
 	// For demonstration, we’ll just check it’s “not panicking”:
 	assert.Nil(t, err, "Expecting no error or handle gracefully based on your environment or mocks")
+}
+
+func TestCheckIfLinkExists(t *testing.T) {
+	logger.InitializeLogger()
+
+	ctx, testDB, _, err := utils.Initialize(t)
+	assert.NoError(t, err, "Expected no error initializing providers")
+	defer testDB.Close()
+
+	//ps, err := NewProviders(testDB)
+	//assert.NoError(t, err, "Expected no error creating new providers")
+	//assert.NotEmpty(t, ps, "Expected some providers to be returned")
+	//err = ps.Process()
+	//assert.Nil(t, err, "Expecting no error or handle gracefully based on your environment or mocks")
+	//assert.NoError(t, err, "Error inserting test data")
+
+	dbRepo := repository.NewDuckDBRepository(testDB)
+
+	testCases := []struct {
+		name         string
+		link         string
+		expectedHits []entries.Hit
+	}{
+		{
+			name: "Exact URL match",
+			link: "0124498474f7c13ac9a2-6b191446002b31342189d56cabcf5227.r11.cf2.rackcdn.com",
+			expectedHits: []entries.Hit{{
+				MatchType:    "EXACT_URL",
+				MatchedValue: "0124498474f7c13ac9a2-6b191446002b31342189d56cabcf5227.r11.cf2.rackcdn.com",
+			}},
+		},
+		{
+			name: "Host match",
+			link: "0jaqkuc24kdjvpgdc8va.maherstcottage.com.au",
+			expectedHits: []entries.Hit{{
+				MatchType:    "HOST",
+				MatchedValue: "0jaqkuc24kdjvpgdc8va.maherstcottage.com.au",
+			}},
+		},
+		{
+			name: "source url match",
+			link: "https://userauthme02.com/com8K70UXaW9Smnd.html",
+			expectedHits: []entries.Hit{{
+				MatchType:    "EXACT_URL",
+				MatchedValue: "https://userauthme02.com/com8K70UXaW9Smnd.html",
+			}},
+		},
+		{
+			name: "path match",
+			link: "http://5.175.249.223/hiddenbin/boatnet.ppc",
+			expectedHits: []entries.Hit{{
+				MatchType:    "PATH",
+				MatchedValue: "/hiddenbin/boatnet.ppc",
+			}},
+		},
+		{
+			name:         "No match",
+			link:         "https://www.you-shall-not.find",
+			expectedHits: []entries.Hit{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			log.Info().Msgf("Running test case: %s with link: %s", tc.name, tc.link)
+			hits, err := dbRepo.QueryLink(ctx, tc.link)
+			assert.NoError(t, err, "Expected no error from CheckIfLinkExists")
+
+			if len(tc.expectedHits) > 0 {
+				for i, hit := range hits {
+					log.Info().Msgf("Hit %d: %+v", i, hit)
+				}
+				assert.Equal(t, len(tc.expectedHits) > 0, len(hits) > 0, "Expected 'found' to be equal")
+			} else {
+				log.Info().Msgf("Expected no hits for link: %s, current hits: %v", tc.link, hits)
+
+				ids := make([]string, len(hits))
+				for _, hit := range hits {
+					ids = append(ids, hit.ID)
+				}
+
+				entries, _ := dbRepo.GetEntriesByIDs(ctx, ids)
+				log.Info().Msgf("Entries: %v", entries)
+
+				assert.Equal(t, len(tc.expectedHits), len(hits), "Expected 'found' to be equal")
+			}
+		})
+	}
 }
