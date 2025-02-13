@@ -2,7 +2,7 @@ package entries
 
 import "blacked/features/entries/enums"
 
-type URLQueryResponse struct {
+type QueryResponse struct {
 	URL       string          `json:"url"`
 	Exists    bool            `json:"exists"`
 	Hits      []Hit           `json:"hits"`
@@ -10,10 +10,10 @@ type URLQueryResponse struct {
 	Count     int             `json:"count"`
 }
 
-func NewURLQueryResponse(url string, hits []Hit, queryType enums.QueryType, verbose bool) *URLQueryResponse {
+func NewQueryResponse(url string, hits []Hit, queryType enums.QueryType, verbose bool) *QueryResponse {
 	count := len(hits)
 
-	uqr := &URLQueryResponse{
+	uqr := &QueryResponse{
 		URL:       url,
 		Exists:    count > 0,
 		QueryType: queryType,
@@ -29,10 +29,4 @@ func NewURLQueryResponse(url string, hits []Hit, queryType enums.QueryType, verb
 	}
 
 	return uqr
-}
-
-type Hit struct {
-	ID           string `json:"id"`
-	MatchType    string `json:"match_type"`
-	MatchedValue string `json:"matched_value"`
 }
