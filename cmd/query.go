@@ -76,7 +76,7 @@ func queryBlacklist(c *cli.Context) error {
 
 	verbose := c.Bool("verbose")
 
-	queryResponse := entries.NewURLQueryResponse(urlToQuery, hits, *queryType, verbose)
+	queryResponse := entries.NewQueryResponse(urlToQuery, hits, *queryType, verbose)
 
 	if c.Bool("json") {
 		jsonData, err := json.MarshalIndent(queryResponse, "", "  ")
