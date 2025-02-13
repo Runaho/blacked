@@ -3,8 +3,7 @@ package cmd
 import (
 	"blacked/features/entries"
 	"blacked/features/entries/enums"
-	"blacked/features/entries/repository"
-	"blacked/internal/db"
+	"blacked/features/entries/services"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,7 +12,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// QueryCommand queries blacklist entries based on URL criteria.
+// QueryCommand queries your blacklist entries by URL.
 var QueryCommand = &cli.Command{
 	Name:  "query",
 	Usage: "Query blacklist entries by URL",
@@ -27,7 +26,7 @@ var QueryCommand = &cli.Command{
 		&cli.StringFlag{
 			Name:    "type",
 			Aliases: []string{"t"},
-			Usage:   "Type of URL query: [full, host, domain, path, mixed]",
+			Usage:   "Type of URL query: [full, host, domain, path, mixed].",
 			Value:   "mixed",
 		},
 		&cli.BoolFlag{
@@ -39,60 +38,68 @@ var QueryCommand = &cli.Command{
 		&cli.BoolFlag{
 			Name:    "verbose",
 			Aliases: []string{"v"},
-			Usage:   "Enable verbose logging. Shows all of the found entries. default only show first with count.",
+			Usage:   "Enable verbose logging. By default shows minimal result; with verbose you can see all hits.",
 			Value:   false,
 		},
 	},
 	Action: queryBlacklist,
 }
 
+// queryBlacklist is the action backing the “query” command.
 func queryBlacklist(c *cli.Context) error {
-	dbConn, err := db.GetDB()
+	queryService, err := services.NewQueryService()
 	if err != nil {
-		return fmt.Errorf("failed to connect to database: %w", err)
-	}
-	defer dbConn.Close()
-
-	repo := repository.NewDuckDBRepository(dbConn)
-	urlToQuery := c.String("url")
-	queryTypeString := c.String("type")
-
-	var queryType *enums.QueryType
-	if queryTypeString != "" {
-		qt, err := enums.QueryTypeString(queryTypeString)
-		if err != nil {
-			return fmt.Errorf("invalid query type: %w", err)
-		}
-		queryType = &qt
+		return fmt.Errorf("failed to create query service: %w", err)
 	}
 
-	log.Info().Msgf("Querying blacklist entries by URL: %s (type: %v)", urlToQuery, queryType)
+	urlToQuery, queryType, err := getQueryParameters(c)
+	if err != nil {
+		return err
+	}
 
-	hits, err := repo.QueryLinkByType(context.Background(), urlToQuery, queryType)
-
+	hits, err := queryService.Query(context.Background(), urlToQuery, queryType)
 	if err != nil {
 		return fmt.Errorf("failed to query blacklist entries: %w", err)
 	}
 
-	verbose := c.Bool("verbose")
+	queryResponse := entries.NewQueryResponse(urlToQuery, hits, *queryType, c.Bool("verbose"))
 
-	queryResponse := entries.NewQueryResponse(urlToQuery, hits, *queryType, verbose)
+	return printQueryResponse(queryResponse, c.Bool("json"))
+}
 
-	if c.Bool("json") {
-		jsonData, err := json.MarshalIndent(queryResponse, "", "  ")
+// getQueryParameters extracts the required flags from the CLI context.
+func getQueryParameters(c *cli.Context) (string, *enums.QueryType, error) {
+	urlToQuery := c.String("url")
+	queryTypeStr := c.String("type")
+
+	if urlToQuery == "" {
+		return "", nil, fmt.Errorf("URL is required")
+	}
+
+	qt, err := enums.QueryTypeString(queryTypeStr)
+	if err != nil {
+		return "", nil, fmt.Errorf("invalid query type: %w", err)
+	}
+
+	return urlToQuery, &qt, nil
+}
+
+func printQueryResponse(response *entries.QueryResponse, asJSON bool) error {
+	if asJSON {
+		jsonData, err := json.MarshalIndent(response, "", "  ")
 		if err != nil {
 			return fmt.Errorf("failed to marshal JSON: %w", err)
 		}
-		log.Print(string(jsonData))
+		fmt.Println(string(jsonData))
 		return nil
-	} else {
-		log.Info().
-			Bool("Verbose", verbose).
-			Str("URL", queryResponse.URL).
-			Int("Total Hits", queryResponse.Count).
-			Str("Query Type", queryResponse.QueryType.String()).
-			Interface("Hits", queryResponse.Hits).
-			Msg("Query response")
 	}
+
+	log.Info().
+		Str("URL", response.URL).
+		Int("Total Hits", response.Count).
+		Str("Query Type", response.QueryType.String()).
+		Int("Shown Hits", len(response.Hits)).
+		Msg("Query response")
+
 	return nil
 }

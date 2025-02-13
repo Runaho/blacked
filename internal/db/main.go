@@ -23,3 +23,11 @@ func GetDB() (*sql.DB, error) {
 	})
 	return db, dbErr
 }
+
+func DeferClose() {
+	if db != nil {
+		if err := db.Close(); err != nil {
+			fmt.Printf("Failed to close database connection: %v\n", err)
+		}
+	}
+}
