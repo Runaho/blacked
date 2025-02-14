@@ -1,10 +1,10 @@
 package oisd
 
 import (
-	"blacked/features/entries/repository"
 	"bytes"
 
 	"blacked/features/entries"
+	"blacked/features/entries/repository"
 	"blacked/internal/collector"
 	"blacked/internal/config"
 	"bufio"

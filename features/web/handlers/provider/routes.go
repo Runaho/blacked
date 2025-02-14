@@ -1,12 +1,14 @@
 package provider
 
 import (
+	"blacked/features/providers/services"
+
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
 )
 
-func MapProviderRoutes(e *echo.Echo) error {
-	handler := NewProviderHandler()
+func MapProviderRoutes(e *echo.Echo, svc *services.ProviderProcessService) error {
+	handler := NewProviderHandler(svc)
 
 	g := e.Group("/provider")
 	g.POST("/process", handler.ProcessProviders)

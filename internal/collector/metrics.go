@@ -14,13 +14,11 @@ var (
 	mc   *MetricsCollector
 )
 
-// ProviderMetrics -  Struct is now simplified, Prometheus handles aggregation
 type ProviderMetrics struct {
 	SyncStatus   string
 	ProviderName string
 }
 
-// MetricsCollector - Simplified as Prometheus manages registry and concurrency.
 type MetricsCollector struct {
 	providerMetrics  map[string]*ProviderMetrics // Keep providerMetrics map for *status* tracking (optional, can be removed if not needed)
 	syncCount        *prometheus.CounterVec      // Counter for total syncs initiated per provider

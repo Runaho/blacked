@@ -21,7 +21,7 @@ func Initialize(t *testing.T) (ctx context.Context, _db *sql.DB, cc *colly.Colle
 	_db, err = db.GetTestDB()
 	assert.NoError(t, err, "Expected no error while obtaining DB")
 
-	db.EnsureDBExists(db.WithTesting(true))
+	db.EnsureDBSchemaExists(db.WithTesting(true))
 
 	cc, err = ic.InitCollyClient()
 	assert.NoError(t, err, "Expected no error while initializing colly client")

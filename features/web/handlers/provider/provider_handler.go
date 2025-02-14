@@ -1,25 +1,13 @@
 package provider
 
 import (
-	"blacked/cmd/provider_processor"
+	"blacked/features/providers/services"
+	"fmt"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/labstack/echo/v4"
-	"github.com/rs/xid"
 )
-
-// ProcessStatus holds the status of a provider processing task.
-type ProcessStatus struct {
-	ID               string              `json:"id"`
-	Status           string              `json:"status"` // "running", "completed", "failed"
-	StartTime        time.Time           `json:"start_time"`
-	EndTime          time.Time           `json:"end_time,omitempty"`
-	ProvidersProcessed []string          `json:"providers_processed,omitempty"`
-	ProvidersRemoved   []string          `json:"providers_removed,omitempty"`
-	Error            string              `json:"error,omitempty"`
-}
 
 // processStatuses is an in-memory store for process statuses.
 var processStatuses sync.Map // Use sync.Map for concurrent access
@@ -33,10 +21,14 @@ type ProviderProcessInput struct {
 	ProvidersToRemove  []string `json:"providers_to_remove"`
 }
 
-type ProviderHandler struct{}
+type ProviderHandler struct {
+	providerProcessService *services.ProviderProcessService
+}
 
-func NewProviderHandler() *ProviderHandler {
-	return &ProviderHandler{}
+func NewProviderHandler(svc *services.ProviderProcessService) *ProviderHandler {
+	return &ProviderHandler{
+		providerProcessService: svc,
+	}
 }
 
 func (h *ProviderHandler) ProcessProviders(c echo.Context) error {
@@ -45,43 +37,22 @@ func (h *ProviderHandler) ProcessProviders(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]interface{}{"error": "Invalid request body", "details": err.Error()})
 	}
 
-	processRunningMutex.Lock()
-	if isProcessRunning {
-		processRunningMutex.Unlock()
+	ctx := c.Request().Context()
+	isRunning, err := h.providerProcessService.IsProcessRunning(ctx)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]interface{}{"error": "Failed to check process status", "details": err.Error()})
+	}
+	if isRunning {
 		return c.JSON(http.StatusConflict, map[string]interface{}{
 			"error":   "Process Conflict",
 			"message": "Another process is already running. Please wait for it to complete.",
 		})
 	}
-	isProcessRunning = true
-	processRunningMutex.Unlock()
 
-	processID := xid.New().String()
-	status := &ProcessStatus{
-		ID:               processID,
-		Status:           "running",
-		StartTime:        time.Now(),
-		ProvidersProcessed: req.ProvidersToProcess,
-		ProvidersRemoved:   req.ProvidersToRemove,
+	processID, err := h.providerProcessService.StartProcess(ctx, req.ProvidersToProcess, req.ProvidersToRemove)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]interface{}{"error": "Failed to start provider process", "details": err.Error()})
 	}
-	processStatuses.Store(processID, status) // Store status in memory
-
-	go func() { // Run the process in a goroutine to avoid blocking the handler
-		err := provider_processor.Process(req.ProvidersToProcess, req.ProvidersToRemove)
-		if err != nil {
-			status.Status = "failed"
-			status.EndTime = time.Now()
-			status.Error = err.Error()
-		} else {
-			status.Status = "completed"
-			status.EndTime = time.Now()
-		}
-		processStatuses.Store(processID, status) // Update status after completion
-
-		processRunningMutex.Lock()
-		isProcessRunning = false // Reset the running flag when process finishes
-		processRunningMutex.Unlock()
-	}()
 
 	return c.JSON(http.StatusAccepted, map[string]interface{}{
 		"process_id": processID,
@@ -95,25 +66,21 @@ func (h *ProviderHandler) GetProcessStatus(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]interface{}{"error": "processID is required"})
 	}
 
-	statusInterface, ok := processStatuses.Load(processID)
-	if !ok {
-		return c.JSON(http.StatusNotFound, map[string]interface{}{"error": "Process not found", "process_id": processID})
-	}
-	status, ok := statusInterface.(*ProcessStatus)
-	if !ok {
-		return c.JSON(http.StatusInternalServerError, map[string]interface{}{"error": "Internal server error - status data type issue"})
+	status, err := h.providerProcessService.GetProcessStatus(c.Request().Context(), processID)
+	if err != nil {
+		if err.Error() == fmt.Sprintf("process not found: %s", processID) { // check error message, not ideal, better to have specific error type
+			return c.JSON(http.StatusNotFound, map[string]interface{}{"error": "Process not found", "process_id": processID})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]interface{}{"error": "Failed to get process status", "details": err.Error()})
 	}
 
 	return c.JSON(http.StatusOK, status)
 }
 
 func (h *ProviderHandler) ListProcesses(c echo.Context) error {
-	var statuses []*ProcessStatus
-	processStatuses.Range(func(key, value interface{}) bool {
-		if status, ok := value.(*ProcessStatus); ok {
-			statuses = append(statuses, status)
-		}
-		return true // continue iterating
-	})
+	statuses, err := h.providerProcessService.ListProcesses(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]interface{}{"error": "Failed to list processes", "details": err.Error()})
+	}
 	return c.JSON(http.StatusOK, statuses)
 }

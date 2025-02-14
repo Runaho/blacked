@@ -1,7 +1,7 @@
 package web
 
 import (
-	"blacked/features/entries/providers"
+	"blacked/features/providers"
 	"blacked/features/web/middlewares"
 	"blacked/internal/collector"
 	"blacked/internal/config"

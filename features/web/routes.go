@@ -17,7 +17,7 @@ func (app *Application) ConfigureRoutes() error {
 		return err
 	}
 
-	if err := provider.MapProviderRoutes(e); err != nil {
+	if err := provider.MapProviderRoutes(e, app.services.ProviderProcessService); err != nil {
 		return err
 	}
 

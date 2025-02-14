@@ -1,10 +1,10 @@
 package providers
 
 import (
-	"blacked/features/entries/providers/oisd"
-	"blacked/features/entries/providers/openphish"
-	"blacked/features/entries/providers/urlhaus"
 	"blacked/features/entries/repository"
+	"blacked/features/providers/oisd"
+	"blacked/features/providers/openphish"
+	"blacked/features/providers/urlhaus"
 	"blacked/internal/collector"
 	"blacked/internal/colly"
 	"blacked/internal/config"

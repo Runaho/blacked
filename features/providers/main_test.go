@@ -22,7 +22,7 @@ import (
 func TestMain(m *testing.M) {
 	logger.InitializeLogger()
 	db.GetTestDB()
-	db.EnsureDBExists(db.WithTesting(true))
+	db.EnsureDBSchemaExists(db.WithTesting(true))
 
 	code := m.Run()
 

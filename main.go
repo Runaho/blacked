@@ -2,7 +2,7 @@ package main
 
 import (
 	"blacked/cmd"
-	"blacked/features/entries/providers"
+	"blacked/features/providers"
 	"blacked/internal/config"
 	"blacked/internal/db"
 	"blacked/internal/logger"
