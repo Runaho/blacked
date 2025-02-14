@@ -6,22 +6,25 @@ import (
 	"blacked/internal/db"
 	"blacked/internal/logger"
 	"blacked/internal/utils"
+	"bufio"
+	"bytes"
+	"context"
+	"io"
 	"os"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestMain(m *testing.M) {
-	// Optionally, you can do setup here, such as initializing logger or environment.
-	// For instance:
-	logger.InitializeLogger() // if you wanted logging in tests
-	db.SetTesting(true)
+	logger.InitializeLogger()
+	db.GetTestDB()
+	db.EnsureDBExists(db.WithTesting(true))
 
 	code := m.Run()
-
-	// Optionally, do teardown here.
 
 	os.Exit(code)
 }
@@ -32,8 +35,7 @@ func TestNewProviders(t *testing.T) {
 
 	assert.NoError(t, err, "Expected no error initializing providers")
 	// Test that we have sources and names
-	//
-	ps, err := NewProviders(db)
+	ps, err := NewProviders()
 	assert.NoError(t, err, "Expected no error creating new providers")
 	assert.NotEmpty(t, ps, "Expected some providers to be returned")
 
@@ -49,20 +51,11 @@ func TestProvidersProcess(t *testing.T) {
 	assert.NoError(t, err, "Expected no error initializing providers")
 	defer db.Close()
 	// Test that we have sources and names
-	ps, err := NewProviders(db)
+	ps, err := NewProviders()
 	assert.NoError(t, err, "Expected no error creating new providers")
 	assert.NotEmpty(t, ps, "Expected some providers to be returned")
 
-	// NOTE: By default, calling ps.Process() attempts a real fetch (HTTP).
-	// For an integration test, you might allow it or skip if you lack network, etc.
-	// Here, we simply ensure it does not panic and returns an error or nil.
 	err = ps.Process()
-	// If an external fetch is genuinely attempted, an error can occur if the URL is unreachable.
-	// So you might do:
-	//   assert.Error(t, err, "Expecting an error because fetch might fail without a network or mocking.")
-	// OR if your environment can access the OISD resource, you might do:
-	//   assert.NoError(t, err)
-	// For demonstration, we’ll just check it’s “not panicking”:
 	assert.Nil(t, err, "Expecting no error or handle gracefully based on your environment or mocks")
 }
 
@@ -73,14 +66,7 @@ func TestCheckIfLinkExists(t *testing.T) {
 	assert.NoError(t, err, "Expected no error initializing providers")
 	defer testDB.Close()
 
-	//ps, err := NewProviders(testDB)
-	//assert.NoError(t, err, "Expected no error creating new providers")
-	//assert.NotEmpty(t, ps, "Expected some providers to be returned")
-	//err = ps.Process()
-	//assert.Nil(t, err, "Expecting no error or handle gracefully based on your environment or mocks")
-	//assert.NoError(t, err, "Error inserting test data")
-
-	dbRepo := repository.NewDuckDBRepository(testDB)
+	dbRepo := repository.NewSQLiteRepository(testDB)
 
 	testCases := []struct {
 		name         string
@@ -152,4 +138,68 @@ func TestCheckIfLinkExists(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestProcess_ConcurrentProviders(t *testing.T) {
+	// ... setup test database, colly client ...
+	_, db, _, err := utils.Initialize(t)
+	defer db.Close()
+
+	mockProviders := Providers{
+		&MockProvider{NameVal: "MockProvider1", SourceVal: "mock://provider1", FetchDelay: 100 * time.Millisecond, ParseDelay: 50 * time.Millisecond},
+		&MockProvider{NameVal: "MockProvider2", SourceVal: "mock://provider2", FetchDelay: 150 * time.Millisecond, ParseDelay: 75 * time.Millisecond},
+	}
+
+	startTime := time.Now()
+	err = mockProviders.Process() // Process the mock providers
+	endTime := time.Now()
+
+	assert.NoError(t, err)
+
+	duration := endTime.Sub(startTime)
+	log.Info().Dur("duration", duration).Msg("Total processing time")
+
+	// Assert that total duration is *less* than the sum of individual provider delays
+	// if they were processed sequentially.  This indicates concurrency.
+	expectedSequentialDuration := (mockProviders[0].(*MockProvider).FetchDelay + mockProviders[0].(*MockProvider).ParseDelay) +
+		(mockProviders[1].(*MockProvider).FetchDelay + mockProviders[1].(*MockProvider).ParseDelay)
+	assert.Less(t, duration, expectedSequentialDuration, "Expected concurrent processing to be faster than sequential")
+
+}
+
+// MockProvider (Example - you'll need to flesh this out more)
+type MockProvider struct {
+	NameVal    string
+	SourceVal  string
+	FetchDelay time.Duration
+	ParseDelay time.Duration
+	Repository repository.BlacklistRepository
+	ProcessID  uuid.UUID
+}
+
+func (m *MockProvider) Name() string                                      { return m.NameVal }
+func (m *MockProvider) Source() string                                    { return m.SourceVal }
+func (m *MockProvider) SetRepository(repo repository.BlacklistRepository) { m.Repository = repo }
+func (m *MockProvider) SetProcessID(id uuid.UUID)                         { m.ProcessID = id }
+func (m *MockProvider) Fetch() (io.Reader, error) {
+	time.Sleep(m.FetchDelay)                              // Simulate fetch delay
+	return bytes.NewReader([]byte("line1\nline2\n")), nil // Example data
+}
+func (m *MockProvider) Parse(data io.Reader) error {
+	time.Sleep(m.ParseDelay) // Simulate parse delay
+	scanner := bufio.NewScanner(data)
+	for scanner.Scan() {
+		line := scanner.Text()
+		entry := entries.Entry{
+			ID:        uuid.New().String(),
+			ProcessID: m.ProcessID.String(),
+			Source:    m.Name(),
+			SourceURL: m.Source(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		entry.SetURL(line)
+		m.Repository.SaveEntry(context.Background(), entry) // Or BatchSaveEntries
+	}
+	return scanner.Err()
 }

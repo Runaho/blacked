@@ -23,7 +23,7 @@ func NewQueryService() (*QueryService, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to the database: %w", err)
 	}
-	return &QueryService{repo: repository.NewDuckDBRepository(dbConn)}, nil
+	return &QueryService{repo: repository.NewSQLiteRepository(dbConn)}, nil
 }
 
 // Query performs a query based on the provided URL and query type.  It handles various query types and returns the results.

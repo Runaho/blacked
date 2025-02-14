@@ -8,12 +8,10 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// QueryHandler holds a reference to the QueryService for performing queries.
 type QueryHandler struct {
 	Service *services.QueryService
 }
 
-// NewQueryHandler instantiates a new QueryHandler.
 func NewQueryHandler(service *services.QueryService) *QueryHandler {
 	return &QueryHandler{Service: service}
 }

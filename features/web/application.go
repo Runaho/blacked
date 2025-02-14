@@ -94,15 +94,20 @@ func (app *Application) configureMiddleware() {
 		FrameDeny:        true,
 		BrowserXssFilter: true,
 	})
-
 	e.Use(echo.WrapMiddleware(secureMiddleware.Handler))
+
 	e.Use(lecho.Middleware(lecho.Config{Logger: app.logger}))
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins:     app.config.AllowOrigins,
 		AllowCredentials: true,
-		AllowHeaders:     []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderXRequestedWith, echo.HeaderAuthorization},
+		AllowHeaders: []string{
+			echo.HeaderOrigin,
+			echo.HeaderContentType,
+			echo.HeaderAccept,
+			echo.HeaderXRequestedWith,
+			echo.HeaderAuthorization,
+		},
 	}))
-	e.Use(lecho.Middleware(lecho.Config{Logger: app.logger}))
 	e.Pre(middleware.RemoveTrailingSlash())
 
 	middlewares.ConfigureValidator(e)

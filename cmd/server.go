@@ -3,6 +3,7 @@ package cmd
 import (
 	"blacked/features/web"
 	"blacked/internal/config"
+	"blacked/internal/db"
 
 	"github.com/ory/graceful"
 	"github.com/rs/zerolog/log"
@@ -29,6 +30,8 @@ func serve(c *cli.Context) (err error) {
 		log.Error().Err(err).Msg("Failed to create web application")
 		return err
 	}
+
+	defer db.Close()
 
 	server := graceful.WithDefaults(app.Echo.Server)
 	log.Info().Msgf("Starting server on %s", server.Addr)

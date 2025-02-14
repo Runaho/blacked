@@ -28,13 +28,19 @@ type OpenPhishFeed struct {
 func NewOpenPhishFeedProvider(
 	settings *config.CollectorConfig,
 	collyClient *colly.Collector,
-	repository repository.BlacklistRepository,
 ) *OpenPhishFeed {
 	return &OpenPhishFeed{
 		settings:    settings,
 		collyClient: collyClient,
-		repository:  repository,
 	}
+}
+
+func (o *OpenPhishFeed) SetRepository(repository repository.BlacklistRepository) {
+	o.repository = repository
+}
+
+func (o *OpenPhishFeed) SetCollyClient(collyClient *colly.Collector) {
+	o.collyClient = collyClient
 }
 
 func (o *OpenPhishFeed) Name() string {

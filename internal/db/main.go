@@ -6,28 +6,70 @@ import (
 	"sync"
 )
 
+type dbInstance struct {
+	db  *sql.DB
+	err error
+	mu  sync.RWMutex
+}
+
 var (
-	db    *sql.DB
-	once  sync.Once
-	dbErr error
+	instance dbInstance
+	initOnce sync.Once
 )
 
 func GetDB() (*sql.DB, error) {
-	once.Do(func() {
-		db, dbErr = initializeDatabase() // Call your existing InitializeDatabase function
-		if dbErr != nil {
-			dbErr = fmt.Errorf("failed to initialize database connection: %w", dbErr)
+	initOnce.Do(func() {
+		instance.mu.Lock()
+		defer instance.mu.Unlock()
+
+		if err := EnsureDBExists(); err != nil {
+			instance.err = fmt.Errorf("failed to ensure schema exists: %w", err)
 			return
 		}
-		fmt.Println("Database connection initialized.") // Informational message when connection is established
+
+		roDB, err := GetReadOnlyDB()
+		if err != nil {
+			instance.err = fmt.Errorf("failed to open read‐only DB: %w", err)
+			return
+		}
+
+		instance.db = roDB
+
+		fmt.Println("Database connection (read‐only) initialized.")
 	})
-	return db, dbErr
+
+	instance.mu.RLock()
+	defer instance.mu.RUnlock()
+	return instance.db, instance.err
 }
 
-func DeferClose() {
-	if db != nil {
-		if err := db.Close(); err != nil {
-			fmt.Printf("Failed to close database connection: %v\n", err)
+func Close() error {
+	instance.mu.Lock()
+	defer instance.mu.Unlock()
+
+	if instance.db != nil {
+		err := instance.db.Close()
+		instance.db = nil
+		if err != nil {
+			return fmt.Errorf("failed to close read‐only database connection: %w", err)
 		}
+		fmt.Println("Database connection (read‐only) closed.")
 	}
+	return nil
+}
+
+func ResetForTesting() {
+	instance.mu.Lock()
+	defer instance.mu.Unlock()
+
+	// Close any existing open DB
+	if instance.db != nil {
+		_ = instance.db.Close()
+		instance.db = nil
+	}
+
+	instance.err = nil
+	initOnce = sync.Once{}
+
+	fmt.Println("DB reset for testing.")
 }

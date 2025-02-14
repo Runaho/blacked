@@ -28,13 +28,19 @@ type URLHausProvider struct {
 func NewURLHausProvider(
 	settings *config.CollectorConfig,
 	collyClient *colly.Collector,
-	repository repository.BlacklistRepository,
 ) *URLHausProvider {
 	return &URLHausProvider{
 		settings:    settings,
 		collyClient: collyClient,
-		repository:  repository,
 	}
+}
+
+func (o *URLHausProvider) SetRepository(repository repository.BlacklistRepository) {
+	o.repository = repository
+}
+
+func (o *URLHausProvider) SetCollyClient(collyClient *colly.Collector) {
+	o.collyClient = collyClient
 }
 
 func (u *URLHausProvider) Name() string {

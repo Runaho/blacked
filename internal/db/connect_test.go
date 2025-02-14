@@ -7,7 +7,7 @@ import (
 )
 
 func TestConnect(t *testing.T) {
-	s, err := initializeDatabase()
+	s, err := Connect(WithInMemory(true))
 	if err != nil {
 		assert.NoError(t, err)
 	}
@@ -17,8 +17,7 @@ func TestConnect(t *testing.T) {
 }
 
 func TestConnectTest(t *testing.T) {
-	SetTesting(true)
-	s, err := initializeDatabase()
+	s, err := Connect(WithTesting(true))
 	if err != nil {
 		assert.NoError(t, err)
 	}

@@ -28,13 +28,15 @@ type OISDNSFW struct {
 func NewOISDNSFWProvider(
 	settings *config.CollectorConfig,
 	collyClient *colly.Collector,
-	repository repository.BlacklistRepository,
 ) *OISDNSFW {
 	return &OISDNSFW{
 		settings:    settings,
 		collyClient: collyClient,
-		repository:  repository,
 	}
+}
+
+func (o *OISDNSFW) SetRepository(repository repository.BlacklistRepository) {
+	o.repository = repository
 }
 
 func (o *OISDNSFW) Name() string {

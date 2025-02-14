@@ -18,10 +18,10 @@ func Initialize(t *testing.T) (ctx context.Context, _db *sql.DB, cc *colly.Colle
 	err = config.InitConfig()
 	assert.NoError(t, err, "Should initialize config without error")
 
-	// Initialize DB (once) for tests
-	db.SetTesting(true)
-	_db, err = db.GetDB()
+	_db, err = db.GetTestDB()
 	assert.NoError(t, err, "Expected no error while obtaining DB")
+
+	db.EnsureDBExists(db.WithTesting(true))
 
 	cc, err = ic.InitCollyClient()
 	assert.NoError(t, err, "Expected no error while initializing colly client")

@@ -76,9 +76,10 @@ func TestParse(t *testing.T) {
 	defer db.Close()
 	assert.NoError(t, err, "Expected no error initializing providers")
 
-	repository := repository.NewDuckDBRepository(db)
+	repository := repository.NewSQLiteRepository(db)
 
-	provider := NewOISDBigProvider(&config.GetConfig().Collector, cc, repository)
+	provider := NewOISDBigProvider(&config.GetConfig().Collector, cc)
+	provider.SetRepository(repository)
 
 	processID := uuid.New()
 	startedAt := time.Now()

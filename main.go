@@ -53,14 +53,15 @@ func before(c *cli.Context) error {
 	logger.InitializeLogger()
 
 	log.Info().Msg("Initializing database connection")
-	dbConn, err := db.GetDB()
+
+	_, err := db.GetDB()
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to connect to database")
 		return err
 	}
 
 	log.Info().Msg("Initializing providers")
-	_, err = providers.InitProviders(dbConn)
+	_, err = providers.InitProviders()
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to initialize providers")
 		return err

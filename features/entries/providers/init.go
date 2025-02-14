@@ -1,7 +1,6 @@
 package providers
 
 import (
-	"database/sql"
 	"sync"
 )
 
@@ -10,9 +9,9 @@ var (
 	p    *Providers
 )
 
-func InitProviders(db *sql.DB) (providers *Providers, err error) {
+func InitProviders() (providers *Providers, err error) {
 	once.Do(func() {
-		providers, err = NewProviders(db)
+		providers, err = NewProviders()
 		p = providers
 	})
 	return p, err

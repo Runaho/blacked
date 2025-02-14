@@ -29,13 +29,19 @@ type OisdBigProvider struct {
 func NewOISDBigProvider(
 	settings *config.CollectorConfig,
 	collyClient *colly.Collector,
-	repository repository.BlacklistRepository,
 ) *OisdBigProvider {
 	return &OisdBigProvider{
 		settings:    settings,
 		collyClient: collyClient,
-		repository:  repository,
 	}
+}
+
+func (o *OisdBigProvider) SetRepository(repository repository.BlacklistRepository) {
+	o.repository = repository
+}
+
+func (o *OisdBigProvider) SetCollyClient(collyClient *colly.Collector) {
+	o.collyClient = collyClient
 }
 
 func (o *OisdBigProvider) GetProcessID() uuid.UUID {

@@ -17,7 +17,6 @@ func customHTTPErrorHandler(err error, c echo.Context) {
 	code := http.StatusInternalServerError
 	var message interface{}
 
-	// If the error is an Echo HTTP error, preserve the code/message.
 	if httpErr, ok := err.(*echo.HTTPError); ok {
 		code = httpErr.Code
 		message = httpErr.Message
@@ -25,7 +24,6 @@ func customHTTPErrorHandler(err error, c echo.Context) {
 		message = err.Error()
 	}
 
-	// Example: handling a 404 with a custom route
 	switch code {
 	case http.StatusNotFound:
 		if handleErr := handle404(c); handleErr != nil {
@@ -38,21 +36,17 @@ func customHTTPErrorHandler(err error, c echo.Context) {
 	}
 }
 
-// MapRoutes sets the custom error handler and any relevant routes for error scenarios.
 func MapRoutes(e *echo.Echo) {
 	e.HTTPErrorHandler = customHTTPErrorHandler
 
-	// A quick route to simulate a 404
 	e.GET("/404", handle404)
 }
 
-// handle404 is your custom 404 route.
 func handle404(c echo.Context) error {
 	referer := c.QueryParam("referer")
 	var referStr *string
 
 	if referer != "" {
-		// Some logic to detect if it’s valid, etc.
 		referStr = &referer
 	}
 

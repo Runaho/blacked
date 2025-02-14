@@ -18,9 +18,10 @@ func TestParse(t *testing.T) {
 	defer db.Close()
 	assert.NoError(t, err, "Expected no error initializing providers")
 
-	repository := repository.NewDuckDBRepository(db)
+	repository := repository.NewSQLiteRepository(db)
 
-	provider := NewOpenPhishFeedProvider(&config.GetConfig().Collector, cc, repository)
+	provider := NewOpenPhishFeedProvider(&config.GetConfig().Collector, cc)
+	provider.SetRepository(repository)
 
 	processID := uuid.New()
 	startedAt := time.Now()
