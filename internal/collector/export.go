@@ -6,6 +6,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog/log"
 )
 
 // in the Prometheus text exposition format for standard http.Server.
@@ -20,4 +21,9 @@ func (mc *MetricsCollector) ExposeMetricsHTTPHandlerFunc(c echo.Context) error {
 func (mc *MetricsCollector) ExposeWebMetrics(e *echo.Echo) {
 	e.GET("/metrics", mc.ExposeMetricsHTTPHandlerFunc)
 	e.GET("/metrics/prometheus", echo.WrapHandler(mc.ExposeMetricsHTTPHandler()))
+
+	log.Info().
+		Str("path", "/metrics").
+		Str("prometheus", "/metrics/prometheus").
+		Msg("Metrics exposed successfully.")
 }

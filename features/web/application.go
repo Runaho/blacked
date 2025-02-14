@@ -1,7 +1,9 @@
 package web
 
 import (
+	"blacked/features/entries/providers"
 	"blacked/features/web/middlewares"
+	"blacked/internal/collector"
 	"blacked/internal/config"
 	"errors"
 	"fmt"
@@ -74,10 +76,30 @@ func NewApplication(cfg *config.ServerConfig) (*Application, error) {
 			return
 		}
 
+		if err := app.configureMetricCollector(); err != nil {
+			initErr = fmt.Errorf("failed to configure metric collector: %w", err)
+			log.Error().Err(initErr).Msg("Metric collector configuration error")
+			return
+		}
+
 		application = app
 	})
 
 	return application, initErr
+}
+
+func (app *Application) configureMetricCollector() error {
+	providers := providers.GetProviders().Names()
+	collector.NewMetricsCollector(providers)
+
+	mc, err := collector.GetMetricsCollector()
+	if err != nil {
+		return err
+	}
+
+	mc.ExposeWebMetrics(app.Echo)
+
+	return nil
 }
 
 func (app *Application) configureMiddleware() {

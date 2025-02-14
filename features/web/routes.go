@@ -3,6 +3,7 @@ package web
 import (
 	"blacked/features/web/handlers/health"
 	"blacked/features/web/handlers/problem"
+	"blacked/features/web/handlers/provider"
 	"blacked/features/web/handlers/query"
 
 	"github.com/labstack/echo/v4"
@@ -13,6 +14,10 @@ func (app *Application) ConfigureRoutes() error {
 
 	app.MapHome()
 	if err := query.MapQueryRoutes(e, app.services.EntryQueryService); err != nil {
+		return err
+	}
+
+	if err := provider.MapProviderRoutes(e); err != nil {
 		return err
 	}
 
