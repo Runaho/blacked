@@ -51,7 +51,7 @@ func NewProviders() (*Providers, error) {
 
 	// Example: Collect their source URLs for logging or metrics
 	srcs := providers.Sources()
-	log.Info().Msgf("initialized provider sources: %v", srcs)
+	log.Trace().Msgf("initialized provider sources: %v", srcs)
 
 	// Also gather their domains for the Colly AllowedDomains
 	sourceDomains, err := providers.SourceDomains()
@@ -60,7 +60,7 @@ func NewProviders() (*Providers, error) {
 		return providers, err
 	}
 	cc.AllowedDomains = sourceDomains
-	log.Info().Msgf("initialized provider source domains: %v", sourceDomains)
+	log.Trace().Msgf("initialized provider source domains: %v", sourceDomains)
 
 	// Initialize Prometheus metrics with the source names.
 	collector.NewMetricsCollector(srcs)

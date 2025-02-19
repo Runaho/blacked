@@ -3,6 +3,8 @@ package config
 import (
 	"strconv"
 	"time"
+
+	"github.com/rs/zerolog"
 )
 
 type ServerConfig struct {
@@ -27,7 +29,8 @@ type CacheSettings struct {
 }
 
 type APPConfig struct {
-	Environtment string `koanf:"environtment" default:"development"`
+	Environtment string        `koanf:"environtment" default:"development"`
+	LogLevel     zerolog.Level `koanf:"log_level" default:"debug"`
 }
 
 type CollectorConfig struct {

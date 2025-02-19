@@ -28,7 +28,6 @@ func (l logWrapper) Write(p []byte) (n int, err error) {
 }
 
 func InitializeLogger() {
-	config.InitConfig()
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	if config.IsDevMode() {
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
@@ -38,10 +37,12 @@ func InitializeLogger() {
 
 	if isatty.IsTerminal(os.Stdout.Fd()) {
 		output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: zerolog.TimeFormatUnix}
-		zerologger = zerolog.New(output).With().Timestamp().Logger()
+		zerologger = zerolog.New(output)
 	} else {
-		zerologger = zerolog.New(os.Stdout).With().Timestamp().Logger()
+		zerologger = zerolog.New(os.Stdout)
 	}
+
+	zerologger = zerologger.With().Timestamp().Caller().Logger()
 
 	log.Logger = zerologger
 

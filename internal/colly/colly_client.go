@@ -2,10 +2,12 @@ package colly
 
 import (
 	"blacked/internal/config"
+	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/gocolly/colly/v2"
+	"github.com/rs/zerolog/log"
 )
 
 var (
@@ -31,10 +33,11 @@ func InitCollyClient() (*colly.Collector, error) {
 		client.SetRequestTimeout(collyConfig.TimeOut)
 
 		if client == nil {
-			err = fmt.Errorf("failed to create colly collector") // Set error if collector creation fails
+			err = errors.New("failed to create colly collector")
+			log.Error().Msg("Failed to initialize colly client.")
 			return
 		}
-		fmt.Println("Colly client initialized.") // Optional: Log initialization
+		log.Debug().Msg("Colly client initialized.")
 	})
 	return client, err // Return client and potential error from initialization
 }

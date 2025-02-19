@@ -28,19 +28,21 @@ func GetDB() (*sql.DB, error) {
 		defer instance.mu.Unlock()
 
 		if err := EnsureDBSchemaExists(); err != nil {
-			instance.err = fmt.Errorf("failed to ensure schema exists: %w", err)
+			log.Error().Err(err).Stack().Msg("Failed to ensure schema exists")
+			instance.err = err
 			return
 		}
 
 		roDB, err := GetReadOnlyDB()
 		if err != nil {
-			instance.err = fmt.Errorf("failed to open read‐only DB: %w", err)
+			log.Error().Err(err).Stack().Msg("Failed to open read‐only database connection")
+			instance.err = err
 			return
 		}
 
 		instance.db = roDB
 
-		fmt.Println("Database connection (read‐only) initialized.")
+		log.Trace().Msg("Database connection (read‐only) initialized.")
 	})
 
 	instance.mu.RLock()
@@ -86,7 +88,7 @@ func GetReadOnlyDB(opts ...Option) (*sql.DB, error) {
 			log.Error().Err(roErr).Msg("Failed to open read-only database connection")
 			return
 		}
-		log.Info().Msg("Read-only database connection initialized.")
+		log.Trace().Msg("Read-only database connection initialized.")
 	})
 	return roDB, roErr
 }

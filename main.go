@@ -44,28 +44,31 @@ func app() *cli.App {
 }
 
 func before(c *cli.Context) error {
-	stdlog.Print("Initializing application configuration")
-	if err := config.InitConfig(); err != nil {
-		stdlog.Fatalf("error loading config: %v", err)
-		return err
-	}
-
 	logger.InitializeLogger()
 
-	log.Info().Msg("Initializing database connection")
+	log.Trace().Msg("Initializing configuration")
+	if err := config.InitConfig(); err != nil {
+		log.Error().Err(err).Stack().Msg("Failed to load config")
+		return err
+	}
+	log.Debug().Msg("Configuration loaded")
+
+	log.Trace().Msg("Initializing database connection")
 
 	_, err := db.GetDB()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to connect to database")
+		log.Error().Err(err).Stack().Msg("Failed to connect to database")
 		return err
 	}
+	log.Debug().Msg("Database connection established")
 
-	log.Info().Msg("Initializing providers")
+	log.Trace().Msg("Initializing providers")
 	_, err = providers.InitProviders()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to initialize providers")
+		log.Error().Err(err).Stack().Msg("Failed to initialize providers")
 		return err
 	}
+	log.Debug().Msg("Providers initialized")
 
 	return nil
 }

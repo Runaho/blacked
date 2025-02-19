@@ -11,6 +11,7 @@ import (
 	"github.com/knadh/koanf/parsers/dotenv"
 	"github.com/knadh/koanf/parsers/toml"
 	"github.com/knadh/koanf/providers/file"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -61,17 +62,23 @@ func InitConfig() error {
 
 		_k.Unmarshal("", _config)
 
-		log.Info().Msgf("k: %+v", _config)
+		log.Trace().Msgf("k: %+v", _config)
 
 		if _config == emptyConfig {
 			err = errors.New("config is empty")
 			return
 		}
+
+		zerolog.SetGlobalLevel(_config.APP.LogLevel)
 	})
 
 	return err
 }
 
 func IsDevMode() bool {
+	if _config == nil {
+		return true
+	}
+
 	return (_config.APP.Environtment == "development")
 }

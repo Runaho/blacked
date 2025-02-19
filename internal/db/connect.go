@@ -48,9 +48,9 @@ const (
 func initDB(db *sql.DB) error {
 	_, err := db.Exec(schema)
 	if err != nil {
-		return fmt.Errorf("failed to create tables: %w", err)
+		return err
 	}
-	log.Info().Msg("Database schema initialized or already exists (including provider_processes table).")
+	log.Trace().Msg("Database schema initialized or already exists (including provider_processes table).")
 	return nil
 }
 
@@ -66,7 +66,7 @@ func EnsureDBSchemaExists(opts ...Option) error {
 	}
 
 	log.
-		Debug().
+		Trace().
 		Bool("is_testing", baseOpts.isTesting).
 		Bool("is_read_only", baseOpts.isReadOnly).
 		Bool("in_memory", baseOpts.inMemory).
@@ -77,30 +77,31 @@ func EnsureDBSchemaExists(opts ...Option) error {
 	if !baseOpts.inMemory && !baseOpts.isTesting {
 		if _, err := os.Stat(dbName); os.IsNotExist(err) { // Check if DB file does not exist
 			useRW = true // Create schema if file doesn't exist
-			log.Info().Msg("Database file does not exist, will create and initialize schema.")
+			log.Debug().Msg("Database file does not exist, will create and initialize schema.")
 		} else {
 			useRW = true // Check schema even if file exists
-			log.Debug().Msg("Database file exists, schema will be checked/initialized.")
+			log.Trace().Msg("Database file exists, schema will be checked/initialized.")
 		}
 	} else if baseOpts.inMemory || baseOpts.isTesting {
 		useRW = true
-		log.Debug().Msg("In-memory or test database, schema will be checked/initialized.")
+		log.Trace().Msg("In-memory or test database, schema will be checked/initialized.")
 	}
 
 	if !useRW {
-		log.Debug().Msg("No schema creation or check needed.")
+		log.Trace().Msg("No schema creation or check needed.")
 		return nil
 	}
 
 	dbRW, err := Connect(WithReadOnly(false), WithInMemory(baseOpts.inMemory), WithTesting(baseOpts.isTesting))
 	if err != nil {
-		return fmt.Errorf("failed to open sqlite in RW mode for schema creation: %w", err)
+		log.Error().Err(err).Stack().Msg("Failed to open RW connection for schema creation.")
+		return err
 	}
 	defer dbRW.Close()
 
-	log.Debug().Msg("RW connection opened for schema check/initialization.")
+	log.Trace().Msg("RW connection opened for schema check/initialization.")
 
-	log.Debug().Msg("Schema check/initialization completed, RW connection closed.")
+	log.Trace().Msg("Schema check/initialization completed, RW connection closed.")
 	return nil
 }
 
@@ -116,7 +117,7 @@ func Connect(options ...Option) (*sql.DB, error) {
 	}
 
 	log.
-		Debug().
+		Trace().
 		Bool("is_testing", opts.isTesting).
 		Bool("is_read_only", opts.isReadOnly).
 		Bool("in_memory", opts.inMemory).
@@ -139,7 +140,7 @@ func Connect(options ...Option) (*sql.DB, error) {
 		return nil, errors.New("read-only mode is not supported with in-memory database")
 	}
 
-	log.Debug().Str("dsn", dsn).Msg("Opening SQLite database connection")
+	log.Trace().Str("dsn", dsn).Msg("Opening SQLite database connection")
 
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
@@ -158,7 +159,7 @@ func Connect(options ...Option) (*sql.DB, error) {
 			return nil, fmt.Errorf("failed to initialize database schema: %w", err)
 		}
 	} else {
-		log.Debug().Msg("Skipping schema initialization for read-only connection.")
+		log.Trace().Msg("Skipping schema initialization for read-only connection.")
 	}
 
 	return db, nil
