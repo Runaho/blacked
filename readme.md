@@ -224,7 +224,7 @@ func (n *NewProvider) Parse(data io.Reader) error {
 		entry := *_entry
 		// after that could be same as other providers
 }
-    ```
+```
 
     *   **`Name() string`:** Returns the unique name of the provider.
     *   **`Source() string`:** Returns the URL of the blacklist source.
@@ -254,7 +254,7 @@ func NewProviders() (*Providers, error) {
 
 	return providers, nil
 }
-    ```
+```
 
 4.  **Update `SourceDomains()`**: Add the new provider's domain in the `SourceDomains()` function in `features/providers/main.go` to allow the colly client to visit the URL.
 
