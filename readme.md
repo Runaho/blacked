@@ -2,6 +2,8 @@
 
 Blacked is a blacklist aggregation and query service written in Go. It fetches, parses, and stores blacklist entries from various providers, allowing users to query entries by URL. It provides both a command-line interface (CLI) and a web API for interaction.
 
+Goal is to be fast and easy to deploy like one executable and embeded db. Embeded software is a goal here so CLI & API first development approach would be appreciated.
+
 ## Features
 
 *   **Blacklist Aggregation:**  Fetches and processes blacklist entries from multiple providers like OISD, OpenPhish, and URLhaus.
@@ -182,46 +184,46 @@ To add a new blacklist provider, follow these steps:
 
 2.  **Define the provider struct:** Create a struct that implements the `providers.Provider` interface: you can copy the other providers and modify them according to your needs.  Here is an example:
 
-    ```go
-		// Unique name of the provider will be used in logs, metrics, cli and api
-    func (n *NewProvider) Name() string {
-    	return "NEW_PROVIDER"
-    }
+```go
+// Unique name of the provider will be used in logs, metrics, cli and api
+func (n *NewProvider) Name() string {
+	return "NEW_PROVIDER"
+}
 
-		// Source URL of the blacklist
-    func (n *NewProvider) Source() string {
-    	return "https://example.com/blacklist.txt"
-    }
+// Source URL of the blacklist
+func (n *NewProvider) Source() string {
+		return "https://example.com/blacklist.txt"
+	}
 
-		// Usially fetch method is same as other providers
-    func (n *NewProvider) Fetch() (io.Reader, error) {
-    	// technically, colly will parse the response body as a reader then processor will pass it to the Parse method
-    	return bytes.NewReader(responseBody), nil
-    }
+// Usially fetch method is same as other providers
+func (n *NewProvider) Fetch() (io.Reader, error) {
+	// technically, colly will parse the response body as a reader then processor will pass it to the Parse method
+	return bytes.NewReader(responseBody), nil
+}
 
-    func (n *NewProvider) Parse(data io.Reader) error {
-    	// before that could be same as other providers
-      // Customize the parsing logic according to the provider's data format
-    	for scanner.Scan() {
-    		scanningAt := time.Now()
-    		line := strings.TrimSpace(scanner.Text())
-    		if line == "" || strings.HasPrefix(line, "#") {
-    			continue
-    		}
+func (n *NewProvider) Parse(data io.Reader) error {
+	// before that could be same as other providers
+	// Customize the parsing logic according to the provider's data format
+	for scanner.Scan() {
+		scanningAt := time.Now()
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
 
-    		_entry := new(entries.Entry)
-    		_entry.ID = uuid.New().String()
-    		_entry.ProcessID = processID.String()
-    		_entry.Source = n.Name()
-    		_entry.SourceURL = n.Source()
-    		_entry.CreatedAt = time.Now()
-    		_entry.UpdatedAt = time.Now()
+		_entry := new(entries.Entry)
+		_entry.ID = uuid.New().String()
+		_entry.ProcessID = processID.String()
+		_entry.Source = n.Name()
+		_entry.SourceURL = n.Source()
+		_entry.CreatedAt = time.Now()
+		_entry.UpdatedAt = time.Now()
 
-    		err := _entry.SetURL(line)
+		err := _entry.SetURL(line)
 
-    		entry := *_entry
-        // after that could be same as other providers
-    }
+		entry := *_entry
+		// after that could be same as other providers
+}
     ```
 
     *   **`Name() string`:** Returns the unique name of the provider.
@@ -234,24 +236,24 @@ To add a new blacklist provider, follow these steps:
 
 3.  **Register the provider:**  Modify `features/providers/init.go` to import the new provider and register it in the `NewProviders` function:
 
-    ```go
-    package providers
+```go
+package providers
 
-    func NewProviders() (*Providers, error) {
-    	// ----
-    	providers := &Providers{
-    		oisd.NewOISDBigProvider(&cfg.Collector, cc),
-    		oisd.NewOISDNSFWProvider(&cfg.Collector, cc),
-    		openphish.NewOpenPhishFeedProvider(&cfg.Collector, cc),
-    		urlhaus.NewURLHausProvider(&cfg.Collector, cc),
+func NewProviders() (*Providers, error) {
+// ----
+	providers := &Providers{
+		oisd.NewOISDBigProvider(&cfg.Collector, cc),
+		oisd.NewOISDNSFWProvider(&cfg.Collector, cc),
+		openphish.NewOpenPhishFeedProvider(&cfg.Collector, cc),
+		urlhaus.NewURLHausProvider(&cfg.Collector, cc),
 
-    		newprovider.NewNewProvider(&cfg.Collector, cc), // Register your new provider
-    	}
+		newprovider.NewNewProvider(&cfg.Collector, cc), // Register your new provider
+	}
 
-    	// ----
+// ----
 
-    	return providers, nil
-    }
+	return providers, nil
+}
     ```
 
 4.  **Update `SourceDomains()`**: Add the new provider's domain in the `SourceDomains()` function in `features/providers/main.go` to allow the colly client to visit the URL.
@@ -279,12 +281,10 @@ This project is licensed under the [MIT License](LICENSE).
 
 *   Implement additional blacklist providers.
 *   Add caching mechanisms for faster query performance.
-*   Develop a more sophisticated web UI.
-*   Support additional database backends (e.g., PostgreSQL, MySQL).
-*   Implement more detailed logging and monitoring.
+*   Support additional database backends with some cloud support (e.g., Cockroachdb ).
+* 	Support other response saving options like (.eg, S3 SDK)
 *   Add input validation and sanitization to prevent security vulnerabilities.
-*   Implement user authentication and authorization for API access.
-*   Implement rate limiting for API endpoints.
-*   Implement more robust error handling and reporting.
-*   Consider using a dedicated task queue for background provider processing.
-*   Investigate using a bloom filter to speed up the querying process
+*   Implement rate limiting for per provider.
+*   Implement cron for provider data sync process per provider level with custom cron times and also some provider's insert changes on top of the file this could be a nice touch. 
+*   Consider using a dedicated task queue for background provider processing. (maybe implement asynq?)
+*   Investigate using a bloom filter to speed up the querying process or search engine?
