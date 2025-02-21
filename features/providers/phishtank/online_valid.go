@@ -1,5 +1,6 @@
 package phishtank
 
+// NOTE: This is not implement because we cannot access the source. Without an account.
 import (
 	"io"
 
