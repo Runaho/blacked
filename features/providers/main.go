@@ -10,7 +10,6 @@ import (
 	"blacked/internal/config"
 	"blacked/internal/db"
 	"blacked/internal/utils"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -79,13 +78,13 @@ func (p Providers) Process() error {
 	defer rwDB.Close()
 
 	repo := repository.NewSQLiteRepository(rwDB)
-	ctx := context.Background()
+
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(p)) // Buffered channel to collect errors
 
 	for _, provider := range p {
 		wg.Add(1)
-		go p.processProvider(ctx, provider, repo, &wg, errChan) // Launch goroutine for each provider
+		go p.processProvider(provider, repo, &wg, errChan) // Launch goroutine for each provider
 	}
 
 	wg.Wait()      // Wait for all provider processing to complete
@@ -107,7 +106,7 @@ func (p Providers) Process() error {
 }
 
 // processProvider handles the processing logic for a single provider.
-func (p Providers) processProvider(ctx context.Context, provider Provider, repo repository.BlacklistRepository, wg *sync.WaitGroup, errChan chan error) {
+func (p Providers) processProvider(provider Provider, repo repository.BlacklistRepository, wg *sync.WaitGroup, errChan chan error) {
 	defer wg.Done()
 
 	processID := uuid.New()
