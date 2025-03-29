@@ -105,7 +105,6 @@ func (o *OISDNSFW) Parse(data io.Reader) error {
 		_entry.ID = uuid.New().String()
 		_entry.ProcessID = processID.String()
 		_entry.Source = o.Name()
-		_entry.SourceURL = o.Source()
 		_entry.CreatedAt = time.Now()
 		_entry.UpdatedAt = time.Now()
 		_entry.Category = "nsfw"

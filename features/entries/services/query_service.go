@@ -38,3 +38,13 @@ func (s *QueryService) Query(ctx context.Context, url string, queryType *enums.Q
 	log.Debug().Dur("duration", time.Since(startTime)).Msgf("Query completed, %d hits found", len(hits))
 	return hits, nil
 }
+
+func (s *QueryService) GetEntryByID(ctx context.Context, id string) (*entries.Entry, error) {
+	// Call your repository to get the entry by ID
+	entry, err := s.repo.GetEntryByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return entry, nil
+}

@@ -5,7 +5,7 @@ import (
 	"blacked/features/entries/enums"
 )
 
-type QueryPayload struct {
+type SearchPayload struct {
 	URL       string          `json:"url,omitempty"`
 	Exists    bool            `json:"exists"`
 	Hits      []entries.Hit   `json:"hits"`
@@ -13,9 +13,9 @@ type QueryPayload struct {
 	Count     int             `json:"count"`
 }
 
-func NewQueryPayload(hits []entries.Hit, queryType enums.QueryType) *QueryPayload {
+func NewSearchPayload(hits []entries.Hit, queryType enums.QueryType) *SearchPayload {
 	count := len(hits)
-	return &QueryPayload{
+	return &SearchPayload{
 		Exists:    count > 0,
 		Hits:      hits,
 		QueryType: queryType,

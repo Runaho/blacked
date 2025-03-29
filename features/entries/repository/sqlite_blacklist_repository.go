@@ -24,6 +24,60 @@ func NewSQLiteRepository(db *sql.DB) *SQLiteRepository {
 	return &SQLiteRepository{db: db}
 }
 
+func (r *SQLiteRepository) StreamEntries(ctx context.Context, out chan<- entries.EntryStream) error {
+	defer close(out)
+
+	query := `
+	SELECT
+        source_url,
+        GROUP_CONCAT(id, ',') as ids
+    FROM
+    	blacklist_entries
+    WHERE
+        deleted_at IS NULL
+    GROUP BY
+    	source_url
+    ORDER BY
+        COUNT(*) DESC;
+    `
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			var sourceURL string
+			var idsConcat string
+
+			if err := rows.Scan(&sourceURL, &idsConcat); err != nil {
+				return err
+			}
+
+			ids := []string{}
+			if idsConcat != "" {
+				ids = strings.Split(idsConcat, ",")
+			}
+
+			out <- entries.EntryStream{
+				SourceUrl: sourceURL,
+				IDs:       ids,
+			}
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // GetAllEntries retrieves all active blacklist entries from SQLite.
 func (r *SQLiteRepository) GetAllEntries(ctx context.Context) ([]entries.Entry, error) {
 	rows, err := r.db.QueryContext(ctx, "SELECT * FROM blacklist_entries WHERE deleted_at IS NULL") // WHERE clause to filter out deleted entries

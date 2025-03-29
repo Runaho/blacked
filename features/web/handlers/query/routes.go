@@ -8,12 +8,18 @@ import (
 )
 
 func MapQueryRoutes(e *echo.Echo, svc *services.QueryService) error {
-	handler := NewQueryHandler(svc)
+	handler := NewSearchHandler(svc)
 
-	g := e.Group("/query")
-	g.POST("/entry", handler.Query)
+	g := e.Group("/entry")
+	g.POST("/search", handler.Search)
+	g.GET("/:id", handler.QueryByID)
+	g.GET("", handler.QueryByURL)
 
-	log.Info().Msg("Query routes mapped successfully. at /query/entry")
+	log.Info().
+		Str("search an entry (POST)", "/search").
+		Str("get by id", "/entry/:id").
+		Str("get by url", "get /entry `param,query,form,json,xml key is 'url'").
+		Msg("Entry routes mapped successfully.")
 
 	return nil
 }

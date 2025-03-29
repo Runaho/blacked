@@ -8,6 +8,7 @@ import (
 
 // BlacklistRepository interface defines the data access methods for blacklist entries.
 type BlacklistRepository interface {
+	StreamEntries(ctx context.Context, out chan<- entries.EntryStream) error
 	GetAllEntries(ctx context.Context) ([]entries.Entry, error)
 	GetEntryByID(ctx context.Context, id string) (*entries.Entry, error)
 	GetEntriesBySource(ctx context.Context, source string) ([]entries.Entry, error)

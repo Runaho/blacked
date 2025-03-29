@@ -25,7 +25,8 @@ func (s *ServerConfig) GetServerURL() string {
 }
 
 type CacheSettings struct {
-	RefreshInterval time.Duration `koanf:"cache_refresh_interval" default:"5m"`
+	BadgerPath string `koanf:"badger_path" default:""`
+	InMemory   bool   `koanf:"in_memory" default:"true"`
 }
 
 type APPConfig struct {

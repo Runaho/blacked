@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"blacked/features/cache"
+	"blacked/features/entries/repository"
 	"blacked/features/web"
 	"blacked/internal/config"
 	"blacked/internal/db"
@@ -31,7 +33,24 @@ func serve(c *cli.Context) (err error) {
 		return err
 	}
 
+	_db, err := db.GetDB()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to connect to database")
+		return err
+	}
+
 	defer db.Close()
+
+	go func() {
+		log.Trace().Msg("Initializing badger cache")
+
+		repository := repository.NewSQLiteRepository(_db)
+		err = cache.SyncBlacklistsToBadger(c.Context, repository)
+		if err != nil {
+			log.Error().Err(err).Stack().Msg("Failed to sync blacklists to badger")
+		}
+		log.Debug().Msg("Badger cache initialized")
+	}()
 
 	server := graceful.WithDefaults(app.Echo.Server)
 	log.Info().Msgf("Starting server on %s", server.Addr)
