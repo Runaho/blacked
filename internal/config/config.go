@@ -27,6 +27,7 @@ func (s *ServerConfig) GetServerURL() string {
 type CacheSettings struct {
 	BadgerPath string `koanf:"badger_path" default:""`
 	InMemory   bool   `koanf:"in_memory" default:"true"`
+	UseBloom   bool   `koanf:"use_bloom" default:"true"`
 }
 
 type APPConfig struct {

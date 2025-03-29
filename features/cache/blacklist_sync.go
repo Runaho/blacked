@@ -3,6 +3,7 @@ package cache
 import (
 	"blacked/features/entries"
 	"blacked/features/entries/repository"
+	"blacked/internal/config"
 	"context"
 	"strings"
 
@@ -13,10 +14,10 @@ import (
 
 func SyncBlacklistsToBadger(ctx context.Context, repo repository.BlacklistRepository) error {
 	bdb := GetBadgerInstance()
+	count := 0
 
 	ch := make(chan entries.EntryStream)
 
-	// Add debug logging before starting
 	log.Debug().Msg("Starting to stream entries from repository")
 
 	go func() {
@@ -27,7 +28,6 @@ func SyncBlacklistsToBadger(ctx context.Context, repo repository.BlacklistReposi
 		log.Debug().Msg("Finished streaming entries")
 	}()
 
-	count := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -36,6 +36,14 @@ func SyncBlacklistsToBadger(ctx context.Context, repo repository.BlacklistReposi
 		case entry, ok := <-ch:
 			if !ok {
 				log.Debug().Int("processed_count", count).Msg("Finished syncing blacklists to Badger")
+
+				if config.GetConfig().Cache.UseBloom {
+					if err := BuildBloomFilterFromBadger(ctx, bdb, count); err != nil {
+						log.Error().Err(err).Msg("Failed to build bloom filter")
+						return err
+					}
+				}
+
 				return nil
 			}
 
@@ -51,7 +59,6 @@ func SyncBlacklistsToBadger(ctx context.Context, repo repository.BlacklistReposi
 			}
 		}
 	}
-
 }
 
 func UpsertEntryStream(bdb *badger.DB, entryStream entries.EntryStream) error {
