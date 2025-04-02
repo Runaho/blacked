@@ -3,6 +3,8 @@ package cache
 import (
 	"context"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/dgraph-io/badger/v4"
@@ -37,14 +39,17 @@ func BuildBloomFilterFromBadger(ctx context.Context, cacheDB *badger.DB, keyCoun
 
 	return PopulateBloomFilterFromBadger(ctx, cacheDB)
 }
-
 func PopulateBloomFilterFromBadger(ctx context.Context, cacheDB *badger.DB) error {
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Hour)
+	defer cancel()
+
 	bf, e := GetBloomFilter()
 	if e != nil {
 		return e
 	}
 
 	keyCount := 0
+	startTime := time.Now()
 
 	log.Info().Msg("Starting to populate bloom filter with Badger DB keys")
 
@@ -58,7 +63,6 @@ func PopulateBloomFilterFromBadger(ctx context.Context, cacheDB *badger.DB) erro
 		for it.Rewind(); it.Valid(); it.Next() {
 			select {
 			case <-ctx.Done():
-				log.Info().Int("keys_added", keyCount).Msg("Bloom filter population interrupted")
 				return ctx.Err()
 			default:
 				// Add key to bloom filter
@@ -68,7 +72,13 @@ func PopulateBloomFilterFromBadger(ctx context.Context, cacheDB *badger.DB) erro
 
 				// Log progress periodically
 				if keyCount%100000 == 0 {
-					log.Info().Int("keys_added", keyCount).Msg("Building bloom filter - progress")
+					elapsed := time.Since(startTime)
+					rate := float64(keyCount) / elapsed.Seconds()
+					log.Info().
+						Int("keys_added", keyCount).
+						Dur("elapsed", elapsed).
+						Float64("keys_per_second", rate).
+						Msg("Building bloom filter - progress")
 				}
 			}
 		}
@@ -76,14 +86,19 @@ func PopulateBloomFilterFromBadger(ctx context.Context, cacheDB *badger.DB) erro
 		return nil
 	})
 
-	fpRate := bloom.EstimateFalsePositiveRate(uint(keyCount), bf.Cap(), bf.K())
+	if err != nil {
+		log.Error().Err(err).Int("keys_processed", keyCount).Msg("Error populating bloom filter")
+		return fmt.Errorf("failed to populate bloom filter: %w", err)
+	}
 
+	duration := time.Since(startTime)
 	log.Info().
-		Int("total_keys_added", keyCount).
-		Float64("false_positive_rate", fpRate).
-		Msg("Completed building bloom filter from Badger DB keys")
+		Int("total_keys", keyCount).
+		Dur("duration", duration).
+		Float64("keys_per_second", float64(keyCount)/duration.Seconds()).
+		Msg("Bloom filter population completed")
 
-	return err
+	return nil
 }
 
 func CheckURL(url string) (bool, error) {

@@ -27,7 +27,7 @@ func TestParse(t *testing.T) {
 	startedAt := time.Now()
 
 	source := provider.Source()
-	name := provider.Name()
+	name := provider.GetName()
 	strProcessID := processID.String()
 
 	log.Info().Str("process_id", strProcessID).Str("source", source).Str("name", name).Time("starts", startedAt).Msg("start processing data")

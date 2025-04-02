@@ -4,6 +4,7 @@ import (
 	"blacked/features/entries"
 	"blacked/features/entries/repository"
 	"blacked/internal/config"
+	"blacked/internal/db"
 	"context"
 	"strings"
 
@@ -12,8 +13,61 @@ import (
 	"github.com/samber/lo"
 )
 
-func SyncBlacklistsToBadger(ctx context.Context, repo repository.BlacklistRepository) error {
-	bdb := GetBadgerInstance()
+var (
+	concurrencyLock = make(chan struct{}, 1)
+	queueLock       = make(chan struct{}, 1)
+)
+
+//  1. FireAndForgetSync is the entry point for the sync process.
+//     It tries to occupy the single "waiting" slot and spawns a goroutine
+//     that will block until it can become the active request (if/when the active one finishes).
+//     If the queue is full, it drops the request.
+//
+// This is a non-blocking function.
+func FireAndForgetSync() {
+	// Try to occupy the single "waiting" slot if the sync is already in progress
+	select {
+	case queueLock <- struct{}{}:
+		// We got into the queue. Now spawn a goroutine that will block until
+		// it can become the active request (if/when the active one finishes).
+		go runSyncWhenActive()
+	default:
+		// queueLock was full => there's already 1 active + 1 waiting => drop
+		return
+	}
+}
+
+// runSyncWhenActive attempts to grab concurrencyLock (the “active slot”).
+// If an active sync is running, it blocks until that finishes.
+func runSyncWhenActive() {
+	// Block here until we can place a token in concurrencyLock
+	// => i.e. until the currently-running request (if any) completes.
+	concurrencyLock <- struct{}{}
+
+	// Now we are the active worker => remove ourselves from the queue
+	<-queueLock
+
+	// Actually run the sync
+	SyncBlacklistsToBadger(context.Background()) // or pass a context if you prefer
+
+	// Release the active slot so the next “waiting” request can proceed
+	<-concurrencyLock
+}
+
+func SyncBlacklistsToBadger(ctx context.Context) error {
+	_db, err := db.GetDB()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to connect to database")
+		return err
+	}
+
+	repo := repository.NewSQLiteRepository(_db)
+	bdb, err := GetBadgerInstance()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to get badger instance")
+		return err
+	}
+
 	count := 0
 
 	ch := make(chan entries.EntryStream)

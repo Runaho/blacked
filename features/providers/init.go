@@ -1,39 +1,41 @@
 package providers
 
 import (
+	"blacked/features/providers/base"
+	"slices"
 	"sync"
 )
 
 var (
 	once sync.Once
-	p    *Providers
+	p    Providers
 )
 
-func InitProviders() (providers *Providers, err error) {
+func InitProviders() (providers Providers, err error) {
 	once.Do(func() {
 		providers, err = NewProviders()
-		p = providers
+		p = base.GetRegisteredProviders()
 	})
 	return p, err
 }
 
 func GetProviders() *Providers {
-	return p
+	return &p
 }
 
-func AppendProvider(provider Provider) {
-	providers := *p
+func AppendProvider(provider base.Provider) {
+	providers := p
 	providers = append(providers, provider)
-	p = &providers
+	p = providers
 }
 
-func RemoveProvider(provider Provider) {
-	providers := *p
+func RemoveProvider(provider base.Provider) {
+	providers := p
 	for i, p := range providers {
 		if p == provider {
-			providers = append(providers[:i], providers[i+1:]...)
+			providers = slices.Delete(providers, i, i+1)
 			break
 		}
 	}
-	p = &providers
+	p = providers
 }

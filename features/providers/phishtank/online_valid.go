@@ -1,30 +1,78 @@
 package phishtank
 
-// NOTE: This is not implement because we cannot access the source. Without an account.
 import (
+	"blacked/features/entries"
+	"blacked/features/providers/base"
+	"blacked/internal/config"
+	"encoding/json"
 	"io"
 
+	"github.com/gocolly/colly/v2"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 )
 
-type OnlineValid struct{}
-
-func (o *OnlineValid) Name() string {
-	return "PHISHTANK_ONLINE_VALID"
+type PhishTankEntry struct {
+	URL        string `json:"url"`
+	Verified   bool   `json:"verified"`
+	VerifyDate string `json:"verification_time"`
 }
 
-func (o *OnlineValid) Source() string {
-	return "http://data.phishtank.com/data/online-valid.json.bz2"
-}
+func NewPhishTankProvider(settings *config.CollectorConfig, collyClient *colly.Collector) base.Provider {
+	const (
+		providerName = "PHISHTANK"
+		providerURL  = "https://data.phishtank.com/data/online-valid.json"
+		cronSchedule = "45 */6 * * *" // Every 6 hours at 45 minutes past the hour
+	)
 
-func (o *OnlineValid) Fetch() (io.Reader, error) {
-	panic("not implemented")
-}
+	parseFunc := func(data io.Reader) ([]entries.Entry, error) {
+		var result []entries.Entry
+		var phishEntries []PhishTankEntry
+		id := uuid.New().String()
 
-func (o *OnlineValid) Parse(data io.Reader) error {
-	panic("not implemented")
-}
+		// Parse JSON
+		decoder := json.NewDecoder(data)
+		if err := decoder.Decode(&phishEntries); err != nil {
+			log.Error().Err(err).Msg("error decoding PhishTank JSON")
+			return nil, err
+		}
 
-func (o *OnlineValid) SetProcessID(id uuid.UUID) {
-	panic("not implemented")
+		// Process each entry
+		for _, phishEntry := range phishEntries {
+			// Skip unverified entries
+			if !phishEntry.Verified {
+				continue
+			}
+
+			// Create a new entry
+			entry := entries.NewEntry().
+				WithSource(providerName).
+				WithProcessID(id).
+				WithCategory("phishing")
+
+			// SetURL may fail, so handle it separately
+			if err := entry.SetURL(phishEntry.URL); err != nil {
+				log.Error().Err(err).Msgf("error setting URL: %s", phishEntry.URL)
+				continue
+			}
+
+			result = append(result, *entry)
+		}
+
+		return result, nil
+	}
+
+	provider := base.NewBaseProvider(
+		providerName,
+		providerURL,
+		settings,
+		collyClient,
+		parseFunc,
+	)
+
+	provider.
+		SetCronSchedule(cronSchedule).
+		Register()
+
+	return provider
 }

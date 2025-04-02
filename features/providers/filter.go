@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"blacked/features/providers/base"
 	"fmt"
 
 	"github.com/rs/zerolog/log"
@@ -9,9 +10,9 @@ import (
 // FilterProviders filters the provider list based on the selected providers.
 func (p *Providers) FilterProviders(selectedProviders []string) (*Providers, error) {
 	filteredProviders := Providers{}
-	providerMap := make(map[string]Provider)
+	providerMap := make(map[string]base.Provider)
 	for _, prov := range *p {
-		providerMap[prov.Name()] = prov
+		providerMap[prov.GetName()] = prov
 	}
 
 	for _, providerName := range selectedProviders {
@@ -38,13 +39,13 @@ func (p *Providers) RemoveProviders(providersToRemove []string) error {
 		}
 		RemoveProvider(provider) // Use the global RemoveProvider func in init.go to modify global provider list
 	}
-	log.Info().Msgf("Providers after removing: %v", p.Names())
+	log.Info().Msgf("Providers after removing: %v", p.GetNames())
 	return nil
 }
 
-func (p *Providers) FindProviderByName(name string) (Provider, error) {
+func (p *Providers) FindProviderByName(name string) (base.Provider, error) {
 	for _, provider := range *p {
-		if provider.Name() == name {
+		if provider.GetName() == name {
 			return provider, nil
 		}
 	}

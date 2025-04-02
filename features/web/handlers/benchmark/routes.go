@@ -1,3 +1,5 @@
+// Created via Claude 3.7 Sonnet
+
 package benchmark
 
 import (

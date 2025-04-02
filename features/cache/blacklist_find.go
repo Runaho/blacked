@@ -15,7 +15,10 @@ var (
 )
 
 func SearchBlacklistEntryStream(sourceUrl string) (entries.EntryStream, error) {
-	bdb := GetBadgerInstance()
+	bdb, err := GetBadgerInstance()
+	if err != nil {
+		return entries.EntryStream{}, err
+	}
 
 	if config.GetConfig().Cache.UseBloom {
 		isLikely, err := CheckURL(sourceUrl)
@@ -31,7 +34,7 @@ func SearchBlacklistEntryStream(sourceUrl string) (entries.EntryStream, error) {
 
 	var entryStream entries.EntryStream
 
-	err := bdb.View(func(txn *badger.Txn) error {
+	err = bdb.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(sourceUrl))
 		if err != nil {
 			return err

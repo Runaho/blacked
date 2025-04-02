@@ -28,10 +28,15 @@ var (
 
 // Application holds our Echo instance, Config, Logger, and Services.
 type Application struct {
-	Echo     *echo.Echo
-	config   *config.ServerConfig
-	logger   *lecho.Logger
-	services *Services
+	Echo      *echo.Echo
+	config    *config.ServerConfig
+	logger    *lecho.Logger
+	services  *Services
+	providers *providers.Providers
+}
+
+func (app *Application) GetProviders() *providers.Providers {
+	return app.providers
 }
 
 // GetApplication retrieves the singleton instance of Application.
@@ -76,6 +81,8 @@ func NewApplication(cfg *config.ServerConfig) (*Application, error) {
 			return
 		}
 
+		app.providers = providers.GetProviders()
+
 		if err := app.configureMetricCollector(); err != nil {
 			initErr = fmt.Errorf("failed to configure metric collector: %w", err)
 			log.Error().Err(initErr).Msg("Metric collector configuration error")
@@ -89,8 +96,7 @@ func NewApplication(cfg *config.ServerConfig) (*Application, error) {
 }
 
 func (app *Application) configureMetricCollector() error {
-	providers := providers.GetProviders().Names()
-	collector.NewMetricsCollector(providers)
+	collector.NewMetricsCollector(app.providers.GetNames())
 
 	mc, err := collector.GetMetricsCollector()
 	if err != nil {

@@ -7,6 +7,8 @@ import (
 
 	"github.com/knadh/koanf/v2"
 
+	"slices"
+
 	"github.com/creasty/defaults"
 	"github.com/knadh/koanf/parsers/dotenv"
 	"github.com/knadh/koanf/parsers/toml"
@@ -49,11 +51,11 @@ func InitConfig() error {
 
 		configFile := GetEnv("CONFIG_FILE", ".env.toml")
 
-		if err := _k.Load(file.Provider("config/"+configFile), toml.Parser()); err != nil {
+		if err := _k.Load(file.Provider(""+configFile), toml.Parser()); err != nil {
 			log.Error().Msgf("error loading config [TOML]: %v", err)
 		}
 
-		_k.Load(file.Provider("config/.env"), dotenv.Parser())
+		_k.Load(file.Provider(".env"), dotenv.Parser())
 
 		if _err := defaults.Set(_config); _err != nil {
 			err = _err
@@ -81,4 +83,29 @@ func IsDevMode() bool {
 	}
 
 	return (_config.APP.Environtment == "development")
+}
+
+// Returns the cron schedule for the provider.
+// If the provider is not enabled, it returns an empty string.
+func (c *Config) GetProviderCronSchedule(providerName string) (cronSchedule string, isExist bool) {
+	if c.Provider.CronSchedules == nil {
+		return "", false
+	}
+
+	if schedule, exists := c.Provider.CronSchedules[providerName]; exists {
+		return schedule, true
+	}
+
+	return "", false
+}
+
+// IsProviderEnabled checks if the provider is enabled in the configuration.
+// If the provider is not enabled, it returns false.
+// If the list is not defined, it returns true.
+func (c *ProviderConfig) IsProviderEnabled(providerName string) bool {
+	if c.EnabledProviders == nil {
+		return true
+	}
+
+	return slices.Contains(c.EnabledProviders, providerName)
 }

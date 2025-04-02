@@ -2,6 +2,7 @@ package main
 
 import (
 	"blacked/cmd"
+	"blacked/features/cache"
 	"blacked/features/providers"
 	"blacked/internal/config"
 	"blacked/internal/db"
@@ -19,6 +20,9 @@ import (
 )
 
 func main() {
+	defer db.Close()
+	defer cache.CloseBadger()
+
 	if err := app().Run(os.Args); err != nil {
 		stdlog.Fatalf("error running the app: %v", err)
 	}
@@ -54,13 +58,21 @@ func before(c *cli.Context) error {
 	log.Debug().Msg("Configuration loaded")
 
 	log.Trace().Msg("Initializing database connection")
-
 	_, err := db.GetDB()
 	if err != nil {
 		log.Error().Err(err).Stack().Msg("Failed to connect to database")
 		return err
 	}
+
 	log.Debug().Msg("Database connection established")
+
+	log.Trace().Msg("Initializing Badger cache")
+	if err := cache.InitializeBadger(); err != nil {
+		log.Error().Err(err).Stack().Msg("Failed to initialize Badger cache")
+		return err
+	}
+
+	log.Debug().Msg("Badger cache initialized")
 
 	log.Trace().Msg("Initializing providers")
 	_, err = providers.InitProviders()

@@ -36,11 +36,17 @@ type APPConfig struct {
 }
 
 type CollectorConfig struct {
-	MaxWorkers     int    `koanf:"max_workers" default:"10"`
-	BatchSize      int    `koanf:"batch_size" default:"100"`
-	Cron           string `koanf:"cron" default:"0 0 0 * * *"`
-	StoreResponses bool   `koanf:"store_responses" default:"true"`
-	StorePath      string `koanf:"store_path" default:"./responses"`
+	MaxWorkers     int           `koanf:"max_workers" default:"10"`
+	BatchSize      int           `koanf:"batch_size" default:"100"`
+	CronSchedule   string        `koanf:"cron_schedule" default:"0 0 0 * * *"`
+	StoreResponses bool          `koanf:"store_responses" default:"true"`
+	StorePath      string        `koanf:"store_path" default:"./responses"`
+	RateLimit      time.Duration `koanf:"rate_limit" default:"10s"`
+}
+
+type ProviderConfig struct {
+	EnabledProviders []string          `koanf:"enabled_providers"` // List of enabled providers if is empty all providers are enabled
+	CronSchedules    map[string]string `koanf:"provider_crons"`    // Provider-specific cron schedules
 }
 
 type CollyConfig struct {
@@ -57,4 +63,5 @@ type Config struct {
 	Cache     CacheSettings
 	Collector CollectorConfig
 	Colly     CollyConfig
+	Provider  ProviderConfig
 }

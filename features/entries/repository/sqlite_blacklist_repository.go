@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -16,7 +17,8 @@ import (
 
 // SQLiteRepository is the concrete implementation of BlacklistRepository using SQLite.
 type SQLiteRepository struct {
-	db *sql.DB
+	db        *sql.DB
+	writeLock sync.Mutex // Add this
 }
 
 // NewSQLiteRepository creates a new SQLiteRepository instance.
@@ -284,6 +286,9 @@ func (r *SQLiteRepository) GetEntriesByCategory(ctx context.Context, category st
 
 // SaveEntry performs UPSERT (Insert or Update) for a single entries.Entry.
 func (r *SQLiteRepository) SaveEntry(ctx context.Context, entry entries.Entry) error {
+	r.writeLock.Lock()
+	defer r.writeLock.Unlock()
+
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction for SaveEntry (UPSERT): %w", err)
@@ -314,9 +319,10 @@ func (r *SQLiteRepository) SaveEntry(ctx context.Context, entry entries.Entry) e
 	)
 
 	if err != nil {
-		return fmt.Errorf("failed to UPSERT entry to SQLite: %w", err)
+		// Consider logging the specific entry details here if needed
+		log.Error().Err(err).Str("entry_id", entry.ID).Str("source_url", entry.SourceURL).Msg("Failed to UPSERT entry")
+		return err
 	}
-
 	return tx.Commit()
 }
 
@@ -327,6 +333,8 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []entri
 	if len(entries) == 0 {
 		return nil // Nothing to do if batch is empty
 	}
+	r.writeLock.Lock()
+	defer r.writeLock.Unlock()
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -365,7 +373,8 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []entri
 			entry.CreatedAt, entry.UpdatedAt,
 		)
 		if err != nil {
-			return fmt.Errorf("error executing batch insert for entry ID %s: %w", entry.ID, err)
+			log.Error().Err(err).Str("entry_id", entry.ID).Str("source_url", entry.SourceURL).Msg("Error executing batch statement for entry")
+			return err
 		}
 	}
 
@@ -441,14 +450,18 @@ func (r *SQLiteRepository) SoftDeleteEntryByID(ctx context.Context, id string) e
 func (r *SQLiteRepository) QueryLink(ctx context.Context, link string) (
 	hits []entries.Hit,
 	err error) {
-	parsedURL, err := url.Parse(link)
-	if err != nil {
-		return nil, fmt.Errorf("invalid URL: %w", err)
-	}
 
 	normalizedLink := utils.NormalizeURL(link)
+	parsedURL, parseErr := url.Parse(normalizedLink)
+	if parseErr != nil {
+		// --- URL Parsing Failed ---
+		log.Warn().Err(parseErr).Str("raw_link", link).Msg("Failed to parse input URL, attempting exact match query only")
+		hits = append(hits, r.queryExactURLMatch(ctx, normalizedLink)...)
+		return hits, nil
+	}
+
 	host := parsedURL.Hostname()
-	domain := "" // Extract domain here.  You'll need to use your extractDomain function.
+	domain := ""
 
 	d, _, err := utils.ExtractDomainAndSubDomains(parsedURL.Host)
 

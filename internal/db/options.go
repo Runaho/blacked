@@ -1,13 +1,9 @@
 package db
 
 type dbOptions struct {
-	isTesting  bool
-	isReadOnly bool
-	inMemory   bool
-}
-
-func (o *dbOptions) GetIsReadOnly() bool {
-	return o.isReadOnly
+	isTesting   bool
+	isInWALMode bool
+	inMemory    bool
 }
 
 func (o *dbOptions) GetIsTesting() bool {
@@ -26,14 +22,14 @@ func WithTesting(state bool) Option {
 	}
 }
 
-func WithReadOnly(state bool) Option {
-	return func(opts *dbOptions) {
-		opts.isReadOnly = state
-	}
-}
-
 func WithInMemory(state bool) Option {
 	return func(opts *dbOptions) {
 		opts.inMemory = state
+	}
+}
+
+func WithWALMode(state bool) Option {
+	return func(opts *dbOptions) {
+		opts.isInWALMode = state
 	}
 }

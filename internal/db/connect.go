@@ -2,7 +2,6 @@ package db
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"os"
 
@@ -56,9 +55,8 @@ func initDB(db *sql.DB) error {
 
 func EnsureDBSchemaExists(opts ...Option) error {
 	baseOpts := dbOptions{
-		isTesting:  false,
-		isReadOnly: false,
-		inMemory:   false,
+		isTesting: false,
+		inMemory:  false,
 	}
 
 	for _, opt := range opts {
@@ -68,7 +66,6 @@ func EnsureDBSchemaExists(opts ...Option) error {
 	log.
 		Trace().
 		Bool("is_testing", baseOpts.isTesting).
-		Bool("is_read_only", baseOpts.isReadOnly).
 		Bool("in_memory", baseOpts.inMemory).
 		Msg("ensureDBSchemaExists: Checking/Ensuring DB Schema")
 
@@ -92,7 +89,7 @@ func EnsureDBSchemaExists(opts ...Option) error {
 		return nil
 	}
 
-	dbRW, err := Connect(WithReadOnly(false), WithInMemory(baseOpts.inMemory), WithTesting(baseOpts.isTesting))
+	dbRW, err := Connect(WithInMemory(baseOpts.inMemory), WithTesting(baseOpts.isTesting))
 	if err != nil {
 		log.Error().Err(err).Stack().Msg("Failed to open RW connection for schema creation.")
 		return err
@@ -102,26 +99,24 @@ func EnsureDBSchemaExists(opts ...Option) error {
 	log.Trace().Msg("RW connection opened for schema check/initialization.")
 
 	log.Trace().Msg("Schema check/initialization completed, RW connection closed.")
+
+	if err = initDB(dbRW); err != nil {
+		log.Error().Err(err).Stack().Msg("Failed to initialize schema.")
+		return err
+	}
+
 	return nil
 }
 
 func Connect(options ...Option) (*sql.DB, error) {
 	opts := dbOptions{
-		isTesting:  false,
-		isReadOnly: false,
-		inMemory:   false,
+		isTesting:   false,
+		inMemory:    false,
+		isInWALMode: true,
 	}
-
 	for _, opt := range options {
 		opt(&opts)
 	}
-
-	log.
-		Trace().
-		Bool("is_testing", opts.isTesting).
-		Bool("is_read_only", opts.isReadOnly).
-		Bool("in_memory", opts.inMemory).
-		Msg("Connect: Applying DB options")
 
 	var dsn string
 	switch {
@@ -133,14 +128,17 @@ func Connect(options ...Option) (*sql.DB, error) {
 		dsn = dbName
 	}
 
-	// Append read-only access mode if requested for file-based DBs
-	if opts.isReadOnly && !opts.inMemory {
-		dsn = fmt.Sprintf("%s?access_mode=read_only", dsn)
-	} else if opts.isReadOnly && opts.inMemory {
-		return nil, errors.New("read-only mode is not supported with in-memory database")
-	}
+	// IMPORTANT: Enable WAL mode if you want better concurrency (readers).
+	// This must be added to the DSN or executed via a PRAGMA after open.
+	//
+	// If you want WAL mode for a file-based DB, you append: "?_journal_mode=WAL"
+	// or do something like this:
+	// dsn = dsn + "?_journal_mode=WAL"
+	//
 
-	log.Trace().Str("dsn", dsn).Msg("Opening SQLite database connection")
+	if opts.isInWALMode {
+		dsn = dsn + "?_journal_mode=WAL"
+	}
 
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
@@ -152,15 +150,9 @@ func Connect(options ...Option) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to ping sqlite database: %w", err)
 	}
 
-	// Initialize schema only for read-write connections (default)
-	if !opts.isReadOnly {
-		if err := initDB(db); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("failed to initialize database schema: %w", err)
-		}
-	} else {
-		log.Trace().Msg("Skipping schema initialization for read-only connection.")
-	}
+	// If your app is long-running, you can set how long to keep idle conns:
+	// db.SetConnMaxIdleTime(5 * time.Minute)
+	// db.SetConnMaxLifetime(30 * time.Minute)
 
 	return db, nil
 }
