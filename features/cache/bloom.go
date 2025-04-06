@@ -74,7 +74,7 @@ func PopulateBloomFilterFromBadger(ctx context.Context, cacheDB *badger.DB) erro
 				if keyCount%100000 == 0 {
 					elapsed := time.Since(startTime)
 					rate := float64(keyCount) / elapsed.Seconds()
-					log.Info().
+					log.Trace().
 						Int("keys_added", keyCount).
 						Dur("elapsed", elapsed).
 						Float64("keys_per_second", rate).
