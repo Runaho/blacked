@@ -19,23 +19,23 @@ var (
 func InitializeRunner(providers []base.Provider) (*Runner, error) {
 	initOnce.Do(func() {
 		// Create runner
-		globalRunner, err := NewRunner()
+		_globalRunner, err := NewRunner()
 		if err != nil {
 			initError = fmt.Errorf("failed to create runner: %w", err)
 			return
 		}
 
 		// Register all providers
-		if err := registerAllProviders(globalRunner, providers); err != nil {
+		if err := registerAllProviders(_globalRunner, providers); err != nil {
 			initError = fmt.Errorf("failed to register providers: %w", err)
 			return
 		}
 
 		// Start the scheduler
+
+		globalRunner = _globalRunner
 		globalRunner.Start()
 		log.Info().Msg("Global scheduler runner initialized and started")
-
-		return
 	})
 
 	return globalRunner, initError
@@ -66,13 +66,4 @@ func ShutdownRunner(ctx context.Context) error {
 		return nil
 	}
 	return globalRunner.Stop(ctx)
-}
-
-// RunProviderNow provides a convenient way to run a provider on demand
-func RunProviderNow(providerName string) error {
-	runner, err := GetRunner()
-	if err != nil {
-		return err
-	}
-	return runner.RunProviderImmediately(providerName)
 }

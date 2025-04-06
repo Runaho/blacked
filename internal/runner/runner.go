@@ -54,6 +54,7 @@ func NewRunner() (*Runner, error) {
 func (r *Runner) RegisterProvider(provider base.Provider, cronSchedule string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	providerName := provider.GetName()
 
 	// If provider already registered, return error
@@ -115,8 +116,9 @@ func (r *Runner) RegisterProvider(provider base.Provider, cronSchedule string) e
 // executeProvider is the function that gets called on schedule
 func (r *Runner) executeProvider(providerName string) {
 	r.mu.RLock()
+	defer r.mu.RUnlock()
+
 	provider, exists := r.providers[providerName]
-	r.mu.RUnlock()
 
 	if !exists {
 		log.Error().Str("provider", providerName).Msg("Provider not found in registry")
@@ -146,38 +148,39 @@ func (r *Runner) Stop(ctx context.Context) error {
 	return r.scheduler.Shutdown()
 }
 
-// RunProviderImmediately executes a provider right now without waiting for schedule
-func (r *Runner) RunProviderImmediately(providerName string) error {
-	r.mu.RLock()
-	provider, exists := r.providers[providerName]
-	r.mu.RUnlock()
-
-	if !exists {
-		return fmt.Errorf("provider %s not registered", providerName)
-	}
-
-	err := ExecuteProvider(context.Background(), provider)
-	if err != nil {
-		log.Error().
-			Err(err).
-			Str("provider", providerName).
-			Msg("Error executing provider immediately")
-	}
-
-	return err
-}
-
 // GetNextRunTime returns the next scheduled run for a provider
 func (r *Runner) GetNextRunTime(providerName string) (time.Time, error) {
 	r.mu.RLock()
+	defer r.mu.RUnlock()
+
 	job, exists := r.jobs[providerName]
-	r.mu.RUnlock()
 
 	if !exists {
 		return time.Time{}, fmt.Errorf("no job found for provider %s", providerName)
 	}
 
 	return job.NextRun()
+}
+
+func (r *Runner) runJob(providerName string) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	job, exists := r.jobs[providerName]
+
+	if !exists {
+		log.Error().Str("provider", providerName).Msg("Job not found")
+		return
+	}
+
+	if err := job.RunNow(); err != nil {
+		log.Error().Err(err).Str("provider", providerName).Msg("Error running job")
+	}
+}
+
+func (r *Runner) RunProviderJobsNow() {
+	for providerName := range r.jobs {
+		r.runJob(providerName)
+	}
 }
 
 // GetAllNextRunTimes returns all scheduled run times by provider
