@@ -47,6 +47,7 @@ type CollectorConfig struct {
 type ProviderConfig struct {
 	EnabledProviders []string          `koanf:"enabled_providers"` // List of enabled providers if is empty all providers are enabled
 	CronSchedules    map[string]string `koanf:"provider_crons"`    // Provider-specific cron schedules
+	RunAtStartup     bool              `koanf:"run_at_startup" default:"true"`
 }
 
 type CollyConfig struct {
