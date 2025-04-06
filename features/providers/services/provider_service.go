@@ -81,10 +81,12 @@ func (s *ProviderProcessService) StartProcess(ctx context.Context, providersToPr
 func (s *ProviderProcessService) StartProcessAsync(ctx context.Context, providersToProcess []string, providersToRemove []string) (processID string, err error) {
 	isRunning, err := s.IsProcessRunning(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to check if process is running: %w", err)
+		log.Error().Err(err).Msg("Failed to check if process is running")
+		return "", err
 	}
 	if isRunning {
-		return "", fmt.Errorf("another process is already running")
+		log.Error().Msg("Another process is already running")
+		return "", err
 	}
 
 	processUUID := uuid.New()
@@ -99,10 +101,14 @@ func (s *ProviderProcessService) StartProcessAsync(ctx context.Context, provider
 	}
 
 	if err := s.repo.InsertProcess(ctx, status); err != nil {
-		return "", fmt.Errorf("failed to insert process status: %w", err)
+		log.Error().Err(err).Msg("Failed to insert process status")
+		return "", err
 	}
 
-	err = providers.GetProviders().Processor(providersToProcess, providersToRemove)
+	// Get the providers
+	allProviders := providers.GetProviders()
+	err = allProviders.Processor(providersToProcess, providersToRemove)
+
 	if err != nil {
 		status.Status = "failed"
 		status.EndTime = time.Now()
@@ -111,7 +117,8 @@ func (s *ProviderProcessService) StartProcessAsync(ctx context.Context, provider
 		status.Status = "completed"
 		status.EndTime = time.Now()
 	}
-	if updateErr := s.repo.UpdateProcessStatus(context.Background(), status); updateErr != nil { // Use backgroundCtx here
+
+	if updateErr := s.repo.UpdateProcessStatus(ctx, status); updateErr != nil {
 		log.Error().Err(updateErr).Str("process_id", processIDStr).Msg("Failed to update process status after completion")
 	}
 

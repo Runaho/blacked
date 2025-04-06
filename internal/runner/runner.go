@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"blacked/features/providers"
 	"blacked/features/providers/base"
 
 	"github.com/go-co-op/gocron/v2"
@@ -129,7 +130,11 @@ func (r *Runner) executeProvider(providerName string) {
 		Str("provider", providerName).
 		Msg("Starting scheduled execution of provider")
 
-	if err := ExecuteProvider(context.Background(), provider); err != nil {
+	// Execute the provider with immediate cache updates
+	if err := ExecuteProvider(context.Background(), provider, providers.ProcessOptions{
+		UpdateCacheMode: providers.UpdateCacheImmediate, // Use immediate updates for scheduled runs
+		TrackMetrics:    true,
+	}); err != nil {
 		log.Error().
 			Err(err).
 			Str("provider", providerName).
@@ -178,8 +183,27 @@ func (r *Runner) runJob(providerName string) {
 }
 
 func (r *Runner) RunProviderJobsNow() {
-	for providerName := range r.jobs {
-		r.runJob(providerName)
+	r.mu.RLock()
+	providersList := make([]base.Provider, 0, len(r.providers))
+
+	// Collect all providers first
+	for _, provider := range r.providers {
+		providersList = append(providersList, provider)
+	}
+	r.mu.RUnlock()
+
+	if len(providersList) == 0 {
+		log.Info().Msg("No providers to run at startup")
+		return
+	}
+
+	log.Info().Int("count", len(providersList)).Msg("Running all providers at startup in bulk mode")
+
+	// Execute all providers in bulk with a single cache update at the end
+	if err := ExecuteProviders(context.Background(), providersList); err != nil {
+		log.Error().Err(err).Msg("Error executing providers in bulk at startup")
+	} else {
+		log.Info().Msg("Successfully executed all providers at startup")
 	}
 }
 

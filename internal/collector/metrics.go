@@ -25,14 +25,14 @@ type MetricsCollector struct {
 	syncSuccessCount *prometheus.CounterVec      // Counter for successful syncs per provider
 	syncFailedCount  *prometheus.CounterVec      // Counter for failed syncs per provider
 	syncDuration     *prometheus.GaugeVec        // Gauge for sync duration (or use Histogram/Summary for more stats)
-	entriesInserted  *prometheus.CounterVec      // Counter for inserted entries per provider
+	entriesSaved     *prometheus.CounterVec      // Counter for saved entries per provider
 	entriesDeleted   *prometheus.CounterVec      // Counter for deleted entries per provider
 	entriesProcessed *prometheus.GaugeVec        // Gauge for total processed entries
 
-	ImportRequestsTotal  *prometheus.CounterVec // Counter for total import requests received
-	EntriesParsedTotal   *prometheus.CounterVec // Counter for total blacklist entries parsed from
-	EntriesInsertedTotal *prometheus.CounterVec // Counter for total blacklist entries inserted from import
-	ImportErrorsTotal    *prometheus.CounterVec // Counter for total import requests that resulted in errors
+	ImportRequestsTotal *prometheus.CounterVec // Counter for total import requests received
+	EntriesParsedTotal  *prometheus.CounterVec // Counter for total blacklist entries parsed from
+	EntriesSavedTotal   *prometheus.CounterVec // Counter for total blacklist entries saved from import
+	ImportErrorsTotal   *prometheus.CounterVec // Counter for total import requests that resulted in errors
 }
 
 func GetMetricsCollector() (*MetricsCollector, error) {
@@ -68,9 +68,9 @@ func NewMetricsCollector(providerNames []string) *MetricsCollector {
 				Help: "Duration of blacklist sync operations in seconds.",
 			}, []string{"provider"}),
 
-			entriesInserted: promauto.NewCounterVec(prometheus.CounterOpts{
-				Name: "blacklist_entries_inserted_total",
-				Help: "Total number of blacklist entries inserted during sync by provider.",
+			entriesSaved: promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: "blacklist_entries_saved_total",
+				Help: "Total number of blacklist entries saved during sync by provider.",
 			}, []string{"provider"}),
 
 			entriesDeleted: promauto.NewCounterVec(prometheus.CounterOpts{
@@ -93,9 +93,9 @@ func NewMetricsCollector(providerNames []string) *MetricsCollector {
 				Help: "Total number of blacklist entries parsed from import requests.",
 			}, []string{"provider"}),
 
-			EntriesInsertedTotal: promauto.NewCounterVec(prometheus.CounterOpts{
-				Name: "blacklist_json_entries_inserted_total",
-				Help: "Total number of blacklist entries inserted into database from import requests.",
+			EntriesSavedTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: "blacklist_json_entries_saved_total",
+				Help: "Total number of blacklist entries saved into database from import requests.",
 			}, []string{"provider"}),
 
 			ImportErrorsTotal: promauto.NewCounterVec(prometheus.CounterOpts{
@@ -150,9 +150,9 @@ func (mc *MetricsCollector) SetSyncFailed(providerName string, err error, durati
 	// consider logging the error message separately if needed for detailed error analysis.
 }
 
-// IncrementInsertedCount - Update Prometheus counter
-func (mc *MetricsCollector) IncrementInsertedCount(providerName string, count int) {
-	mc.entriesInserted.With(prometheus.Labels{"provider": providerName}).Add(float64(count))
+// IncrementSavedCount - Update Prometheus counter
+func (mc *MetricsCollector) IncrementSavedCount(providerName string, count int) {
+	mc.entriesSaved.With(prometheus.Labels{"provider": providerName}).Add(float64(count))
 }
 
 // IncrementDeletedCount - Update Prometheus counter
@@ -173,8 +173,8 @@ func (mc *MetricsCollector) IncrementEntriesParsed(providerName string, count in
 	mc.EntriesParsedTotal.With(prometheus.Labels{"provider": providerName}).Add(float64(count))
 }
 
-func (mc *MetricsCollector) IncrementEntriesInserted(providerName string, count int) {
-	mc.EntriesInsertedTotal.With(prometheus.Labels{"provider": providerName}).Add(float64(count))
+func (mc *MetricsCollector) IncrementEntriesSaved(providerName string, count int) {
+	mc.EntriesSavedTotal.With(prometheus.Labels{"provider": providerName}).Add(float64(count))
 }
 
 func (mc *MetricsCollector) IncrementImportErrors(providerName string) {

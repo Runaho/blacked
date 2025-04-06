@@ -171,18 +171,9 @@ func (b *BaseProvider) Parse(data io.Reader) error {
 	startsAt := time.Now()
 	processID := b.GetProcessID()
 
-	mc, err := collector.GetMetricsCollector()
-	if mc != nil && err == nil {
-		mc.SetSyncRunning(b.Name)
-	}
-
 	entries, err := b.ParseFunction(data)
 	if err != nil {
-		wrappedErr := fmt.Errorf("%w: %v", ErrParsingData, err)
-		if mc != nil {
-			mc.SetSyncFailed(b.Name, wrappedErr, time.Since(startsAt))
-		}
-		return wrappedErr
+		return fmt.Errorf("%w: %v", ErrParsingData, err)
 	}
 
 	totalProcessed := 0
@@ -191,21 +182,19 @@ func (b *BaseProvider) Parse(data io.Reader) error {
 
 		batch := entries[i:end]
 		if err := b.Repository.BatchSaveEntries(ctx, batch); err != nil {
-			wrappedErr := fmt.Errorf("%w: %v", ErrBatchSaving, err)
-			if mc != nil {
-				mc.SetSyncFailed(b.Name, wrappedErr, time.Since(startsAt))
-			}
-			return wrappedErr
+			return fmt.Errorf("%w: %v", ErrBatchSaving, err)
 		}
 
 		totalProcessed += len(batch)
+
+		mc, _ := collector.GetMetricsCollector()
 		if mc != nil {
-			mc.IncrementInsertedCount(b.Name, len(batch))
+			mc.IncrementSavedCount(b.Name, len(batch))
 		}
 	}
 
+	mc, _ := collector.GetMetricsCollector()
 	if mc != nil {
-		mc.SetSyncSuccess(b.Name, time.Since(startsAt))
 		mc.SetTotalProcessed(b.Name, totalProcessed)
 	}
 
