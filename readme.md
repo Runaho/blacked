@@ -1,290 +1,315 @@
-# Blacked
+# 🛡️ Blacked
 
-Blacked is a blacklist aggregation and query service written in Go. It fetches, parses, and stores blacklist entries from various providers, allowing users to query entries by URL. It provides both a command-line interface (CLI) and a web API for interaction.
+<div align="center">
+  <img src="https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go 1.24+"/>
+  <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License: MIT"/>
+  <img src="https://img.shields.io/badge/API-REST-green?style=for-the-badge" alt="API: REST"/>
+</div>
 
-Goal is to be fast and easy to deploy like one executable and embeded db. Embeded software is a goal here so CLI & API first development approach would be appreciated.
+<br>
 
-## Features
+**Blacked** is a high-performance blacklist aggregator and query service built in Go. It efficiently collects blacklist data from various online sources, stores it using modern caching techniques, and provides blazing-fast query capabilities via both CLI and Web API interfaces.
 
-*   **Blacklist Aggregation:**  Fetches and processes blacklist entries from multiple providers like OISD, OpenPhish, and URLhaus.
-*   **Data Persistence:**  Uses SQLite as the database to store blacklist entries.
-*   **URL Querying:**  Provides the ability to query blacklist entries based on full URL, host, domain, or path.
-*   **Command-Line Interface (CLI):** Offers a CLI for processing providers and querying blacklist entries.
-*   **Web API:**  Exposes a web API for programmatic interaction, including processing providers and querying entries.
-*   **Concurrency:** Processes providers concurrently for faster data aggregation.
-*   **Metrics:** Exposes Prometheus metrics for monitoring the service's performance.
-*   **Configuration:**  Configurable via TOML and environment variables.
-*   **Soft Deletes:** Implements soft deletes for blacklist entries, allowing for easy removal and potential restoration.
-*   **Asynchronous Processing:** Initiates background processing of providers via the CLI.
-*   **Process Management:**  Tracks provider processing tasks and exposes status via API.
+## ✨ Key Features
 
-## Architecture
+<table>
+  <tr>
+    <td>
+      <h3>🔄 Multi-Source Aggregation</h3>
+      <p>Automatically fetches data from multiple blacklist sources including OISD, URLHaus, OpenPhish, and PhishTank with an extensible provider system for easy additions.</p>
+    </td>
+    <td>
+      <h3>⚡ High-Performance Caching</h3>
+      <p>Uses Bloom filters for ultra-fast negative lookups and BadgerDB for optimized key-value storage, ensuring millisecond-level response times.</p>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <h3>🔍 Smart Query System</h3>
+      <p>Supports multiple query types (exact URL, host, domain, path) with an intelligent cascading query strategy for comprehensive results.</p>
+    </td>
+    <td>
+      <h3>📊 Built-in Metrics</h3>
+      <p>Includes Prometheus metrics endpoints and performance benchmarking tools to monitor and optimize your deployment.</p>
+    </td>
+  </tr>
+</table>
 
-The project follows a modular architecture, with components separated into packages:
+## 📋 Table of Contents
 
-*   **`cmd`:** Contains the CLI and entrypoint logic.
-*   **`features`:**  Houses the core functionalities, separated into:
-    *   **`entries`:** Defines the data structure for blacklist entries and query logic.
-    *   **`providers`:** Handles provider fetching, parsing, and processing.
-    *   **`web`:**  Implements the web API using Echo framework.
-*   **`internal`:**  Contains internal utilities and shared components like database connection management, configuration loading, and logging.
+- [Installation](#-installation)
+- [Configuration](#-configuration)
+- [Usage](#-usage)
+  - [CLI Commands](#cli-commands)
+  - [REST API](#rest-api)
+- [Adding New Providers](#-adding-new-providers)
+- [Deployment](#-deployment)
+- [Contributing](#-contributing)
+- [License](#-license)
 
-## Getting Started
+## 🚀 Installation
 
 ### Prerequisites
 
-*   Go 1.24 or higher
-*   SQLite
+- Go 1.24 or higher
+- Git
 
-### Installation
+### Setup
 
-1.  **Clone the repository:**
+```bash
+# Clone the repository
+git clone https://github.com/runaho/blacked.git
+cd blacked
 
-    ```bash
-    git clone https://github.com/Runaho/blacked
-    cd blacked
-    ```
+# Download dependencies
+go mod download
 
-2.  **Build the application:**
+# Configure the application
+# Either copy the example config or create a new one
+cp .env.toml.example .env.toml
+# Edit according to your needs
+```
 
-    ```bash
-    go build -o blacked ./cmd/main.go
-    ```
+## ⚙️ Configuration
 
-### Configuration
+Blacked is configured via a `.env.toml` file in the project root. You can also use a `.env` file or environment variables.
 
-The application uses a configuration file (default `.env.toml`) and environment variables. Create a `config/.env.toml` file based on the example below or use environment variables:
+### Key Configuration Sections
 
 ```toml
 [APP]
-environtment = "development"  # or "production"
-log_level = "debug" # or "info", "warn", "error", "fatal", "panic"
+environment = "development" # or "production"
+log_level = "info"          # debug, info, warn, error
 
 [Server]
-scheme = "http"
 port = 8082
 host = "localhost"
-read_timeout = "5s"
-write_timeout = "10s"
-shutdown_timeout = "30s"
-alloworigins = ["*"] # Example: ["http://localhost:3000", "https://example.com"]
-health_check = true
 
 [Cache]
-cache_refresh_interval = "5m"
+# For persistent storage:
+# badger_path = "./badger_cache"
+in_memory = true    # Use in-memory BadgerDB
+use_bloom = true    # Enable Bloom filter for faster lookups
 
-[Collector]
-max_workers = 10
-batch_size = 100
-cron = "0 0 0 * * *"
-store_responses = false
-store_path = "./responses"
+[Provider]
+# Optionally limit enabled providers
+# enabled_providers = ["OISD_BIG", "URLHAUS"]
 
-[Colly]
-max_redirects = 10
-max_size = 1048576
-max_depth = 1
-user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
-timeout = "5m"
+# Override default schedules if needed
+# [Provider.provider_crons]
+# OISD_BIG = "0 7 * * *"  # Run OISD at 7 AM UTC
 ```
 
-### Running the Application
+## 🖥️ Usage
 
-1.  **Run the web server:**
-
-    ```bash
-    ./blacked serve
-    ```
-
-    This will start the web API server on port 8082 (or the port specified in your configuration).
-
-2.  **Process blacklist providers (CLI):**
-
-    ```bash
-    ./blacked process
-    ```
-
-    This will fetch and process blacklist entries from all configured providers.
-
-    You can specify specific providers:
-
-    ```bash
-    ./blacked process -p OISD_BIG,OPENPHISH
-    ```
-
-    You can remove providers:
-
-    ```bash
-    ./blacked process -r PHISHTANK_ONLINE_VALID
-    ```
-
-    You can force a process even if another is running:
-
-    ```bash
-    ./blacked process -f
-    ```
-
-3.  **Query blacklist entries (CLI):**
-
-    ```bash
-    ./blacked query -u example.com
-    ```
-
-    This will query the blacklist for entries matching `example.com`.
-
-    You can specify the query type:
-
-    ```bash
-    ./blacked query -u example.com -t host
-    ```
-
-    Available query types are: `full`, `host`, `domain`, `path`, `mixed`.
-
-    Output results in JSON format:
-
-    ```bash
-    ./blacked query -u example.com -j
-    ```
-
-    Enable verbose logging to see all hits:
-
-    ```bash
-    ./blacked query -u example.com -v
-    ```
-
-### API Endpoints
-
-*   **`GET /health/status`:** Health check endpoint.
-*   **`POST /query/entry`:** Query blacklist entries.  Requires a JSON payload with `url` and `query_type` fields.
-*   **`POST /provider/process`:** Start processing providers. Requires a JSON payload with `providers_to_process` and `providers_to_remove` fields.
-*   **`GET /provider/process/status/:processID`:** Get the status of a provider processing task.
-*   **`GET /provider/processes`:** List all provider processing tasks.
-*   **`GET /metrics`:**  Prometheus metrics endpoint.
-*   **`GET /metrics/prometheus`:** Prometheus metrics endpoint (in Prometheus format).
-
-## Development
-
-### Testing
-
-Run tests:
+### Running the Service
 
 ```bash
-go test ./...
+# Start the web server and scheduler
+go run main.go serve
+
+# Or with the built binary
+./blacked serve
 ```
 
-### Code Style
+The server will start on `http://localhost:8082` by default (configurable in `.env.toml`).
 
-Follow standard Go coding conventions.  Use `go fmt` to format your code.
+### CLI Commands
 
-### Implementing a New Provider
+Blacked includes a robust CLI for direct interaction:
 
-To add a new blacklist provider, follow these steps:
+```bash
+# Process all providers immediately
+go run main.go process
 
-1.  **Create a new provider file:** Create a new file in the `features/providers` directory (e.g., `features/providers/newprovider/newprovider.go`).
+# Process specific providers only
+go run main.go process --provider OISD_BIG --provider URLHAUS
 
-2.  **Define the provider struct:** Create a struct that implements the `providers.Provider` interface: you can copy the other providers and modify them according to your needs.  Here is an example:
+# Query if a URL is blacklisted
+go run main.go query --url "http://suspicious-site.com/path"
+
+# Query with specific match type
+go run main.go query --url "suspicious-site.com" --type domain
+
+# Get query results as JSON
+go run main.go query --url "http://suspicious-site.com" --json
+
+# Get detailed help
+go run main.go --help
+```
+
+### REST API
+
+Blacked provides a comprehensive REST API for integration:
+
+#### Core Endpoints
+
+| Endpoint | Method | Description | Example |
+|----------|--------|-------------|---------|
+| `/entry` | GET | Quick check if a URL is blacklisted | `/entry?url=example.com` |
+| `/entry/{id}` | GET | Get details for a specific entry by ID | `/entry/550e8400-e29b-41d4-a716-446655440000` |
+| `/entry/search` | POST | Advanced search with query options | `{"url": "example.com", "query_type": "domain"}` |
+| `/provider/process` | POST | Trigger provider processing | `{"providers_to_process": ["URLHAUS"]}` |
+| `/benchmark/query` | POST | Benchmark query performance | `{"urls": ["example.com"], "iterations": 100}` |
+
+#### Example Queries
+
+```bash
+# Check if a URL is blacklisted (fast path)
+curl "http://localhost:8082/entry?url=http%3A%2F%2Fsuspicious-site.com"
+
+# Comprehensive search
+curl -X POST -H "Content-Type: application/json" \
+     -d '{"url": "suspicious-site.com", "query_type": "domain"}' \
+     http://localhost:8082/entry/search
+
+# Trigger processing for specific providers
+curl -X POST -H "Content-Type: application/json" \
+     -d '{"providers_to_process": ["URLHAUS", "PHISHTANK"]}' \
+     http://localhost:8082/provider/process
+```
+
+## ➕ Adding New Providers
+
+Adding a new blacklist provider is straightforward:
+
+1. Create a new directory for your provider: `features/providers/myprovider/`
+2. Implement the provider interface:
 
 ```go
-// Unique name of the provider will be used in logs, metrics, cli and api
-func (n *NewProvider) Name() string {
-	return "NEW_PROVIDER"
-}
+package myprovider
 
-// Source URL of the blacklist
-func (n *NewProvider) Source() string {
-		return "https://example.com/blacklist.txt"
-	}
+import (
+    "blacked/features/entries"
+    "blacked/features/providers/base"
+    "blacked/internal/config"
+    "io"
+    
+    "github.com/gocolly/colly/v2"
+    "github.com/google/uuid"
+    "github.com/rs/zerolog/log"
+)
 
-// Usially fetch method is same as other providers
-func (n *NewProvider) Fetch() (io.Reader, error) {
-	// technically, colly will parse the response body as a reader then processor will pass it to the Parse method
-	return bytes.NewReader(responseBody), nil
-}
-
-func (n *NewProvider) Parse(data io.Reader) error {
-	// before that could be same as other providers
-	// Customize the parsing logic according to the provider's data format
-	for scanner.Scan() {
-		scanningAt := time.Now()
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		_entry := new(entries.Entry)
-		_entry.ID = uuid.New().String()
-		_entry.ProcessID = processID.String()
-		_entry.Source = n.Name()
-		_entry.SourceURL = n.Source()
-		_entry.CreatedAt = time.Now()
-		_entry.UpdatedAt = time.Now()
-
-		err := _entry.SetURL(line)
-
-		entry := *_entry
-		// after that could be same as other providers
+func NewMyProvider(settings *config.CollectorConfig, collyClient *colly.Collector) base.Provider {
+    const (
+        providerName = "MY_PROVIDER"
+        providerURL  = "https://example.com/blacklist.txt"
+        cronSchedule = "0 */6 * * *" // Every 6 hours
+    )
+    
+    // Define how to parse provider data
+    parseFunc := func(data io.Reader) ([]entries.Entry, error) {
+        // Parse the data format specific to this provider
+        // Return slice of entries.Entry
+        // ...
+    }
+    
+    // Create and register the provider
+    provider := base.NewBaseProvider(
+        providerName,
+        providerURL,
+        settings,
+        collyClient,
+        parseFunc,
+    )
+    
+    provider.
+        SetCronSchedule(cronSchedule).
+        Register()
+        
+    return provider
 }
 ```
 
-    *   **`Name() string`:** Returns the unique name of the provider.
-    *   **`Source() string`:** Returns the URL of the blacklist source.
-    *   **`Fetch() (io.Reader, error)`:** Fetches the blacklist data from the source URL.  This should return an `io.Reader` for the data.
-    *   **`Parse(data io.Reader) error`:** Parses the data from the `io.Reader` and saves the entries to the database. Use a `bufio.Scanner` to read line by line and `_entry.SetURL(line)` to initialize and validate the entry.  Batch insert records via `o.repository.BatchSaveEntries(ctx, entryBatch)` for better performance.
-    *   **`SetProcessID(id uuid.UUID)`:** Sets the process ID for the current processing run.
-    *   **`GetProcessID() uuid.UUID`:** Gets the process ID.
-    *   **`SetRepository(repository repository.BlacklistRepository)`:** Sets the repository instance for saving entries.
-
-3.  **Register the provider:**  Modify `features/providers/init.go` to import the new provider and register it in the `NewProviders` function:
+3. Add your provider to `features/providers/main.go`:
 
 ```go
-package providers
-
-func NewProviders() (*Providers, error) {
-// ----
-	providers := &Providers{
-		oisd.NewOISDBigProvider(&cfg.Collector, cc),
-		oisd.NewOISDNSFWProvider(&cfg.Collector, cc),
-		openphish.NewOpenPhishFeedProvider(&cfg.Collector, cc),
-		urlhaus.NewURLHausProvider(&cfg.Collector, cc),
-
-		newprovider.NewNewProvider(&cfg.Collector, cc), // Register your new provider
-	}
-
-// ----
-
-	return providers, nil
+func NewProviders() (Providers, error) {
+    // ...existing code...
+    
+    var providers = Providers{
+        // ...existing providers...
+        myprovider.NewMyProvider(&cfg.Collector, cc),
+    }
+    
+    // ...existing code...
 }
 ```
 
-4.  **Update `SourceDomains()`**: Add the new provider's domain in the `SourceDomains()` function in `features/providers/main.go` to allow the colly client to visit the URL.
+## 📦 Deployment
 
-5.  **Test your implementation:**  Create a test file (e.g., `features/providers/newprovider/newprovider_test.go`) and write tests for your new provider to ensure it fetches and parses data correctly.  See existing provider tests for examples.
+### Using Docker
 
-6.  **Run the application and verify that the new provider is processed.**  Check the logs for any errors.
+```dockerfile
+FROM golang:1.24-alpine AS builder
+WORKDIR /app
+COPY . .
+RUN go mod download
+RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o /blacked main.go
 
-**Important Considerations:**
+FROM alpine:latest
+WORKDIR /app
+COPY --from=builder /blacked /app/blacked
+# Mount config and data volumes when running
+EXPOSE 8082
+ENTRYPOINT ["/app/blacked"]
+CMD ["serve"]
+```
 
-*   **Error Handling:** Implement robust error handling in the `Fetch` and `Parse` methods.  Use `zerolog` for logging.
-*   **Data Format:**  Handle different data formats (e.g., plain text, JSON, CSV) appropriately in the `Parse` method.
-*   **Rate Limiting:**  Respect the provider's rate limits to avoid being blocked.  Consider implementing your own rate limiting mechanism.
-*   **Performance:**  Optimize the `Parse` method for performance, especially when dealing with large blacklist files.  Use batch inserts for database operations.
-*   **Testing:** Write comprehensive unit tests to ensure your provider is working correctly.
-*   **Metrics:** Increment Prometheus metrics to track the performance of your new provider.
+Run with:
 
-Following these steps will allow you to easily add new providers to the Blacked blacklist aggregation service. Remember to thoroughly test your provider and consider the important considerations outlined above.
+```bash
+docker build -t blacked:latest .
+docker run -d --name blacked -p 8082:8082 \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/.env.toml:/app/.env.toml \
+  blacked:latest
+```
 
-## License
+### Using Systemd (Linux)
 
-This project is licensed under the [MIT License](LICENSE).
+Create `/etc/systemd/system/blacked.service`:
 
-## Future Enhancements
+```ini
+[Unit]
+Description=Blacked Blacklist Service
+After=network.target
 
-*   Implement additional blacklist providers.
-*   Add caching mechanisms for faster query performance.
-*   Support additional database backends with some cloud support (e.g., Cockroachdb ).
-* 	Support other response saving options like (.eg, S3 SDK)
-*   Add input validation and sanitization to prevent security vulnerabilities.
-*   Implement rate limiting for per provider.
-*   Implement cron for provider data sync process per provider level with custom cron times and also some provider's insert changes on top of the file this could be a nice touch. 
-*   Consider using a dedicated task queue for background provider processing. (maybe implement asynq?)
-*   Investigate using a bloom filter to speed up the querying process or search engine?
+[Service]
+Type=simple
+User=blacked
+WorkingDirectory=/opt/blacked
+ExecStart=/opt/blacked/blacked serve
+Restart=on-failure
+StandardOutput=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+
+```bash
+sudo systemctl enable blacked.service
+sudo systemctl start blacked.service
+```
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit pull requests or open issues.
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Commit your changes: `git commit -m 'Add amazing feature'`
+4. Push to the branch: `git push origin feature/amazing-feature`
+5. Open a pull request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+<div align="center">
+  <sub>Built with ❤️ for better cybersecurity</sub>
+</div>
