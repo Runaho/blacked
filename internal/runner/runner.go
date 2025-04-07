@@ -184,13 +184,14 @@ func (r *Runner) runJob(providerName string) {
 
 func (r *Runner) RunProviderJobsNow() {
 	r.mu.RLock()
+	defer r.mu.RUnlock()
+
 	providersList := make([]base.Provider, 0, len(r.providers))
 
 	// Collect all providers first
 	for _, provider := range r.providers {
 		providersList = append(providersList, provider)
 	}
-	r.mu.RUnlock()
 
 	if len(providersList) == 0 {
 		log.Info().Msg("No providers to run at startup")

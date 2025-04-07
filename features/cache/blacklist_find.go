@@ -14,25 +14,24 @@ var (
 	ErrBloomKeyNotFound = errors.New("key not found in bloom filter")
 )
 
-func SearchBlacklistEntryStream(sourceUrl string) (entries.EntryStream, error) {
+func SearchBlacklistEntryStream(sourceUrl string) (entryStream entries.EntryStream, err error) {
 	bdb, err := GetBadgerInstance()
 	if err != nil {
-		return entries.EntryStream{}, err
+		log.Err(err).Msg("Failed to connect to badger instance for memory cache")
+		return
 	}
 
 	if config.GetConfig().Cache.UseBloom {
 		isLikely, err := CheckURL(sourceUrl)
 		log.Debug().Bool("is_likely", isLikely).Msg("Checked bloom filter")
 		if err != nil {
-			return entries.EntryStream{}, err
+			return entryStream, err
 		}
 
 		if !isLikely {
-			return entries.EntryStream{}, ErrBloomKeyNotFound
+			return entryStream, ErrBloomKeyNotFound
 		}
 	}
-
-	var entryStream entries.EntryStream
 
 	err = bdb.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(sourceUrl))
@@ -40,13 +39,15 @@ func SearchBlacklistEntryStream(sourceUrl string) (entries.EntryStream, error) {
 			return err
 		}
 		err = item.Value(func(val []byte) error {
-			entryStream.SourceUrl = sourceUrl
-			entryStream.IDs = strings.Split(string(val), ",")
+			entryStream = entries.EntryStream{
+				SourceUrl: sourceUrl,
+				IDs:       strings.Split(string(val), ","),
+			}
 			return nil
 		})
 
 		return err
 	})
 
-	return entryStream, err
+	return
 }

@@ -136,6 +136,8 @@ func (app *Application) configureMiddleware() {
 			echo.HeaderAuthorization,
 		},
 	}))
+
+	e.Use(middlewares.RequestLogger())
 	e.Pre(middleware.RemoveTrailingSlash())
 
 	middlewares.ConfigureValidator(e)

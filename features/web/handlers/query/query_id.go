@@ -1,6 +1,7 @@
 package query
 
 import (
+	"blacked/features/web/handlers/response"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
@@ -9,24 +10,21 @@ import (
 func (h *SearchHandler) QueryByID(c echo.Context) error {
 	id := c.Param("id")
 	if id == "" {
-		return c.JSON(http.StatusBadRequest, map[string]any{
-			"error": "Entry ID is required",
-		})
+		return response.BadRequest(c, "Entry ID is required")
 	}
 
 	entry, err := h.Service.GetEntryByID(c.Request().Context(), id)
 	if err != nil {
 		if err.Error() == "entry not found" {
-			return c.JSON(http.StatusNotFound, map[string]any{
-				"error": "Entry not found",
-				"id":    id,
-			})
+			return response.NotFound(c, "Entry not found", id)
 		}
-		return c.JSON(http.StatusInternalServerError, map[string]any{
-			"error":   "Failed to retrieve entry",
-			"details": err.Error(),
-		})
+		return response.ErrorWithDetails(c, http.StatusInternalServerError,
+			"Failed to retrieve entry", err.Error())
 	}
 
-	return c.JSON(http.StatusOK, entry)
+	if entry == nil {
+		return response.NotFound(c, "Entry not found", id)
+	}
+
+	return response.Success(c, entry)
 }

@@ -3,7 +3,6 @@ package web
 import (
 	"blacked/features/web/handlers/benchmark"
 	"blacked/features/web/handlers/health"
-	"blacked/features/web/handlers/problem"
 	"blacked/features/web/handlers/provider"
 	"blacked/features/web/handlers/query"
 
@@ -22,7 +21,6 @@ func (app *Application) ConfigureRoutes() error {
 		return err
 	}
 
-	problem.MapRoutes(e)
 	health.MapHealth(e, *app.config)
 
 	benchmark.MapBenchmarkRoutes(e, app.services.EntryQueryService)

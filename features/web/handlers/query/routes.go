@@ -11,9 +11,9 @@ func MapQueryRoutes(e *echo.Echo, svc *services.QueryService) error {
 	handler := NewSearchHandler(svc)
 
 	g := e.Group("/entry")
+	g.GET("", handler.QueryByURL)
 	g.POST("/search", handler.Search)
 	g.GET("/:id", handler.QueryByID)
-	g.GET("", handler.QueryByURL)
 
 	log.Info().
 		Str("search an entry (POST)", "/search").

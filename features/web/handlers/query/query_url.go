@@ -3,6 +3,7 @@ package query
 import (
 	"blacked/features/cache"
 	"blacked/features/entries"
+	"blacked/features/web/handlers/response"
 	"net/http"
 
 	"github.com/dgraph-io/badger/v4"
@@ -31,19 +32,13 @@ type URLQueryInput struct {
 }
 
 func (h *SearchHandler) QueryByURL(c echo.Context) error {
-	// Get URL from query parameter
 	input := new(URLQueryInput)
 	if err := c.Bind(input); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]any{
-			"error":   "Failed to bind URL",
-			"details": err.Error(),
-		})
+		return response.BadRequest(c, "Failed to bind URL")
 	}
 
 	if err := c.Validate(input); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]any{
-			"validation_error": err.Error(),
-		})
+		return response.BadRequest(c, "Validation failed")
 	}
 
 	log.Debug().Str("url", input.URL).Msg("Searching for entry")
@@ -52,25 +47,20 @@ func (h *SearchHandler) QueryByURL(c echo.Context) error {
 
 	if err == cache.ErrBloomKeyNotFound || err == badger.ErrKeyNotFound {
 		log.Debug().Str("url", input.URL).Msg("Entry not found")
-		errorMap := map[string]any{
-			"error": "",
-			"url":   input.URL,
-		}
+		var entryError string
 
 		if err == cache.ErrBloomKeyNotFound {
-			errorMap["error"] = "Entry is not likely to be found"
+			entryError = "Entry is not likely to be found"
 		} else {
-			errorMap["error"] = "Entry not found"
+			entryError = "Entry not found"
 		}
 
-		return c.JSON(http.StatusNotFound, errorMap)
+		return response.NotFound(c, entryError, input.URL)
 	} else if err != nil {
 		log.Error().Err(err).Str("url", input.URL).Msg("Failed to search for entry")
 
-		return c.JSON(http.StatusInternalServerError, map[string]any{
-			"error":   "Failed to retrieve entry",
-			"details": err.Error(),
-		})
+		return response.ErrorWithDetails(c, http.StatusInternalServerError,
+			"Failed to retrieve entry", err.Error())
 	}
 
 	foundEntry := NewEntryFound(entry)

@@ -6,12 +6,22 @@ import (
 	"blacked/internal/db"
 	"context"
 	"database/sql"
-	"encoding/json"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+)
+
+var (
+	ErrDatabaseConnection  = errors.New("failed to connect to database")
+	ErrProcessRunning      = errors.New("another process is already running")
+	ErrInsertProcess       = errors.New("failed to insert process status")
+	ErrUpdateProcess       = errors.New("failed to update process status")
+	ErrProcessNotFound     = errors.New("process not found")
+	ErrGetProcessStatus    = errors.New("failed to get process status")
+	ErrListProcesses       = errors.New("failed to list processes")
+	ErrCheckRunningProcess = errors.New("failed to check for running processes")
 )
 
 type ProviderProcessService struct {
@@ -24,14 +34,14 @@ func SetProcessDeadlineDuration(duration time.Duration) func(*ProviderProcessSer
 		s.processDeadlineDuration = duration
 	}
 }
-
 func NewProviderProcessService() (*ProviderProcessService, error) {
-	dbConn, err := db.GetDB() // Using read-only connection for now, might need RW later
+	conn, err := db.GetDB()
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
+		log.Err(err).Msg("Failed to connect to database")
+		return nil, ErrDatabaseConnection
 	}
 	return &ProviderProcessService{
-		repo:                    repository.NewSQLiteProviderProcessRepository(dbConn),
+		repo:                    repository.NewSQLiteProviderProcessRepository(conn),
 		processDeadlineDuration: 5 * time.Minute,
 	}, nil
 }
@@ -39,10 +49,12 @@ func NewProviderProcessService() (*ProviderProcessService, error) {
 func (s *ProviderProcessService) StartProcess(ctx context.Context, providersToProcess []string, providersToRemove []string) (processID string, err error) {
 	isRunning, err := s.IsProcessRunning(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to check if process is running: %w", err)
+		log.Err(err).Msg("Failed to check if process is running")
+		return "", err
 	}
 	if isRunning {
-		return "", fmt.Errorf("another process is already running")
+		log.Info().Msg("Another process is already running")
+		return "", ErrProcessRunning
 	}
 
 	processUUID := uuid.New()
@@ -57,7 +69,8 @@ func (s *ProviderProcessService) StartProcess(ctx context.Context, providersToPr
 	}
 
 	if err := s.repo.InsertProcess(ctx, status); err != nil {
-		return "", fmt.Errorf("failed to insert process status: %w", err)
+		log.Err(err).Msg("Failed to insert process status")
+		return "", ErrInsertProcess
 	}
 
 	go func() {
@@ -70,8 +83,10 @@ func (s *ProviderProcessService) StartProcess(ctx context.Context, providersToPr
 			status.Status = "completed"
 			status.EndTime = time.Now()
 		}
-		if updateErr := s.repo.UpdateProcessStatus(context.Background(), status); updateErr != nil { // Use backgroundCtx here
-			log.Error().Err(updateErr).Str("process_id", processIDStr).Msg("Failed to update process status after completion")
+		if updateErr := s.repo.UpdateProcessStatus(context.Background(), status); updateErr != nil {
+			log.Err(updateErr).
+				Str("process_id", processIDStr).
+				Msg("Failed to update process status after completion")
 		}
 	}()
 
@@ -81,12 +96,12 @@ func (s *ProviderProcessService) StartProcess(ctx context.Context, providersToPr
 func (s *ProviderProcessService) StartProcessAsync(ctx context.Context, providersToProcess []string, providersToRemove []string) (processID string, err error) {
 	isRunning, err := s.IsProcessRunning(ctx)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to check if process is running")
+		log.Err(err).Msg("Failed to check if process is running")
 		return "", err
 	}
 	if isRunning {
-		log.Error().Msg("Another process is already running")
-		return "", err
+		log.Info().Msg("Another process is already running")
+		return "", ErrProcessRunning
 	}
 
 	processUUID := uuid.New()
@@ -101,8 +116,8 @@ func (s *ProviderProcessService) StartProcessAsync(ctx context.Context, provider
 	}
 
 	if err := s.repo.InsertProcess(ctx, status); err != nil {
-		log.Error().Err(err).Msg("Failed to insert process status")
-		return "", err
+		log.Err(err).Msg("Failed to insert process status")
+		return "", ErrInsertProcess
 	}
 
 	// Get the providers
@@ -119,7 +134,9 @@ func (s *ProviderProcessService) StartProcessAsync(ctx context.Context, provider
 	}
 
 	if updateErr := s.repo.UpdateProcessStatus(ctx, status); updateErr != nil {
-		log.Error().Err(updateErr).Str("process_id", processIDStr).Msg("Failed to update process status after completion")
+		log.Err(updateErr).
+			Str("process_id", processIDStr).
+			Msg("Failed to update process status after completion")
 	}
 
 	return processIDStr, nil
@@ -129,9 +146,16 @@ func (s *ProviderProcessService) GetProcessStatus(ctx context.Context, processID
 	status, err := s.repo.GetProcessByID(ctx, processID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("process not found: %s", processID)
+			log.Error().
+				Str("process_id", processID).
+				Msg("Process not found")
+			return nil, ErrProcessNotFound
 		}
-		return nil, fmt.Errorf("failed to get process status: %w", err)
+
+		log.Err(err).
+			Str("process_id", processID).
+			Msg("Failed to get process status")
+		return nil, ErrGetProcessStatus
 	}
 	return status, nil
 }
@@ -139,7 +163,8 @@ func (s *ProviderProcessService) GetProcessStatus(ctx context.Context, processID
 func (s *ProviderProcessService) ListProcesses(ctx context.Context) ([]*providers.ProcessStatus, error) {
 	statuses, err := s.repo.ListProcesses(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list processes: %w", err)
+		log.Err(err).Msg("Failed to list processes")
+		return nil, ErrListProcesses
 	}
 	return statuses, nil
 }
@@ -147,26 +172,8 @@ func (s *ProviderProcessService) ListProcesses(ctx context.Context) ([]*provider
 func (s *ProviderProcessService) IsProcessRunning(ctx context.Context) (bool, error) {
 	running, err := s.repo.IsProcessRunning(ctx, s.processDeadlineDuration)
 	if err != nil {
-		return false, fmt.Errorf("failed to check for running processes: %w", err)
+		log.Err(err).Msg("Failed to check if process is running")
+		return false, ErrCheckRunningProcess
 	}
 	return running, nil
-}
-
-// Convert Providers List to String for DB storage if needed
-func providersListToString(providers []string) string {
-	if len(providers) == 0 {
-		return ""
-	}
-	jsonData, _ := json.Marshal(providers) // Ignoring error for simplicity, handle as needed
-	return string(jsonData)
-}
-
-// Convert String from DB to Providers List
-func stringToProvidersList(providerStr string) []string {
-	if providerStr == "" {
-		return nil
-	}
-	var providers []string
-	_ = json.Unmarshal([]byte(providerStr), &providers) // Ignoring error for simplicity, handle as needed
-	return providers
 }
