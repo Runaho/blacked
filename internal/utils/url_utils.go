@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"net/url"
 	"strings"
 
@@ -8,8 +9,15 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-// Given a full host (like “foo.bar.example.co.uk”),
-// return domain = “example.co.uk”, subdomains = []string{"foo", "bar"}.
+// Error variables for URL utils
+var (
+	ErrInvalidHost         = errors.New("invalid host")
+	ErrPublicSuffixParsing = errors.New("public suffix parsing failed")
+	ErrMalformedURL        = errors.New("malformed URL")
+)
+
+// Given a full host (like "foo.bar.example.co.uk"),
+// return domain = "example.co.uk", subdomains = []string{"foo", "bar"}.
 func ExtractDomainAndSubDomains(host string) (domain string, subs []string, err error) {
 	// 1) Try to determine the “effective top-level domain + 1” using the PSL library.
 	eTLDPlusOne, err := publicsuffix.EffectiveTLDPlusOne(host)
@@ -60,16 +68,14 @@ func NormalizeURL(link string) string {
 	// 2. Parse the URL to handle encoding and path manipulation correctly:
 	parsedURL, err := url.Parse(link)
 	if err != nil {
-		// Handle the error appropriately (e.g., log it, return an empty string, etc.)
-		// A malformed URL cannot be reliably normalized.
-		// Returning the original link might be appropriate, depending on your use case.
-		return link // Or "" or handle the error as needed
+		log.Err(err).Str("url", link).Msg("Failed to parse URL for normalization")
+		return link
 	}
 
 	// 3. Normalize the path (remove trailing slashes, etc.):
 	parsedURL.Path = strings.TrimRight(parsedURL.Path, "/")
 
-	// 4. Re-encode the URL to ensure consistent encoding (be careful about double-encoding):
+	// 4. Re-encode the URL to ensure consistent encoding:
 	normalizedURL := parsedURL.String()
 
 	return normalizedURL

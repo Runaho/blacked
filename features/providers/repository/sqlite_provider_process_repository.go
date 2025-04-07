@@ -5,10 +5,20 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/rs/zerolog/log"
+)
+
+// Repository error variables
+var (
+	ErrInsertProcess       = errors.New("failed to insert process status")
+	ErrUpdateProcess       = errors.New("failed to update process status")
+	ErrQueryProcesses      = errors.New("failed to query processes")
+	ErrScanProcess         = errors.New("failed to scan process row")
+	ErrIterateProcessRows  = errors.New("error iterating process rows")
+	ErrFetchProcessRunning = errors.New("failed to fetch start time of running process")
 )
 
 // SQLiteProviderProcessRepository is the concrete implementation of ProviderProcessRepository using SQLite.
@@ -31,7 +41,7 @@ func (r *SQLiteProviderProcessRepository) InsertProcess(ctx context.Context, sta
 		) VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, status.ID, status.Status, status.StartTime, status.EndTime, providersProcessedJSON, providersRemovedJSON, status.Error)
 	if err != nil {
-		return fmt.Errorf("failed to insert process status: %w", err)
+		return ErrInsertProcess
 	}
 	return nil
 }
@@ -46,7 +56,7 @@ func (r *SQLiteProviderProcessRepository) UpdateProcessStatus(ctx context.Contex
 		WHERE id = ?
 	`, status.Status, status.EndTime, providersProcessedJSON, providersRemovedJSON, status.Error, status.ID)
 	if err != nil {
-		return fmt.Errorf("failed to update process status: %w", err)
+		return ErrUpdateProcess
 	}
 	return nil
 }
@@ -73,7 +83,7 @@ func (r *SQLiteProviderProcessRepository) GetProcessByID(ctx context.Context, pr
 func (r *SQLiteProviderProcessRepository) ListProcesses(ctx context.Context) ([]*providers.ProcessStatus, error) {
 	rows, err := r.db.QueryContext(ctx, "SELECT * FROM provider_processes ORDER BY start_time DESC")
 	if err != nil {
-		return nil, fmt.Errorf("failed to query processes: %w", err)
+		return nil, ErrQueryProcesses
 	}
 	defer rows.Close()
 
@@ -86,14 +96,14 @@ func (r *SQLiteProviderProcessRepository) ListProcesses(ctx context.Context) ([]
 			&status.ID, &status.Status, &status.StartTime, &status.EndTime, &providersProcessedJSON, &providersRemovedJSON, &status.Error,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan process row: %w", err)
+			return nil, ErrScanProcess
 		}
 		_ = json.Unmarshal(providersProcessedJSON, &status.ProvidersProcessed)
 		_ = json.Unmarshal(providersRemovedJSON, &status.ProvidersRemoved)
 		statuses = append(statuses, status)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating process rows: %w", err)
+		return nil, ErrIterateProcessRows
 	}
 	return statuses, nil
 }
@@ -112,7 +122,7 @@ func (r *SQLiteProviderProcessRepository) IsProcessRunning(ctx context.Context, 
 		if err == sql.ErrNoRows { // No running process found
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to fetch start time of running process: %w", err)
+		return false, ErrFetchProcessRunning
 	}
 
 	deadline := startTime.Add(processDeadlineDuration)

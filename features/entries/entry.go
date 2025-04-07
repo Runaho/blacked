@@ -3,11 +3,19 @@ package entries
 import (
 	"blacked/internal/collector"
 	"blacked/internal/utils"
+	"errors"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
+)
+
+// Error variables for entry.go
+var (
+	ErrURLParse         = errors.New("failed to parse URL")
+	ErrDomainExtraction = errors.New("failed to extract domain and subdomains")
 )
 
 type Entry struct {
@@ -51,7 +59,7 @@ func (b *Entry) GetURL() url.URL {
 // SetURL parses a URL string and populates the Entry fields
 // This method can't be part of the fluent interface because it may fail
 func (b *Entry) SetURL(link string) error {
-	mc, err := collector.GetMetricsCollector()
+	mc, _ := collector.GetMetricsCollector()
 
 	_link := strings.TrimSpace(link)
 	if !strings.Contains(_link, "://") && !strings.HasPrefix(_link, "//") {
@@ -64,7 +72,8 @@ func (b *Entry) SetURL(link string) error {
 		if mc != nil {
 			mc.IncrementImportErrors(b.Source)
 		}
-		return err
+		log.Err(err).Str("link", link).Msg("Failed to parse URL")
+		return ErrURLParse
 	}
 
 	b.Scheme = u.Scheme
@@ -76,7 +85,8 @@ func (b *Entry) SetURL(link string) error {
 		if mc != nil {
 			mc.IncrementImportErrors(b.Source)
 		}
-		return err
+		log.Err(err).Str("host", u.Host).Msg("Failed to extract domain and subdomains")
+		return ErrDomainExtraction
 	}
 
 	b.Domain = domain

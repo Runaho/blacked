@@ -2,10 +2,16 @@ package db
 
 import (
 	"database/sql"
-	"fmt"
+	"errors"
 	"sync"
 
 	"github.com/rs/zerolog/log"
+)
+
+// Error variables for database operations
+var (
+	ErrCloseRODB  = errors.New("failed to close read-only database connection")
+	ErrOpenTestDB = errors.New("failed to open test database connection")
 )
 
 type dbInstance struct {
@@ -16,7 +22,6 @@ type dbInstance struct {
 var (
 	instance dbInstance
 	initOnce sync.Once
-	roErr    error
 )
 
 func GetDB() (*sql.DB, error) {
@@ -50,10 +55,12 @@ func Close() error {
 		err := instance.db.Close()
 		instance.db = nil
 		if err != nil {
-			return fmt.Errorf("failed to close read‐only database connection: %w", err)
+			log.Err(err).Stack().Msg("Failed to close read‐only database connection")
+			return ErrCloseRODB
 		}
-		fmt.Println("Database connection (read‐only) closed.")
+		log.Trace().Msg("Database connection (read‐only) closed.")
 	}
+
 	return nil
 }
 
@@ -67,14 +74,16 @@ func ResetForTesting() {
 	instance.err = nil
 	initOnce = sync.Once{}
 
-	fmt.Println("DB reset for testing.")
+	log.Info().Msg("Database connection (read‐only) reset for testing.")
 }
 
 func GetTestDB() (*sql.DB, error) {
 	dbTest, err := Connect(WithTesting(true))
 	if err != nil {
-		return nil, fmt.Errorf("failed to open test database connection: %w", err)
+		return nil, ErrOpenTestDB
 	}
+
 	log.Debug().Msg("Test database connection opened.")
+
 	return dbTest, nil
 }

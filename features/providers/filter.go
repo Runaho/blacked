@@ -2,9 +2,15 @@ package providers
 
 import (
 	"blacked/features/providers/base"
-	"fmt"
+	"errors"
 
 	"github.com/rs/zerolog/log"
+)
+
+var (
+	ErrProviderFilterFailed = errors.New("failed to filter providers")
+	ErrProviderRemoveFailed = errors.New("failed to remove providers")
+	ErrFailedToFindProvider = errors.New("failed to find provider")
 )
 
 // FilterProviders filters the provider list based on the selected providers.
@@ -18,7 +24,11 @@ func (p *Providers) FilterProviders(selectedProviders []string) (*Providers, err
 	for _, providerName := range selectedProviders {
 		provider, exists := providerMap[providerName]
 		if !exists {
-			return nil, fmt.Errorf("provider '%s' not found", providerName)
+			log.Err(ErrFailedToFindProvider).
+				Str("provider", providerName).
+				Msg("Failed to find provider to remove")
+
+			return nil, ErrFailedToFindProvider
 		}
 		filteredProviders = append(filteredProviders, provider)
 	}
@@ -35,9 +45,13 @@ func (p *Providers) RemoveProviders(providersToRemove []string) error {
 	for _, providerName := range providersToRemove {
 		provider, err := p.FindProviderByName(providerName)
 		if err != nil {
-			return fmt.Errorf("failed to find provider '%s': %w", providerName, err)
+			log.Err(ErrFailedToFindProvider).
+				Str("provider", providerName).
+				Msg("Failed to find provider to remove")
+
+			return ErrFailedToFindProvider
 		}
-		RemoveProvider(provider) // Use the global RemoveProvider func in init.go to modify global provider list
+		RemoveProvider(provider)
 	}
 	log.Info().Msgf("Providers after removing: %v", p.GetNames())
 	return nil
@@ -49,5 +63,10 @@ func (p *Providers) FindProviderByName(name string) (base.Provider, error) {
 			return provider, nil
 		}
 	}
-	return nil, fmt.Errorf("provider '%s' not found", name)
+
+	log.Err(ErrFailedToFindProvider).
+		Str("provider", name).
+		Msg("Failed to find provider to remove")
+
+	return nil, ErrFailedToFindProvider
 }

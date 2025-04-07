@@ -6,10 +6,20 @@ import (
 	"blacked/features/entries/services"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v2"
+)
+
+// CLI error variables
+var (
+	ErrCreateQueryService = errors.New("failed to create query service")
+	ErrQueryBlacklist     = errors.New("failed to query blacklist entries")
+	ErrMissingURL         = errors.New("URL is required")
+	ErrInvalidQueryType   = errors.New("invalid query type")
+	ErrMarshalJSON        = errors.New("failed to marshal JSON")
 )
 
 // QueryCommand queries your blacklist entries by URL.
@@ -49,7 +59,8 @@ var QueryCommand = &cli.Command{
 func queryBlacklist(c *cli.Context) error {
 	queryService, err := services.NewQueryService()
 	if err != nil {
-		return fmt.Errorf("failed to create query service: %w", err)
+		log.Error().Err(err).Msg("Failed to create query service")
+		return ErrCreateQueryService
 	}
 
 	urlToQuery, queryType, err := getQueryParameters(c)
@@ -59,7 +70,8 @@ func queryBlacklist(c *cli.Context) error {
 
 	hits, err := queryService.Query(context.Background(), urlToQuery, queryType)
 	if err != nil {
-		return fmt.Errorf("failed to query blacklist entries: %w", err)
+		log.Err(err).Str("url", urlToQuery).Str("query_type", queryType.String()).Msg("Failed to query blacklist entries")
+		return ErrQueryBlacklist
 	}
 
 	queryResponse := entries.NewQueryResponse(urlToQuery, hits, *queryType, c.Bool("verbose"))
@@ -73,12 +85,14 @@ func getQueryParameters(c *cli.Context) (string, *enums.QueryType, error) {
 	queryTypeStr := c.String("type")
 
 	if urlToQuery == "" {
-		return "", nil, fmt.Errorf("URL is required")
+		log.Error().Msg("URL parameter is required")
+		return "", nil, ErrMissingURL
 	}
 
 	qt, err := enums.QueryTypeString(queryTypeStr)
 	if err != nil {
-		return "", nil, fmt.Errorf("invalid query type: %w", err)
+		log.Error().Err(err).Str("query_type", queryTypeStr).Msg("Invalid query type")
+		return "", nil, ErrInvalidQueryType
 	}
 
 	return urlToQuery, &qt, nil
@@ -88,7 +102,8 @@ func printQueryResponse(response *entries.QueryResponse, asJSON bool) error {
 	if asJSON {
 		jsonData, err := json.MarshalIndent(response, "", "  ")
 		if err != nil {
-			return fmt.Errorf("failed to marshal JSON: %w", err)
+			log.Error().Err(err).Msg("Failed to marshal JSON")
+			return ErrMarshalJSON
 		}
 		fmt.Println(string(jsonData))
 		return nil

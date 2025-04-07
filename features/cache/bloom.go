@@ -3,7 +3,6 @@ package cache
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/bits-and-blooms/bloom/v3"
@@ -12,8 +11,10 @@ import (
 )
 
 var (
-	bloomFilter                  *bloom.BloomFilter
-	ErrBloomFilterNotInitialized = errors.New("Bloom filter not initialized")
+	bloomFilter *bloom.BloomFilter
+
+	ErrBloomFilterNotInitialized = errors.New("bloom filter not initialized")
+	ErrPopulateBloom             = errors.New("failed to populate bloom filter")
 )
 
 func GetBloomFilter() (*bloom.BloomFilter, error) {
@@ -88,7 +89,7 @@ func PopulateBloomFilterFromBadger(ctx context.Context, cacheDB *badger.DB) erro
 
 	if err != nil {
 		log.Error().Err(err).Int("keys_processed", keyCount).Msg("Error populating bloom filter")
-		return fmt.Errorf("failed to populate bloom filter: %w", err)
+		return ErrPopulateBloom
 	}
 
 	duration := time.Since(startTime)

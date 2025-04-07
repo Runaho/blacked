@@ -2,11 +2,17 @@ package db
 
 import (
 	"database/sql"
-	"fmt"
+	"errors"
 	"os"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/rs/zerolog/log"
+)
+
+// Error variables for database connections
+var (
+	ErrOpenDatabase = errors.New("failed to open SQLite database")
+	ErrPingDatabase = errors.New("failed to ping SQLite database")
 )
 
 const (
@@ -140,19 +146,39 @@ func Connect(options ...Option) (*sql.DB, error) {
 		dsn = dsn + "?_journal_mode=WAL"
 	}
 
-	db, err := sql.Open("sqlite3", dsn)
+	db, err := connectSQLite(dsn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open SQLite database: %w", err)
-	}
-
-	if err := db.Ping(); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("failed to ping sqlite database: %w", err)
+		return nil, err
 	}
 
 	// If your app is long-running, you can set how long to keep idle conns:
 	// db.SetConnMaxIdleTime(5 * time.Minute)
 	// db.SetConnMaxLifetime(30 * time.Minute)
+
+	return db, nil
+}
+
+func connectSQLite(dataSourceName string) (*sql.DB, error) {
+	db, err := sql.Open("sqlite3", dataSourceName)
+	if err != nil {
+		log.Err(err).Str("dsn", dataSourceName).Msg("Failed to open SQLite database")
+		return nil, ErrOpenDatabase
+	}
+
+	// Test the connection
+	if err := db.Ping(); err != nil {
+		log.Err(err).Str("dsn", dataSourceName).Msg("Failed to ping SQLite database")
+		return nil, ErrPingDatabase
+	}
+
+	// Configure connection pool (use reasonable defaults)
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+
+	// Enable foreign keys
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		log.Warn().Err(err).Msg("Failed to enable foreign keys")
+	}
 
 	return db, nil
 }

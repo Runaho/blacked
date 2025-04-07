@@ -3,14 +3,31 @@ package utils
 import (
 	"blacked/internal/config"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
+)
+
+// Error variables for response utils
+var (
+	ErrMetadataFileNotFound   = errors.New("metadata file not found")
+	ErrDecodeMetadataFile     = errors.New("failed to decode metadata from file")
+	ErrStoredResponseTooOld   = errors.New("stored response is too old")
+	ErrOpenDataFile           = errors.New("failed to open stored response data file")
+	ErrFetchSourceResponse    = errors.New("error fetching response from source")
+	ErrSaveResponseDir        = errors.New("failed to create directory for response files")
+	ErrCreateResponseDataFile = errors.New("failed to create response data file")
+	ErrWriteResponseData      = errors.New("failed to write response data to file")
+	ErrMarshalMetadataJSON    = errors.New("failed to marshal metadata to JSON")
+	ErrWriteMetadataFile      = errors.New("failed to write metadata to file")
+	ErrRemoveResponseDataFile = errors.New("failed to remove stored response data file")
+	ErrRemoveResponseMetaFile = errors.New("failed to remove stored response metadata file")
 )
 
 // ResponseMetadata holds metadata information for a stored response.
@@ -31,30 +48,34 @@ func GetResponseReader(sourceURL string, fetchFunc func() (io.Reader, error), pr
 	if storeResponses {
 		reader, meta, err := getStoredResponse(dataFilename, metaFilename)
 		if err == nil {
-			log.Info().Msgf("Using stored response from: %s, Process ID: %s", dataFilename, meta.ProcessID)
+			log.Info().Str("file", dataFilename).Str("process_id", meta.ProcessID).Msg("Using stored response")
 			return reader, meta, nil
 		}
-		log.Warn().Err(err).Msgf("Stored response not found or invalid (%v), fetching from source.", err)
+		log.Warn().Err(err).Str("file", dataFilename).Msg("Stored response not found or invalid, fetching from source")
 	}
 
-	// Fetch data from source using the provided fetch function - now returns io.Reader directly
+	// Fetch data from source using the provided fetch function
 	responseReader, fetchErr := fetchFunc()
 	if fetchErr != nil {
-		log.Error().Err(fetchErr).Msgf("Failed to fetch response from source: %s", sourceURL)
-		return nil, nil, fmt.Errorf("error fetching response from source: %w", fetchErr)
+		log.Err(fetchErr).Str("url", sourceURL).Str("provider", providerName).Msg("Failed to fetch response from source")
+		return nil, nil, ErrFetchSourceResponse
 	}
 
 	if storeResponses {
 		metadata := ResponseMetadata{
-			ProcessID:   processID,
-			CreatedAt:   time.Now(),
-			Description: fmt.Sprintf("Response from %s sync run at %s", providerName, time.Now().Format(time.RFC3339)),
+			ProcessID: processID,
+			CreatedAt: time.Now(),
 		}
+		description := strings.Join([]string{"Response from", providerName, "sync run at", time.Now().Format(time.RFC3339)}, " ")
+		metadata.Description = description
+
 		if err := saveResponseToFile(dataFilename, metaFilename, responseReader, metadata); err != nil {
-			log.Error().Err(err).Msgf("Failed to save response to file %s and metadata to %s", dataFilename, metaFilename)
+			log.Err(err).Str("dataFile", dataFilename).Str("metaFile", metaFilename).Msg("Failed to save response to file")
 		} else {
-			log.Info().Msgf("Response saved to file: %s and metadata to: %s, Process ID: %s", dataFilename, metaFilename, metadata.ProcessID)
+			log.Info().Str("dataFile", dataFilename).Str("metaFile", metaFilename).Str("processID", metadata.ProcessID).Msg("Response saved to file")
 		}
+
+		// Get a fresh reader from the saved file to avoid consuming the original reader
 		i, _, e := getStoredResponse(dataFilename, metaFilename) // Return stored response reader after saving (or attempting to save)
 		return i, &metadata, e
 	}
@@ -63,53 +84,63 @@ func GetResponseReader(sourceURL string, fetchFunc func() (io.Reader, error), pr
 }
 
 // getStoredResponse attempts to open and return a reader for the stored response and metadata.
-// No changes needed for getStoredResponse function
 func getStoredResponse(dataFilename string, metaFilename string) (io.Reader, *ResponseMetadata, error) {
 	metaFile, err := os.Open(metaFilename)
 	if err != nil {
-		return nil, nil, fmt.Errorf("metadata file not found: %w", err)
+		log.Err(err).Str("file", metaFilename).Msg("Metadata file not found")
+		return nil, nil, ErrMetadataFileNotFound
 	}
 	defer metaFile.Close()
 	metadata := &ResponseMetadata{}
 	if err := json.NewDecoder(metaFile).Decode(metadata); err != nil {
-		return nil, nil, fmt.Errorf("failed to decode metadata from file: %w", err)
+		log.Err(err).Str("file", metaFilename).Msg("Failed to decode metadata from file")
+		return nil, nil, ErrDecodeMetadataFile
 	}
 
 	if time.Since(metadata.CreatedAt) > 24*time.Hour {
-		return nil, metadata, fmt.Errorf("stored response is too old (created at %s, process ID: %s)", metadata.CreatedAt, metadata.ProcessID)
+		log.Info().
+			Time("created", metadata.CreatedAt).
+			Str("processID", metadata.ProcessID).
+			Msg("Stored response is too old")
+		return nil, metadata, ErrStoredResponseTooOld
 	}
 
 	dataFile, err := os.Open(dataFilename)
 	if err != nil {
-		return nil, metadata, fmt.Errorf("failed to open stored response data file: %w", err)
+		log.Err(err).Str("file", dataFilename).Msg("Failed to open stored response data file")
+		return nil, metadata, ErrOpenDataFile
 	}
 	return dataFile, metadata, nil
 }
 
 // saveResponseToFile saves the response io.Reader to a file and metadata to a separate metadata file.
-// Modified to accept io.Reader for data parameter
 func saveResponseToFile(dataFilename string, metaFilename string, data io.Reader, metadata ResponseMetadata) error {
 	dir := filepath.Dir(dataFilename)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory for response files: %w", err)
+		log.Err(err).Str("directory", dir).Msg("Failed to create directory for response files")
+		return ErrSaveResponseDir
 	}
 
 	dataFile, err := os.Create(dataFilename) // Create data file for writing
 	if err != nil {
-		return fmt.Errorf("failed to create response data file: %w", err)
+		log.Err(err).Str("file", dataFilename).Msg("Failed to create response data file")
+		return ErrCreateResponseDataFile
 	}
 	defer dataFile.Close()
 
 	if _, err := io.Copy(dataFile, data); err != nil { // Copy from io.Reader to file
-		return fmt.Errorf("failed to write response data to file: %w", err)
+		log.Err(err).Str("file", dataFilename).Msg("Failed to write response data to file")
+		return ErrWriteResponseData
 	}
 
 	metaJSON, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal metadata to JSON: %w", err)
+		log.Err(err).Interface("metadata", metadata).Msg("Failed to marshal metadata to JSON")
+		return ErrMarshalMetadataJSON
 	}
 	if err := ioutil.WriteFile(metaFilename, metaJSON, 0644); err != nil {
-		return fmt.Errorf("failed to write metadata to file: %w", err)
+		log.Err(err).Str("file", metaFilename).Msg("Failed to write metadata to file")
+		return ErrWriteMetadataFile
 	}
 
 	return nil
@@ -135,15 +166,17 @@ func RemoveStoredResponse(providerName string) error {
 	dataFilename, metaFilename := generateFilenames(storePath, providerName)
 
 	if err := os.Remove(dataFilename); err == nil {
-		fmt.Printf("Removed stored response data file: %s\n", dataFilename)
+		log.Info().Str("file", dataFilename).Msg("Removed stored response data file")
 	} else if !os.IsNotExist(err) { // Log error only if it's not "file not exists"
-		return fmt.Errorf("failed to remove stored response data file %s: %w", dataFilename, err)
+		log.Err(err).Str("file", dataFilename).Msg("Failed to remove stored response data file")
+		return ErrRemoveResponseDataFile
 	}
 
 	if err := os.Remove(metaFilename); err == nil {
-		fmt.Printf("Removed stored response metadata file: %s\n", metaFilename)
+		log.Info().Str("file", metaFilename).Msg("Removed stored response metadata file")
 	} else if !os.IsNotExist(err) { // Log error only if it's not "file not exists"
-		return fmt.Errorf("failed to remove stored response metadata file %s: %w", metaFilename, err)
+		log.Err(err).Str("file", metaFilename).Msg("Failed to remove stored response metadata file")
+		return ErrRemoveResponseMetaFile
 	}
 
 	return nil

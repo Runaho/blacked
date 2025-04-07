@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"time"
 
@@ -57,7 +56,6 @@ type BaseProvider struct {
 	CollyClient   *colly.Collector
 	CronSchedule  string
 	RateLimit     time.Duration
-	rateLimiter   *time.Ticker
 	Repository    repository.BlacklistRepository
 	ParseFunction func(io.Reader) ([]entries.Entry, error)
 }
@@ -133,19 +131,24 @@ func (b *BaseProvider) Fetch() (io.Reader, error) {
 	c := b.CollyClient.Clone()
 	c.OnResponse(func(r *colly.Response) {
 		responseBody = r.Body
-		log.Info().Msgf("Fetched %d bytes from %s", len(responseBody), b.SourceURL)
+		log.Info().
+			Str("source", b.SourceURL).
+			Int("bytes", len(responseBody)).
+			Msg("Fetched data from source")
 	})
 
 	c.OnError(func(r *colly.Response, err error) {
-		fetchErr = fmt.Errorf("%w for URL %s, status code: %d: %v",
-			ErrFetchingSource, r.Request.URL, r.StatusCode, err)
-		log.Error().Err(err).Msgf("colly error fetching %s, status code: %d",
-			r.Request.URL, r.StatusCode)
+		fetchErr = ErrFetchingSource
+		log.Err(err).
+			Str("url", r.Request.URL.String()).
+			Int("status_code", r.StatusCode).
+			Msg("Colly error when fetching data")
 	})
 
 	log.Info().Msgf("Fetching %s", b.SourceURL)
 	if err := c.Visit(b.SourceURL); err != nil {
-		return nil, fmt.Errorf("%w %s: %v", ErrVisitingURL, b.SourceURL, err)
+		log.Err(err).Str("url", b.SourceURL).Msg("Failed to visit URL")
+		return nil, ErrVisitingURL
 	}
 
 	c.Wait()
@@ -155,6 +158,7 @@ func (b *BaseProvider) Fetch() (io.Reader, error) {
 	}
 
 	if len(responseBody) == 0 {
+		log.Error().Str("url", b.SourceURL).Msg("Empty response from source")
 		return nil, ErrEmptyResponse
 	}
 
@@ -164,6 +168,7 @@ func (b *BaseProvider) Fetch() (io.Reader, error) {
 // Parse processes the fetched data
 func (b *BaseProvider) Parse(data io.Reader) error {
 	if b.Repository == nil {
+		log.Error().Str("provider", b.Name).Msg("Repository not set")
 		return ErrRepositoryNotSet
 	}
 
@@ -173,7 +178,8 @@ func (b *BaseProvider) Parse(data io.Reader) error {
 
 	entries, err := b.ParseFunction(data)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrParsingData, err)
+		log.Err(err).Str("provider", b.Name).Msg("Error parsing data")
+		return ErrParsingData
 	}
 
 	totalProcessed := 0
@@ -182,7 +188,14 @@ func (b *BaseProvider) Parse(data io.Reader) error {
 
 		batch := entries[i:end]
 		if err := b.Repository.BatchSaveEntries(ctx, batch); err != nil {
-			return fmt.Errorf("%w: %v", ErrBatchSaving, err)
+			log.Err(err).
+				Str("provider", b.Name).
+				Int("batch_start", i).
+				Int("batch_end", end).
+				Int("batch_size", len(batch)).
+				Msg("Failed to save batch entries")
+
+			return ErrBatchSaving
 		}
 
 		totalProcessed += len(batch)
@@ -199,7 +212,12 @@ func (b *BaseProvider) Parse(data io.Reader) error {
 	}
 
 	duration := time.Since(startsAt)
-	log.Info().Msgf("%s Provider: Processed and batch-saved %d entries in %v (processID: %s)",
-		b.Name, totalProcessed, duration, processID.String())
+	log.Info().
+		Str("provider", b.Name).
+		Int("entries", totalProcessed).
+		Dur("duration", duration).
+		Str("processID", processID.String()).
+		Msg("Provider processing completed")
+
 	return nil
 }

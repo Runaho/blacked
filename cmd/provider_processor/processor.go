@@ -5,17 +5,26 @@ import (
 	"blacked/features/providers/services"
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/rs/zerolog/log"
+)
+
+var (
+	ErrProviderProcessNotInitialized     = errors.New("provider process not initialized")
+	ErrProviderProcessAlreadyRunning     = errors.New("another provider process is already running")
+	ErrProviderProcessStartFailed        = errors.New("failed to start provider process")
+	ErrProviderProcessCheckFailed        = errors.New("failed to check provider process status")
+	ErrProviderProcessForceFailed        = errors.New("failed to force start provider process")
+	ErrProviderProcessServiceFailed      = errors.New("failed to initialize provider process service")
+	ErrProviderProcessServiceStartFailed = errors.New("failed to start provider process via service")
 )
 
 func Process(selectedProviders, providersToRemove []string, force bool) error {
 	providersList := providers.GetProviders()
 	if providersList == nil {
 		log.Error().Msg("Providers not initialized")
-		return errors.New("providers not initialized")
+		return ErrProviderProcessNotInitialized
 	}
 
 	providerProcessService, err := services.NewProviderProcessService()
@@ -25,7 +34,8 @@ func Process(selectedProviders, providersToRemove []string, force bool) error {
 			Strs("providersToRemove", providersToRemove).
 			Bool("force", force).
 			Msg("failed to initialize provider process service")
-		return err
+
+		return ErrProviderProcessServiceFailed
 	}
 
 	ctx := context.Background()
@@ -38,7 +48,7 @@ func Process(selectedProviders, providersToRemove []string, force bool) error {
 			Bool("force", force).
 			Msg("failed to check process status")
 
-		return err
+		return ErrProviderProcessCheckFailed
 	}
 	if isRunning {
 		if !force {
@@ -48,7 +58,7 @@ func Process(selectedProviders, providersToRemove []string, force bool) error {
 				Bool("force", force).
 				Msg("another process is already running")
 
-			return errors.New("another process is already running. Please wait for it to complete")
+			return ErrProviderProcessAlreadyRunning
 		} else {
 			log.Warn().Msg("Forcing process to start even though another process is running after 5 seconds")
 			time.Sleep(5 * time.Second)
@@ -57,7 +67,13 @@ func Process(selectedProviders, providersToRemove []string, force bool) error {
 
 	processID, err := providerProcessService.StartProcessAsync(ctx, selectedProviders, providersToRemove) // Start process via service
 	if err != nil {
-		return fmt.Errorf("failed to start provider process via service: %w", err)
+		log.Err(err).
+			Strs("selectedProviders", selectedProviders).
+			Strs("providersToRemove", providersToRemove).
+			Bool("force", force).
+			Msg("failed to start process via service")
+
+		return ErrProviderProcessStartFailed
 	}
 
 	log.Info().Str("process_id", processID).Msg("Provider processing initiated via service from CLI.")

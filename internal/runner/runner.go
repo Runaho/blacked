@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -15,11 +14,15 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// Error variables for runner package
 var (
 	ErrFailedToCreateScheduler = errors.New("failed to create scheduler")
 	ErrProviderAlreadyExists   = errors.New("provider already registered")
 	ErrFailedToCreateJob       = errors.New("failed to create job")
 	ErrFailedToGetNextRun      = errors.New("failed to get next run time")
+	ErrNoProvidersSpecified    = errors.New("no providers specified for scheduling")
+	ErrRunnerNotInitialized    = errors.New("cron runner not initialized")
+	ErrInvalidCronSchedule     = errors.New("invalid cron schedule")
 )
 
 // Runner manages scheduled provider executions
@@ -80,14 +83,19 @@ func (r *Runner) RegisterProvider(provider base.Provider, cronSchedule string) e
 
 	// Create a job for this provider
 	job, err := r.scheduler.NewJob(
+		// Use the provided cron schedule
 		gocron.CronJob(
 			cronSchedule,
 			false,
 		),
+
+		// Use the provider's execution function
 		gocron.NewTask(
 			r.executeProvider,
 			providerName,
 		),
+
+		// Set job description and tags
 		gocron.WithName(strings.Join([]string{"provider", providerName}, "_")),
 		gocron.WithTags([]string{"provider", providerName}...),
 	)
@@ -161,7 +169,8 @@ func (r *Runner) GetNextRunTime(providerName string) (time.Time, error) {
 	job, exists := r.jobs[providerName]
 
 	if !exists {
-		return time.Time{}, fmt.Errorf("no job found for provider %s", providerName)
+		log.Error().Str("provider", providerName).Msg("No job found for provider")
+		return time.Time{}, ErrRunnerNotInitialized
 	}
 
 	return job.NextRun()

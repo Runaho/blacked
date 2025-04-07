@@ -1,6 +1,7 @@
 package middlewares
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -84,12 +85,12 @@ func formatByteCount(bytes int64) string {
 func humanizeBytes(bytes int64) string {
 	const unit = 1024
 	if bytes < unit {
-		return string(rune(bytes)) + " B"
+		return strconv.FormatInt(bytes, 10) + " B"
 	}
 	div, exp := int64(unit), 0
 	for n := bytes / unit; n >= unit; n /= unit {
 		div *= unit
 		exp++
 	}
-	return string(rune(bytes/div)) + " " + string("KMGTPE"[exp]) + "B"
+	return strconv.FormatInt(bytes/div, 10) + " " + string("KMGTPE"[exp]) + "B"
 }

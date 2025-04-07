@@ -3,7 +3,6 @@ package colly
 import (
 	"blacked/internal/config"
 	"errors"
-	"fmt"
 	"sync"
 
 	"github.com/gocolly/colly/v2"
@@ -13,7 +12,9 @@ import (
 var (
 	client *colly.Collector
 	once   sync.Once
-	err    error // Package level error variable
+	err    error
+
+	ErrCollyNotInitialized = errors.New("colly client is not initialized")
 )
 
 // InitCollyClient returns a singleton instance of colly.Collector, initialized only once.
@@ -44,7 +45,7 @@ func InitCollyClient() (*colly.Collector, error) {
 
 func GetCollyClient() (*colly.Collector, error) {
 	if client == nil {
-		return nil, fmt.Errorf("colly client is not initialized")
+		return nil, ErrCollyNotInitialized
 	}
 	return client, nil
 }

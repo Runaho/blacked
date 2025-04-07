@@ -2,9 +2,16 @@ package middlewares
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
+	"github.com/rs/zerolog/log"
+)
+
+// Error variables for validator
+var (
+	ErrValidationFailed = errors.New("validation failed")
 )
 
 type Validator struct {
@@ -16,15 +23,20 @@ func (v *Validator) Validate(i interface{}) error {
 	if err == nil {
 		return nil
 	}
+
 	errs := err.(validator.ValidationErrors)
-	msg := ""
-	for _, v := range errs {
-		if msg != "" {
-			msg += ", "
-		}
-		msg += v.Error()
+	if len(errs) == 0 {
+		return nil
 	}
-	return errors.New(msg)
+
+	errorMsgs := make([]string, 0, len(errs))
+	for _, v := range errs {
+		errorMsgs = append(errorMsgs, v.Error())
+	}
+
+	msg := strings.Join(errorMsgs, ", ")
+	log.Error().Str("validation_errors", msg).Msg("Request validation failed")
+	return ErrValidationFailed
 }
 
 func ConfigureValidator(e *echo.Echo) {

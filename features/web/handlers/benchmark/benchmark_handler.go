@@ -6,13 +6,25 @@ import (
 	"blacked/features/entries"
 	"blacked/features/entries/enums"
 	"blacked/features/entries/services"
+	"blacked/features/web/handlers/response"
 	"context"
-	"net/http"
+	"errors"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
+)
+
+// Error variables
+var (
+	ErrInvalidInput       = errors.New("invalid benchmark input")
+	ErrValidationFailed   = errors.New("validation failed")
+	ErrNoURLsProvided     = errors.New("no URLs provided for benchmark")
+	ErrBadgerAccess       = errors.New("error accessing badger database")
+	ErrBloomAccess        = errors.New("error accessing bloom filter")
+	ErrRepositoryAccess   = errors.New("error accessing repository")
+	ErrBenchmarkExecution = errors.New("error executing benchmark")
 )
 
 type BenchmarkHandler struct {
@@ -53,22 +65,18 @@ type BenchmarkResult struct {
 func (h *BenchmarkHandler) BenchmarkURL(c echo.Context) error {
 	input := new(BenchmarkInput)
 	if err := c.Bind(input); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]interface{}{
-			"error":   "Failed to parse benchmark input",
-			"details": err.Error(),
-		})
+		log.Trace().Err(err).Msg("Failed to bind benchmark input")
+		return response.BadRequest(c, "Failed to bind benchmark input")
 	}
 
 	if err := c.Validate(input); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]interface{}{
-			"validation_error": err.Error(),
-		})
+		log.Trace().Err(err).Msg("Validation error")
+		return response.BadRequest(c, "Validation failed: ")
 	}
 
 	if len(input.URLs) == 0 {
-		return c.JSON(http.StatusBadRequest, map[string]interface{}{
-			"error": "At least one URL must be provided",
-		})
+		log.Trace().Msg("No URLs provided for benchmark")
+		return response.BadRequest(c, "At least one URL must be provided")
 	}
 
 	ctx := c.Request().Context()
@@ -80,9 +88,7 @@ func (h *BenchmarkHandler) BenchmarkURL(c echo.Context) error {
 		results[i] = h.benchmarkSingleURL(ctx, url, input.Iterations)
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"results": results,
-	})
+	return response.Success(c, results)
 }
 
 func (h *BenchmarkHandler) benchmarkSingleURL(ctx context.Context, url string, iterations int) BenchmarkResult {

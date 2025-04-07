@@ -6,10 +6,16 @@ import (
 	"blacked/features/entries/repository"
 	"blacked/internal/db"
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/rs/zerolog/log"
+)
+
+// Query service error variables
+var (
+	ErrDatabaseConnection = errors.New("failed to connect to the database")
+	ErrQueryBlacklist     = errors.New("failed to query blacklist entries")
 )
 
 // QueryService handles queries against the blacklist entries.
@@ -21,8 +27,10 @@ type QueryService struct {
 func NewQueryService() (*QueryService, error) {
 	dbConn, err := db.GetDB()
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to the database: %w", err)
+		log.Error().Err(err).Msg("Failed to get database connection")
+		return nil, ErrDatabaseConnection
 	}
+
 	return &QueryService{repo: repository.NewSQLiteRepository(dbConn)}, nil
 }
 
@@ -33,7 +41,7 @@ func (s *QueryService) Query(ctx context.Context, url string, queryType *enums.Q
 	hits, err := s.repo.QueryLinkByType(ctx, url, queryType)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to query blacklist entries")
-		return nil, fmt.Errorf("failed to query blacklist entries: %w", err)
+		return nil, ErrQueryBlacklist
 	}
 	log.Debug().Dur("duration", time.Since(startTime)).Msgf("Query completed, %d hits found", len(hits))
 	return hits, nil

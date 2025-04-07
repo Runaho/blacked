@@ -5,9 +5,9 @@ package benchmark
 import (
 	"blacked/features/cache"
 	"blacked/features/entries/enums"
+	"blacked/features/web/handlers/response"
 	"context"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -65,16 +65,13 @@ type MethodURLPerformance struct {
 func (h *BenchmarkHandler) CompareAllMethods(c echo.Context) error {
 	input := new(BenchmarkInput)
 	if err := c.Bind(input); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]interface{}{
-			"error":   "Failed to parse benchmark input",
-			"details": err.Error(),
-		})
+		log.Err(err).Msg("Failed to parse benchmark input")
+		return response.BadRequest(c, "Failed to parse benchmark input")
 	}
 
 	if err := c.Validate(input); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]interface{}{
-			"validation_error": err.Error(),
-		})
+		log.Err(err).Msg("Benchmark input validation failed")
+		return response.BadRequest(c, "Validation error: "+err.Error())
 	}
 
 	ctx := c.Request().Context()
@@ -86,7 +83,7 @@ func (h *BenchmarkHandler) CompareAllMethods(c echo.Context) error {
 	report.Meta.ExecutionTimeNs = executionTime.Nanoseconds()
 	report.Meta.ExecutionTimeMs = float64(executionTime.Nanoseconds()) / 1_000_000.0
 
-	return c.JSON(http.StatusOK, report)
+	return response.Success(c, report)
 }
 
 func (h *BenchmarkHandler) runComprehensiveBenchmark(ctx context.Context, input *BenchmarkInput) BenchmarkReport {

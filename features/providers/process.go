@@ -10,7 +10,6 @@ import (
 	"blacked/internal/utils"
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -18,12 +17,20 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// Process error variables
+var (
+	ErrProcessingProvider = errors.New("error processing provider")
+	ErrProviderNotFound   = errors.New("provider not found")
+	ErrCreateRepository   = errors.New("failed to create repository")
+	ErrUpdateCache        = errors.New("failed to update cache")
+)
+
 type UpdateCacheMode string
 
 const (
 	UpdateCacheImmediate UpdateCacheMode = "immediate"
-	UpdateCacheDeferred                  = "deferred"
-	UpdateCacheNone                      = "none"
+	UpdateCacheDeferred  UpdateCacheMode = "deferred"
+	UpdateCacheNone      UpdateCacheMode = "none"
 )
 
 type ProcessOptions struct {
@@ -53,7 +60,8 @@ func (p Providers) Process(ctx context.Context, opts ...ProcessOptions) error {
 
 	rwDB, err := db.GetDB()
 	if err != nil {
-		return fmt.Errorf("failed to open read-write database: %w", err)
+		log.Err(err).Msg("Failed to open read-write database")
+		return ErrCreateRepository
 	}
 
 	repo := repository.NewSQLiteRepository(rwDB)
@@ -83,7 +91,8 @@ func (p Providers) Process(ctx context.Context, opts ...ProcessOptions) error {
 	case UpdateCacheImmediate:
 		log.Info().Msg("Performing immediate cache sync after provider processing")
 		if err := cache.SyncBlacklistsToBadger(ctx); err != nil {
-			return fmt.Errorf("failed to sync cache after provider processing: %w", err)
+			log.Err(err).Msg("Failed to sync cache after provider processing")
+			return ErrUpdateCache
 		}
 
 	case UpdateCacheDeferred:
@@ -101,7 +110,8 @@ func (p Providers) Process(ctx context.Context, opts ...ProcessOptions) error {
 	}
 
 	if aggregatedError != nil {
-		return fmt.Errorf("errors during provider processing: %w", aggregatedError)
+		log.Err(aggregatedError).Msg("Errors during provider processing")
+		return ErrProcessingProvider
 	}
 
 	return nil

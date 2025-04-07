@@ -6,7 +6,6 @@ import (
 	"blacked/internal/collector"
 	"blacked/internal/config"
 	"errors"
-	"fmt"
 	"strconv"
 	"sync"
 
@@ -18,12 +17,18 @@ import (
 	"github.com/ziflex/lecho/v3"
 )
 
+// Application errors
+var (
+	ErrApplicationNotInitialized = errors.New("application not initialized")
+	ErrServiceInitFailed         = errors.New("services initialization failed")
+	ErrRoutesMapFailed           = errors.New("routes configuration failed")
+	ErrMetricCollectorFailed     = errors.New("metric collector configuration failed")
+)
+
 // Global variables (singleton pattern)
 var (
 	onceApplication sync.Once
 	application     *Application
-
-	ErrApplicationNotInitialized = errors.New("Application not initialized")
 )
 
 // Application holds our Echo instance, Config, Logger, and Services.
@@ -65,8 +70,8 @@ func NewApplication(cfg *config.ServerConfig) (*Application, error) {
 		// Initialize all services
 		svcs, err := NewServices()
 		if err != nil {
-			initErr = fmt.Errorf("failed to create services: %w", err)
-			log.Error().Err(initErr).Msg("Service initialization error")
+			log.Err(err).Msg("Service initialization error")
+			initErr = ErrServiceInitFailed
 			return
 		}
 		app.services = svcs
@@ -76,16 +81,16 @@ func NewApplication(cfg *config.ServerConfig) (*Application, error) {
 
 		// Map all routes
 		if mapErr := app.ConfigureRoutes(); mapErr != nil {
-			initErr = fmt.Errorf("failed to configure routes: %w", mapErr)
-			log.Error().Err(initErr).Msg("Routes configuration error")
+			log.Err(mapErr).Msg("Routes configuration error")
+			initErr = ErrRoutesMapFailed
 			return
 		}
 
 		app.providers = providers.GetProviders()
 
 		if err := app.configureMetricCollector(); err != nil {
-			initErr = fmt.Errorf("failed to configure metric collector: %w", err)
-			log.Error().Err(initErr).Msg("Metric collector configuration error")
+			log.Err(err).Msg("Metric collector configuration error")
+			initErr = ErrMetricCollectorFailed
 			return
 		}
 
@@ -100,6 +105,7 @@ func (app *Application) configureMetricCollector() error {
 
 	mc, err := collector.GetMetricsCollector()
 	if err != nil {
+		log.Err(err).Msg("Failed to get metrics collector")
 		return err
 	}
 

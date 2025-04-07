@@ -6,13 +6,26 @@ import (
 	"blacked/internal/utils"
 	"context"
 	"database/sql"
-	"fmt"
+	"errors"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
+)
+
+var (
+	ErrInvalidEntryQueryType = errors.New("invalid entry query type")
+	ErrQueryAllEntries       = errors.New("failed to query all active entries from SQLite")
+
+	ErrToScan        = errors.New("failed to scan row from SQLite")
+	ErrToQuery       = errors.New("failed to query entry by ID from SQLite")
+	ErrRowsIteration = errors.New("error iterating rows from SQLite")
+	ErrTx            = errors.New("failed to begin transaction for SQLite")
+	ErrTxPrepare     = errors.New("failed to prepare transaction for SQLite")
+	ErrUpsert        = errors.New("failed to UPSERT entry in SQLite")
+	ErrDelete        = errors.New("failed to delete entry in SQLite")
 )
 
 // SQLiteRepository is the concrete implementation of BlacklistRepository using SQLite.
@@ -84,7 +97,8 @@ func (r *SQLiteRepository) StreamEntries(ctx context.Context, out chan<- entries
 func (r *SQLiteRepository) GetAllEntries(ctx context.Context) ([]entries.Entry, error) {
 	rows, err := r.db.QueryContext(ctx, "SELECT * FROM blacklist_entries WHERE deleted_at IS NULL") // WHERE clause to filter out deleted entries
 	if err != nil {
-		return nil, fmt.Errorf("failed to query all active entries from SQLite: %w", err)
+		log.Error().Err(err).Msg("Failed to query all active entries from SQLite")
+		return nil, ErrQueryAllEntries
 	}
 	defer rows.Close()
 
@@ -99,7 +113,8 @@ func (r *SQLiteRepository) GetAllEntries(ctx context.Context) ([]entries.Entry, 
 			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, // Scan deletedAt
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan row from SQLite: %w", err)
+			log.Error().Err(err).Msg("Failed to scan row from SQLite")
+			return nil, ErrToScan
 		}
 		entry.SubDomains = strings.Split(subDomainsStr, ",")
 		if entry.SubDomains[0] == "" {
@@ -113,7 +128,8 @@ func (r *SQLiteRepository) GetAllEntries(ctx context.Context) ([]entries.Entry, 
 		_entries = append(_entries, entry)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows iteration error from SQLite: %w", err)
+		log.Error().Err(err).Msg("Error iterating rows from SQLite")
+		return nil, ErrRowsIteration
 	}
 	return _entries, nil
 }
@@ -135,8 +151,14 @@ func (r *SQLiteRepository) GetEntryByID(ctx context.Context, id string) (*entrie
 		if err == sql.ErrNoRows {
 			return nil, nil // Entry not found
 		}
-		return nil, fmt.Errorf("failed to query entry by ID from SQLite: %w", err)
+
+		log.Err(err).
+			Str("entry_id", id).
+			Msg("Failed to scan row from SQLite")
+
+		return nil, ErrToQuery
 	}
+
 	entry.SubDomains = strings.Split(subDomainsStr, ",") // Split the string
 	if entry.SubDomains[0] == "" {
 		entry.SubDomains = nil
@@ -169,7 +191,11 @@ func (r *SQLiteRepository) GetEntriesByIDs(ctx context.Context, ids []string) ([
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query entries by IDs from SQLite: %w", err)
+		log.Err(err).
+			Strs("ids", ids).
+			Msg("Failed to query entries by IDs from SQLite")
+
+		return nil, ErrToQuery
 	}
 	defer rows.Close()
 
@@ -202,7 +228,8 @@ func (r *SQLiteRepository) GetEntriesByIDs(ctx context.Context, ids []string) ([
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows iteration error from SQLite: %w", err)
+		log.Err(err).Msg("Error iterating rows from SQLite")
+		return nil, ErrRowsIteration
 	}
 
 	return entriesList, nil
@@ -212,7 +239,11 @@ func (r *SQLiteRepository) GetEntriesByIDs(ctx context.Context, ids []string) ([
 func (r *SQLiteRepository) GetEntriesBySource(ctx context.Context, source string) ([]entries.Entry, error) {
 	rows, err := r.db.QueryContext(ctx, "SELECT * FROM blacklist_entries WHERE source = ? AND deleted_at IS NULL") // Added WHERE deleted_at IS NULL
 	if err != nil {
-		return nil, fmt.Errorf("failed to query active entries by source from SQLite: %w", err)
+		log.Err(err).
+			Str("source", source).
+			Msg("Failed to query active entries by source from SQLite")
+
+		return nil, ErrToQuery
 	}
 	defer rows.Close()
 
@@ -227,7 +258,11 @@ func (r *SQLiteRepository) GetEntriesBySource(ctx context.Context, source string
 			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, // Scan deletedAt
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan row for entries by source from SQLite: %w", err)
+			log.Err(err).
+				Str("source", source).
+				Msg("Failed to scan row for entries by source from SQLite")
+
+			return nil, ErrToScan
 		}
 		entry.SubDomains = strings.Split(subDomainsStr, ",")
 		if entry.SubDomains[0] == "" {
@@ -241,7 +276,11 @@ func (r *SQLiteRepository) GetEntriesBySource(ctx context.Context, source string
 		_entries = append(_entries, entry)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows iteration error for entries by source from SQLite: %w", err)
+		log.Err(err).
+			Str("source", source).
+			Msg("Rows iteration error for entries by source from SQLite")
+
+		return nil, ErrRowsIteration
 	}
 	return _entries, nil
 }
@@ -250,7 +289,11 @@ func (r *SQLiteRepository) GetEntriesBySource(ctx context.Context, source string
 func (r *SQLiteRepository) GetEntriesByCategory(ctx context.Context, category string) ([]entries.Entry, error) {
 	rows, err := r.db.QueryContext(ctx, "SELECT * FROM blacklist_entries WHERE category = ? AND deleted_at IS NULL") // Added WHERE deleted_at IS NULL
 	if err != nil {
-		return nil, fmt.Errorf("failed to query active entries by category from SQLite: %w", err)
+		log.Err(err).
+			Str("category", category).
+			Msg("Failed to query active entries by category from SQLite")
+
+		return nil, ErrToQuery
 	}
 	defer rows.Close()
 
@@ -265,7 +308,11 @@ func (r *SQLiteRepository) GetEntriesByCategory(ctx context.Context, category st
 			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, // Scan deletedAt
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan row for entries by category from SQLite: %w", err)
+			log.Err(err).
+				Str("category", category).
+				Msg("Failed to scan row for entries by category from SQLite")
+
+			return nil, ErrToScan
 		}
 		entry.SubDomains = strings.Split(subDomainsStr, ",")
 		if entry.SubDomains[0] == "" {
@@ -279,7 +326,11 @@ func (r *SQLiteRepository) GetEntriesByCategory(ctx context.Context, category st
 		_entries = append(_entries, entry)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows iteration error for entries by category from SQLite: %w", err)
+		log.Err(err).
+			Str("category", category).
+			Msg("Rows iteration error for entries by category from SQLite")
+
+		return nil, ErrRowsIteration
 	}
 	return _entries, nil
 }
@@ -291,7 +342,8 @@ func (r *SQLiteRepository) SaveEntry(ctx context.Context, entry entries.Entry) e
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction for SaveEntry (UPSERT): %w", err)
+		log.Error().Err(err).Msg("Failed to begin transaction for SaveEntry (UPSERT)")
+		return ErrTx
 	}
 	defer tx.Rollback()
 
@@ -321,7 +373,7 @@ func (r *SQLiteRepository) SaveEntry(ctx context.Context, entry entries.Entry) e
 	if err != nil {
 		// Consider logging the specific entry details here if needed
 		log.Error().Err(err).Str("entry_id", entry.ID).Str("source_url", entry.SourceURL).Msg("Failed to UPSERT entry")
-		return err
+		return ErrUpsert
 	}
 	return tx.Commit()
 }
@@ -338,7 +390,8 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []entri
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction for BatchSaveEntries: %w", err)
+		log.Error().Err(err).Msg("Failed to begin transaction for BatchSaveEntries")
+		return ErrTx
 	}
 	defer tx.Rollback() // Ensure rollback in case of errors
 
@@ -360,7 +413,8 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []entri
 			deleted_at = NULL  -- Reset deleted_at on update to ensure entry becomes active again if it was soft-deleted
 	`)
 	if err != nil {
-		return fmt.Errorf("failed to prepare batch insert statement: %w", err)
+		log.Err(err).Msg("Failed to prepare batch insert statement")
+		return ErrTxPrepare
 	}
 	defer stmt.Close() // Ensure statement closure
 
@@ -385,7 +439,11 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []entri
 func (r *SQLiteRepository) RemoveOlderInsertions(ctx context.Context, providerName string, currentProcessID string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction for RemoveOlderInsertions: %w", err)
+		log.Err(err).
+			Str("provider", providerName).
+			Msg("Failed to begin transaction for RemoveOlderInsertions")
+
+		return ErrTx
 	}
 	defer tx.Rollback()
 
@@ -399,15 +457,15 @@ func (r *SQLiteRepository) RemoveOlderInsertions(ctx context.Context, providerNa
 	`, currentTime, providerName, currentProcessID)
 
 	if err != nil {
-		return fmt.Errorf("failed to soft delete older insertions for provider '%s': %w", providerName, err)
+		log.Error().Err(err).Str("provider", providerName).Msg("Failed to soft delete older insertions")
+		return ErrDelete
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		fmt.Printf("Warning: Failed to get rows affected count during RemoveOlderInsertions for %s: %v\n", providerName, err)
-		// Non-critical error, continue without failing the whole process
+		log.Warn().Err(err).Str("provider", providerName).Msg("Failed to get rows affected count during RemoveOlderInsertions")
 	} else {
-		fmt.Printf("Soft-deleted %d older entries for provider '%s' (insertion IDs older than %s)\n", rowsAffected, providerName, currentProcessID)
+		log.Debug().Int64("rows_affected", rowsAffected).Str("provider", providerName).Msg("Rows affected during RemoveOlderInsertions")
 	}
 
 	return tx.Commit()
@@ -417,14 +475,16 @@ func (r *SQLiteRepository) RemoveOlderInsertions(ctx context.Context, providerNa
 func (r *SQLiteRepository) ClearAllEntries(ctx context.Context) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction for ClearAllEntries (SOFT DELETE): %w", err)
+		log.Err(err).Msg("Failed to begin transaction for ClearAllEntries (SOFT DELETE)")
+		return ErrTx
 	}
 	defer tx.Rollback()
 
 	currentTime := time.Now()
 	_, err = tx.ExecContext(ctx, "UPDATE blacklist_entries SET deleted_at = ?", currentTime) // Soft delete all by setting deleted_at
 	if err != nil {
-		return fmt.Errorf("failed to soft delete all entries in SQLite: %w", err)
+		log.Err(err).Msg("Failed to soft delete all entries in SQLite")
+		return ErrDelete
 	}
 
 	return tx.Commit()
@@ -434,14 +494,22 @@ func (r *SQLiteRepository) ClearAllEntries(ctx context.Context) error {
 func (r *SQLiteRepository) SoftDeleteEntryByID(ctx context.Context, id string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction for SoftDeleteEntryByID: %w", err)
+		log.Err(err).
+			Str("entry_id", id).
+			Msg("Failed to begin transaction for SoftDeleteEntryByID")
+
+		return ErrTx
 	}
 	defer tx.Rollback()
 
 	currentTime := time.Now()
 	_, err = tx.ExecContext(ctx, "UPDATE blacklist_entries SET deleted_at = ? WHERE id = ?", currentTime, id)
 	if err != nil {
-		return fmt.Errorf("failed to soft delete entry with ID %s in SQLite: %w", id, err)
+		log.Err(err).
+			Str("entry_id", id).
+			Msg("Failed to soft delete entry by ID in SQLite")
+
+		return ErrDelete
 	}
 
 	return tx.Commit()
@@ -466,7 +534,10 @@ func (r *SQLiteRepository) QueryLink(ctx context.Context, link string) (
 	d, _, err := utils.ExtractDomainAndSubDomains(parsedURL.Host)
 
 	if err != nil {
-		log.Error().Err(err).Msg("error extracting domain and subdomains")
+		log.Err(err).
+			Str("raw_link", link).
+			Str("parsed_host", parsedURL.Host).
+			Msg("error extracting domain and subdomains")
 	} else {
 		domain = d
 	}
@@ -512,13 +583,19 @@ func (r *SQLiteRepository) QueryLinkByType(ctx context.Context, link string, que
 	case enums.QueryTypePath:
 		query = "SELECT id FROM blacklist_entries WHERE path = ? AND deleted_at IS NULL"
 	default:
-		return nil, fmt.Errorf("invalid query type: %v", queryType)
+		log.Error().Str("query_type", queryType.String()).Msg("Invalid query type")
+		return nil, ErrInvalidEntryQueryType
 	}
 	log.Debug().Str("query", query).Str("type", queryType.String()).Msg("starting query")
 	rows, err := r.db.QueryContext(ctx, query, link)
 	if err != nil {
-		log.Error().Err(err).Msg("Query failed")
-		return nil, err
+		log.Err(err).
+			Str("query", query).
+			Str("type", queryType.String()).
+			Str("link", link).
+			Msg("Query failed")
+
+		return nil, ErrToQuery
 	}
 	defer rows.Close()
 
@@ -526,8 +603,10 @@ func (r *SQLiteRepository) QueryLinkByType(ctx context.Context, link string, que
 		var id string
 		err := rows.Scan(&id)
 		if err != nil {
-			log.Error().Err(err).Msg("Failed to scan row")
-			return nil, err
+			log.Err(err).
+				Msg("Failed to scan row")
+
+			return nil, ErrToScan
 		}
 		hits = append(hits, entries.Hit{
 			ID:           id,
@@ -537,8 +616,10 @@ func (r *SQLiteRepository) QueryLinkByType(ctx context.Context, link string, que
 	}
 
 	if err := rows.Err(); err != nil {
-		log.Error().Err(err).Msg("Error iterating rows")
-		return nil, err
+		log.Err(err).
+			Msg("Error iterating rows")
+
+		return nil, ErrRowsIteration
 	}
 
 	log.Debug().Dur("duration", time.Since(startTime)).Str("query_type", queryType.String()).Msg("Query completed")
@@ -551,7 +632,13 @@ func (r *SQLiteRepository) queryExactURLMatch(ctx context.Context, normalizedLin
 	query := "SELECT id FROM blacklist_entries WHERE source_url = ? AND deleted_at IS NULL"
 	rows, err := r.db.QueryContext(ctx, query, normalizedLink)
 	if err != nil {
-		log.Error().Err(err).Msg("Exact URL match query failed")
+		log.Err(err).Msg("Exact URL match query failed")
+		if err == sql.ErrNoRows {
+			log.Debug().Str("normalized_link", normalizedLink).Msg("No exact URL match found")
+		} else {
+			log.Err(err).Msg("Error executing exact URL match query")
+		}
+
 		return nil
 	}
 	defer rows.Close()
@@ -562,7 +649,7 @@ func (r *SQLiteRepository) queryExactURLMatch(ctx context.Context, normalizedLin
 		var id string
 		err := rows.Scan(&id)
 		if err != nil {
-			log.Error().Err(err).Msg("Failed to scan row in queryExactURLMatch")
+			log.Err(err).Msg("Failed to scan row in queryExactURLMatch")
 			continue // Or handle the error as appropriate
 		}
 		hits = append(hits, entries.Hit{
@@ -573,7 +660,7 @@ func (r *SQLiteRepository) queryExactURLMatch(ctx context.Context, normalizedLin
 	}
 
 	if err := rows.Err(); err != nil {
-		log.Error().Err(err).Msg("Error iterating rows in queryExactURLMatch")
+		log.Err(err).Msg("Error iterating rows in queryExactURLMatch")
 		return nil
 	}
 
@@ -588,7 +675,10 @@ func (r *SQLiteRepository) queryHostMatch(ctx context.Context, host string) []en
 	query := "SELECT id FROM blacklist_entries WHERE host = ? AND deleted_at IS NULL"
 	rows, err := r.db.QueryContext(ctx, query, host)
 	if err != nil {
-		log.Error().Err(err).Msg("Host match query failed")
+		log.Err(err).
+			Str("host", host).
+			Msg("Host match query failed")
+
 		return nil
 	}
 	defer rows.Close()
@@ -610,7 +700,10 @@ func (r *SQLiteRepository) queryHostMatch(ctx context.Context, host string) []en
 	}
 
 	if err := rows.Err(); err != nil {
-		log.Error().Err(err).Msg("Error iterating rows in queryHostMatch")
+		log.Err(err).
+			Str("host", host).
+			Msg("Error iterating rows in queryHostMatch")
+
 		return nil
 	}
 
@@ -625,7 +718,9 @@ func (r *SQLiteRepository) queryDomainMatch(ctx context.Context, domain string) 
 	query := "SELECT id FROM blacklist_entries WHERE domain = ? AND deleted_at IS NULL"
 	rows, err := r.db.QueryContext(ctx, query, domain)
 	if err != nil {
-		log.Error().Err(err).Msg("Domain match query failed")
+		log.Err(err).
+			Str("domain", domain).
+			Msg("Domain match query failed")
 		return nil
 	}
 	defer rows.Close()
@@ -636,7 +731,10 @@ func (r *SQLiteRepository) queryDomainMatch(ctx context.Context, domain string) 
 		var id string
 		err := rows.Scan(&id)
 		if err != nil {
-			log.Error().Err(err).Msg("Failed to scan row in queryDomainMatch")
+			log.Err(err).
+				Str("domain", domain).
+				Msg("Failed to scan row in queryDomainMatch")
+
 			continue // Or handle the error as appropriate
 		}
 		hits = append(hits, entries.Hit{
@@ -647,7 +745,10 @@ func (r *SQLiteRepository) queryDomainMatch(ctx context.Context, domain string) 
 	}
 
 	if err := rows.Err(); err != nil {
-		log.Error().Err(err).Msg("Error iterating rows in queryDomainMatch")
+		log.Err(err).
+			Str("domain", domain).
+			Msg("Error iterating rows in queryDomainMatch")
+
 		return nil
 	}
 
@@ -661,7 +762,10 @@ func (r *SQLiteRepository) queryPathMatch(ctx context.Context, path string) []en
 	query := "SELECT id FROM blacklist_entries WHERE path = ? AND deleted_at IS NULL"
 	rows, err := r.db.QueryContext(ctx, query, path)
 	if err != nil {
-		log.Error().Err(err).Msg("Path match query failed")
+		log.Err(err).
+			Str("path", path).
+			Msg("Path match query failed")
+
 		return nil
 	}
 	defer rows.Close()
@@ -672,7 +776,10 @@ func (r *SQLiteRepository) queryPathMatch(ctx context.Context, path string) []en
 		var id string
 		err := rows.Scan(&id)
 		if err != nil {
-			log.Error().Err(err).Msg("Failed to scan row in queryPathMatch")
+			log.Err(err).
+				Str("path", path).
+				Msg("Failed to scan row in queryPathMatch")
+
 			continue // Or handle the error as appropriate
 		}
 		hits = append(hits, entries.Hit{
@@ -683,7 +790,10 @@ func (r *SQLiteRepository) queryPathMatch(ctx context.Context, path string) []en
 	}
 
 	if err := rows.Err(); err != nil {
-		log.Error().Err(err).Msg("Error iterating rows in queryPathMatch")
+		log.Err(err).
+			Str("path", path).
+			Msg("Error iterating rows in queryPathMatch")
+
 		return nil
 	}
 

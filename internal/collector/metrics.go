@@ -1,7 +1,7 @@
 package collector
 
 import (
-	"fmt"
+	"errors"
 	"sync"
 	"time"
 
@@ -12,6 +12,9 @@ import (
 var (
 	once sync.Once
 	mc   *MetricsCollector
+
+	// Error variables for collector metrics
+	ErrMetricsCollectorNotInitialized = errors.New("metrics collector not initialized")
 )
 
 type ProviderMetrics struct {
@@ -37,7 +40,7 @@ type MetricsCollector struct {
 
 func GetMetricsCollector() (*MetricsCollector, error) {
 	if mc == nil {
-		return nil, fmt.Errorf("MetricsCollector not initialized")
+		return nil, ErrMetricsCollectorNotInitialized
 	}
 	return mc, nil
 }
@@ -196,6 +199,5 @@ func (mc *MetricsCollector) GetAllProviderMetrics() map[string]*ProviderMetrics 
 
 // String method for ProviderMetrics - Can be simplified.
 func (pm *ProviderMetrics) String() string {
-	return fmt.Sprintf(`Provider: %s, Status: %s (Detailed metrics in Prometheus)`,
-		pm.ProviderName, pm.SyncStatus) // Simpler string now. Detailed metrics are in Prometheus.
+	return "Provider: " + pm.ProviderName + ", Status: " + pm.SyncStatus + " (Detailed metrics in Prometheus)"
 }
