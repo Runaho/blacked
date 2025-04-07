@@ -27,7 +27,7 @@ type Entry struct {
 	SubDomains []string   `json:"sub_domains"`
 	Path       string     `json:"path"`
 	RawQuery   string     `json:"raw_query"`
-	SourceURL  string     `json:"source_url"`           // URL where this data was fetched from
+	SourceURL  string     `json:"source_url"`           // Raw URL From the source
 	Source     string     `json:"source"`               // Name of the provider
 	Category   string     `json:"category,omitempty"`   // Optional category
 	Confidence float64    `json:"confidence,omitempty"` // Optional confidence score
