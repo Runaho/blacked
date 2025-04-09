@@ -116,6 +116,97 @@ func SyncBlacklistsToBadger(ctx context.Context) error {
 }
 
 func UpsertEntryStream(bdb *badger.DB, entryStream entries.EntryStream) error {
+	log.Trace().
+		Str("source_url", entryStream.SourceUrl).
+		Int("new_ids_count", len(entryStream.IDs)).
+		Msg("Upserting entry stream")
+
+	key := []byte(entryStream.SourceUrl)
+
+	return bdb.Update(func(txn *badger.Txn) error {
+		item, err := txn.Get(key)
+
+		if err == badger.ErrKeyNotFound {
+
+			if len(entryStream.IDs) == 0 {
+				return nil
+			}
+
+			var builder strings.Builder
+			for i, id := range entryStream.IDs {
+				builder.WriteString(id)
+				if i < len(entryStream.IDs)-1 {
+					builder.WriteByte(',')
+				}
+			}
+			valBytes := []byte(builder.String())
+			log.Trace().Str("key", entryStream.SourceUrl).Int("bytes", len(valBytes)).Msg("Setting new key")
+			return txn.Set(key, valBytes)
+		}
+		if err != nil {
+			return err
+		}
+
+		return item.Value(func(existingVal []byte) error {
+			if len(existingVal) == 0 && len(entryStream.IDs) == 0 {
+				return nil
+			}
+
+			var existingIDs []string
+			if len(existingVal) > 0 {
+				existingIDs = strings.Split(string(existingVal), ",")
+			}
+
+			estimatedSize := len(existingIDs) + len(entryStream.IDs)
+			seenIDs := make(map[string]struct{}, estimatedSize)
+
+			var builder strings.Builder
+			builder.Grow(len(existingVal) + len(entryStream.IDs)*10)
+
+			first := true
+
+			for _, id := range existingIDs {
+				if id == "" {
+					continue
+				}
+				if _, seen := seenIDs[id]; !seen {
+					seenIDs[id] = struct{}{}
+					if !first {
+						builder.WriteByte(',')
+					}
+					builder.WriteString(id)
+					first = false
+				}
+			}
+
+			for _, id := range entryStream.IDs {
+				if id == "" {
+					continue
+				}
+				if _, seen := seenIDs[id]; !seen {
+					seenIDs[id] = struct{}{}
+					if !first {
+						builder.WriteByte(',')
+					}
+					builder.WriteString(id)
+					first = false
+				}
+			}
+
+			finalValBytes := []byte(builder.String())
+
+			if string(finalValBytes) == string(existingVal) {
+				log.Trace().Str("key", entryStream.SourceUrl).Msg("Skipping set, value unchanged")
+				return nil
+			}
+
+			log.Trace().Str("key", entryStream.SourceUrl).Int("old_bytes", len(existingVal)).Int("new_bytes", len(finalValBytes)).Int("unique_ids", len(seenIDs)).Msg("Setting updated key")
+			return txn.Set(key, finalValBytes)
+		})
+	})
+}
+
+func UpsertEntryStreamOld(bdb *badger.DB, entryStream entries.EntryStream) error {
 	// Use Info level instead of Trace to make sure it's visible
 	log.Trace().
 		Str("source_url", entryStream.SourceUrl).
@@ -127,15 +218,36 @@ func UpsertEntryStream(bdb *badger.DB, entryStream entries.EntryStream) error {
 	return bdb.Update(func(txn *badger.Txn) error {
 		item, err := txn.Get(key)
 
-		if err != nil {
-			if err == badger.ErrKeyNotFound {
-				IDs := []byte(strings.Join(entryStream.IDs, ","))
-				return txn.Set(key, IDs)
+		if err == badger.ErrKeyNotFound {
+
+			if len(entryStream.IDs) == 0 {
+				return nil
 			}
+
+			var builder strings.Builder
+			for i, id := range entryStream.IDs {
+				builder.WriteString(id)
+				if i < len(entryStream.IDs)-1 {
+					builder.WriteByte(',')
+				}
+			}
+
+			valBytes := []byte(builder.String())
+
+			log.Trace().Str("key", entryStream.SourceUrl).Int("bytes", len(valBytes)).Msg("Setting new key")
+			return txn.Set(key, valBytes)
+		}
+
+		if err != nil {
 			return err
 		}
 
 		return item.Value(func(existingVal []byte) error {
+
+			if len(existingVal) == 0 && len(entryStream.IDs) == 0 {
+				return nil
+			}
+
 			IDs := strings.Split(string(existingVal), ",")
 			IDs = append(IDs, entryStream.IDs...)
 
