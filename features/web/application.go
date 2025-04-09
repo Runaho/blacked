@@ -9,6 +9,10 @@ import (
 	"strconv"
 	"sync"
 
+	"net/http"
+	"net/http/pprof"
+	rpprof "runtime/pprof"
+
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/rs/xid"
@@ -86,6 +90,8 @@ func NewApplication(cfg *config.ServerConfig) (*Application, error) {
 			return
 		}
 
+		app.ConfigurePprof()
+
 		app.providers = providers.GetProviders()
 
 		if err := app.configureMetricCollector(); err != nil {
@@ -153,4 +159,23 @@ func (a Application) configureLogger() {
 	lechoLogger := lecho.From(log.Logger, lecho.WithTimestamp())
 	a.Echo.Logger = lechoLogger
 	a.logger = lechoLogger
+}
+
+func (app *Application) ConfigurePprof() {
+	pprofGroup := app.Echo.Group("/debug/pprof")
+
+	// Index page
+	pprofGroup.GET("", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
+	pprofGroup.GET("/", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
+
+	// Individual profiles - these match the standard pprof endpoints
+	pprofGroup.GET("/cmdline", echo.WrapHandler(http.HandlerFunc(pprof.Cmdline)))
+	pprofGroup.GET("/profile", echo.WrapHandler(http.HandlerFunc(pprof.Profile)))
+	pprofGroup.GET("/symbol", echo.WrapHandler(http.HandlerFunc(pprof.Symbol)))
+	pprofGroup.GET("/trace", echo.WrapHandler(http.HandlerFunc(pprof.Trace)))
+
+	for _, profile := range rpprof.Profiles() {
+		name := profile.Name()
+		pprofGroup.GET("/"+name, echo.WrapHandler(pprof.Handler(name)))
+	}
 }
