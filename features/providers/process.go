@@ -19,10 +19,11 @@ import (
 
 // Process error variables
 var (
-	ErrProcessingProvider = errors.New("error processing provider")
-	ErrProviderNotFound   = errors.New("provider not found")
-	ErrCreateRepository   = errors.New("failed to create repository")
-	ErrUpdateCache        = errors.New("failed to update cache")
+	ErrProcessingProvider   = errors.New("error processing provider")
+	ErrProviderNotFound     = errors.New("provider not found")
+	ErrCreateRepository     = errors.New("failed to create repository")
+	ErrUpdateCache          = errors.New("failed to update cache")
+	ErrNoProvidersSpecified = errors.New("no providers specified for processing")
 )
 
 type UpdateCacheMode string
@@ -48,6 +49,10 @@ var DefaultProcessOptions = ProcessOptions{
 // This is the central method for all provider processing operations
 // and should be the entrypoint for all provider execution.
 func (p Providers) Process(ctx context.Context, opts ...ProcessOptions) error {
+	if len(p) == 0 {
+		panic(ErrNoProvidersSpecified)
+	}
+
 	options := DefaultProcessOptions
 	if len(opts) > 0 {
 		options = opts[0]
