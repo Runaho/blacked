@@ -23,13 +23,16 @@ func InitializeBadger() error {
 		log.Info().Msg("Attempting to initialize BadgerDB instance")
 		cfg = &config.GetConfig().Cache // Get config inside the Once.Do
 
+		opts := badger.DefaultOptions(cfg.BadgerPath).WithInMemory(cfg.InMemory)
+
 		// BadgerSingleInstance logic moved here
-		instance, initErr = badger.Open(badger.DefaultOptions(cfg.BadgerPath).WithInMemory(cfg.InMemory))
+		instance, initErr = badger.Open(opts)
 		if initErr != nil {
 			log.Error().Err(initErr).Msg("Failed to open badger database during initialization")
 		} else {
 			log.Info().Msg("BadgerDB instance initialized successfully")
 		}
+
 	})
 	return initErr // Return the potential error from initialization
 }
