@@ -199,7 +199,7 @@ func (p Providers) processProvider(provider base.Provider, repo repository.Black
 
 	// Cleanup if needed
 	cfg := config.GetConfig()
-	if cfg.APP.Environtment != "development" {
+	if cfg.APP.Environtment == "development" {
 		utils.RemoveStoredResponse(name)
 	}
 
