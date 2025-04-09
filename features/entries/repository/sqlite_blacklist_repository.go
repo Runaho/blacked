@@ -82,6 +82,7 @@ func (r *SQLiteRepository) StreamEntries(ctx context.Context, out chan<- entries
 			out <- entries.EntryStream{
 				SourceUrl: sourceURL,
 				IDs:       ids,
+				IDsRaw:    idsConcat,
 			}
 		}
 	}
@@ -422,8 +423,8 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []entri
 
 	for _, entry := range entries {
 
-		if log.Debug().Enabled() {
-			log.Debug().
+		if log.Trace().Enabled() {
+			log.Trace().
 				Str("entry_id", entry.ID).
 				Str("domain", entry.Domain).
 				Str("source_url", entry.SourceURL).

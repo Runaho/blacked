@@ -6,11 +6,10 @@ import (
 	"blacked/internal/config"
 	"blacked/internal/db"
 	"context"
-	"strings"
+	"unsafe"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/rs/zerolog/log"
-	"github.com/samber/lo"
 )
 
 var (
@@ -71,6 +70,7 @@ func SyncBlacklistsToBadger(ctx context.Context) error {
 	count := 0
 
 	ch := make(chan entries.EntryStream)
+	txn := bdb.NewTransaction(true)
 
 	log.Debug().Msg("Starting to stream entries from repository")
 
@@ -86,6 +86,9 @@ func SyncBlacklistsToBadger(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			log.Debug().Int("processed_count", count).Msg("Sync interrupted by context cancellation")
+			if err := txn.Commit(); err != nil {
+				log.Error().Err(err).Msg("Failed to commit transaction")
+			}
 			return ctx.Err()
 		case entry, ok := <-ch:
 			if !ok {
@@ -106,8 +109,9 @@ func SyncBlacklistsToBadger(ctx context.Context) error {
 				log.Trace().Int("processed_count", count).Msg("Processing blacklist entries")
 			}
 
-			// Make sure we're using the correct field name
-			if err := UpsertEntryStream(bdb, entry); err != nil {
+			txn, err = UpsertEntryStream(bdb, txn, entry)
+
+			if err != nil {
 				log.Error().Err(err).Str("key", entry.SourceUrl).Msg("Failed to upsert entry")
 				return err
 			}
@@ -115,146 +119,49 @@ func SyncBlacklistsToBadger(ctx context.Context) error {
 	}
 }
 
-func UpsertEntryStream(bdb *badger.DB, entryStream entries.EntryStream) error {
-	log.Trace().
-		Str("source_url", entryStream.SourceUrl).
-		Int("new_ids_count", len(entryStream.IDs)).
-		Msg("Upserting entry stream")
+func UpsertEntryStream(db *badger.DB, txn *badger.Txn, entryStream entries.EntryStream) (*badger.Txn, error) {
+	if log.Trace().Enabled() {
+		log.Trace().
+			Str("source_url", entryStream.SourceUrl).
+			Int("ids_count", len(entryStream.IDs)).
+			Msg("Upserting entry stream")
+	}
 
-	key := []byte(entryStream.SourceUrl)
+	sourceKey := unsafe.Slice(unsafe.StringData(entryStream.SourceUrl), len(entryStream.SourceUrl))
+	idsValue := unsafe.Slice(unsafe.StringData(entryStream.IDsRaw), len(entryStream.IDsRaw))
 
-	return bdb.Update(func(txn *badger.Txn) error {
-		item, err := txn.Get(key)
+	err := txn.Set(sourceKey, idsValue)
 
-		if err == badger.ErrKeyNotFound {
-
-			if len(entryStream.IDs) == 0 {
-				return nil
-			}
-
-			var builder strings.Builder
-			for i, id := range entryStream.IDs {
-				builder.WriteString(id)
-				if i < len(entryStream.IDs)-1 {
-					builder.WriteByte(',')
-				}
-			}
-			valBytes := []byte(builder.String())
-			log.Trace().Str("key", entryStream.SourceUrl).Int("bytes", len(valBytes)).Msg("Setting new key")
-			return txn.Set(key, valBytes)
-		}
-		if err != nil {
-			return err
+	if err == badger.ErrTxnTooBig {
+		if log.Debug().Enabled() {
+			log.Debug().
+				Str("key", entryStream.SourceUrl).
+				Int("bytes", len(idsValue)).
+				Msg("Transaction item limit reached, committing and retrying")
 		}
 
-		return item.Value(func(existingVal []byte) error {
-			if len(existingVal) == 0 && len(entryStream.IDs) == 0 {
-				return nil
-			}
+		_ = txn.Commit()
+		txn = db.NewTransaction(true)
+		err = txn.Set(sourceKey, idsValue)
 
-			var existingIDs []string
-			if len(existingVal) > 0 {
-				existingIDs = strings.Split(string(existingVal), ",")
-			}
-
-			estimatedSize := len(existingIDs) + len(entryStream.IDs)
-			seenIDs := make(map[string]struct{}, estimatedSize)
-
-			var builder strings.Builder
-			builder.Grow(len(existingVal) + len(entryStream.IDs)*10)
-
-			first := true
-
-			for _, id := range existingIDs {
-				if id == "" {
-					continue
-				}
-				if _, seen := seenIDs[id]; !seen {
-					seenIDs[id] = struct{}{}
-					if !first {
-						builder.WriteByte(',')
-					}
-					builder.WriteString(id)
-					first = false
-				}
-			}
-
-			for _, id := range entryStream.IDs {
-				if id == "" {
-					continue
-				}
-				if _, seen := seenIDs[id]; !seen {
-					seenIDs[id] = struct{}{}
-					if !first {
-						builder.WriteByte(',')
-					}
-					builder.WriteString(id)
-					first = false
-				}
-			}
-
-			finalValBytes := []byte(builder.String())
-
-			if string(finalValBytes) == string(existingVal) {
-				log.Trace().Str("key", entryStream.SourceUrl).Msg("Skipping set, value unchanged")
-				return nil
-			}
-
-			log.Trace().Str("key", entryStream.SourceUrl).Int("old_bytes", len(existingVal)).Int("new_bytes", len(finalValBytes)).Int("unique_ids", len(seenIDs)).Msg("Setting updated key")
-			return txn.Set(key, finalValBytes)
-		})
-	})
-}
-
-func UpsertEntryStreamOld(bdb *badger.DB, entryStream entries.EntryStream) error {
-	// Use Info level instead of Trace to make sure it's visible
-	log.Trace().
-		Str("source_url", entryStream.SourceUrl).
-		Int("ids_count", len(entryStream.IDs)).
-		Msg("Upserting entry stream")
-
-	key := []byte(entryStream.SourceUrl)
-
-	return bdb.Update(func(txn *badger.Txn) error {
-		item, err := txn.Get(key)
-
-		if err == badger.ErrKeyNotFound {
-
-			if len(entryStream.IDs) == 0 {
-				return nil
-			}
-
-			var builder strings.Builder
-			for i, id := range entryStream.IDs {
-				builder.WriteString(id)
-				if i < len(entryStream.IDs)-1 {
-					builder.WriteByte(',')
-				}
-			}
-
-			valBytes := []byte(builder.String())
-
-			log.Trace().Str("key", entryStream.SourceUrl).Int("bytes", len(valBytes)).Msg("Setting new key")
-			return txn.Set(key, valBytes)
+		if err == badger.ErrTxnTooBig {
+			log.Error().Str("key", entryStream.SourceUrl).Msg("Transaction too big, skipping even after commit")
+			return txn, err
 		}
 
-		if err != nil {
-			return err
-		}
+		return txn, nil
+	}
 
-		return item.Value(func(existingVal []byte) error {
+	if err != nil && err != badger.ErrTxnTooBig {
+		log.Error().Err(err).Str("key", entryStream.SourceUrl).Msg("Failed to set entry")
+	}
 
-			if len(existingVal) == 0 && len(entryStream.IDs) == 0 {
-				return nil
-			}
+	if log.Trace().Enabled() {
+		log.Trace().
+			Str("key", entryStream.SourceUrl).
+			Int("bytes", len(idsValue)).
+			Msg("Setting new key")
+	}
 
-			IDs := strings.Split(string(existingVal), ",")
-			IDs = append(IDs, entryStream.IDs...)
-
-			uniqIDs := lo.Uniq(IDs)
-			formattedIDs := strings.Join(uniqIDs, ",")
-
-			return txn.Set(key, []byte(formattedIDs))
-		})
-	})
+	return txn, err
 }

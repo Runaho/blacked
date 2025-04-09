@@ -22,7 +22,9 @@ func ExtractDomainAndSubDomains(host string) (domain string, subs []string, err 
 	// 1) Try to determine the “effective top-level domain + 1” using the PSL library.
 	eTLDPlusOne, err := publicsuffix.EffectiveTLDPlusOne(host)
 	if err != nil {
-		log.Debug().Err(err).Str("host", host).Msg("EffectiveTLDPlusOne failed, using naive fallback")
+		if log.Trace().Enabled() {
+			log.Trace().Err(err).Str("host", host).Msg("EffectiveTLDPlusOne failed, using naive fallback")
+		}
 		// If PSL fails, fall back to the naive approach.
 		parts := strings.Split(host, ".")
 		if len(parts) <= 1 {
@@ -34,7 +36,9 @@ func ExtractDomainAndSubDomains(host string) (domain string, subs []string, err 
 	}
 
 	if eTLDPlusOne == host {
-		log.Debug().Str("host", host).Msg("EffectiveTLDPlusOne returned full host, using naive fallback")
+		if log.Trace().Enabled() {
+			log.Trace().Str("host", host).Msg("EffectiveTLDPlusOne returned full host, using naive fallback")
+		}
 		// PSL returned the full host, which is not expected, use naive approach
 		parts := strings.Split(host, ".")
 		if len(parts) <= 1 {

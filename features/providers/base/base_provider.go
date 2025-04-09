@@ -183,8 +183,9 @@ func (b *BaseProvider) Parse(data io.Reader) error {
 	}
 
 	totalProcessed := 0
-	for i := 0; i < len(entries); i += b.Settings.BatchSize {
-		end := min(i+b.Settings.BatchSize, len(entries))
+	entriesLen := len(entries)
+	for i := 0; i < entriesLen; i += b.Settings.BatchSize {
+		end := min(i+b.Settings.BatchSize, entriesLen)
 
 		batch := entries[i:end]
 		if err := b.Repository.BatchSaveEntries(ctx, batch); err != nil {
