@@ -33,3 +33,4 @@ go.work.sum
 blacked
 data
 .env.toml
+.vscode
