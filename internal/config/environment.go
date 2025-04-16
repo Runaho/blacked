@@ -40,7 +40,6 @@ func GetEnv(key, fallback string) string {
 	}
 	return fallback
 }
-
 func InitConfig() error {
 	var err error
 	once.Do(func() {
@@ -51,20 +50,23 @@ func InitConfig() error {
 
 		configFile := GetEnv("CONFIG_FILE", ".env.toml")
 
-		if err := _k.Load(file.Provider(""+configFile), toml.Parser()); err != nil {
-			log.Error().Msgf("error loading config [TOML]: %v", err)
-		}
-
-		_k.Load(file.Provider(".env"), dotenv.Parser())
-
 		if _err := defaults.Set(_config); _err != nil {
 			err = _err
 			return
 		}
 
-		_k.Unmarshal("", _config)
+		if err := _k.Load(file.Provider("./"+configFile), toml.Parser()); err != nil {
+			log.Error().Msg("error loading config [TOML]")
+		} else {
+			log.Info().Msg("config loaded from file")
+		}
 
-		log.Trace().Msgf("k: %+v", _config)
+		_k.Load(file.Provider("./.env"), dotenv.Parser())
+
+		if err := _k.Unmarshal("", _config); err != nil {
+			log.Error().Msg("error unmarshalling config")
+			panic(err)
+		}
 
 		if _config == emptyConfig {
 			err = errors.New("config is empty")

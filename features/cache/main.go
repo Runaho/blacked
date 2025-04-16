@@ -1,66 +1,108 @@
 package cache
 
 import (
+	"blacked/features/cache/badger_provider"
+	"blacked/features/cache/cache_errors"
 	"blacked/internal/config"
+	"context"
 	"errors"
-	"sync" // Import sync package
+	"strings"
+	"sync"
 
-	"github.com/dgraph-io/badger/v4"
 	"github.com/rs/zerolog/log"
 )
 
 var (
-	instance *badger.DB
-	cfg      *config.CacheSettings
-	initOnce sync.Once
-	initErr  error
+	initCacheOnce sync.Once
+	cacheInstance EntryCache
+	cacheInitErr  error
 )
 
-// InitializeBadger ensures the BadgerDB instance is initialized exactly once.
-// Call this function early in your application's startup.
-func InitializeBadger() error {
-	initOnce.Do(func() {
-		log.Info().Msg("Attempting to initialize BadgerDB instance")
-		cfg = &config.GetConfig().Cache // Get config inside the Once.Do
+// EntryCache defines the interface that all cache implementations must satisfy
+type EntryCache interface {
+	// Core operations
+	Initialize(ctx context.Context) error
+	Close() error
 
-		// BadgerSingleInstance logic moved here
-		instance, initErr = badger.Open(badger.DefaultOptions(cfg.BadgerPath).WithInMemory(cfg.InMemory))
-		if initErr != nil {
-			log.Error().Err(initErr).Msg("Failed to open badger database during initialization")
+	// Main data operations
+	Get(key string) ([]string, error) // Returns parsed IDs and error
+	Set(key string, ids string) error // Takes raw comma-separated string
+	Commit() error
+	Delete(key string) error
+	Iterate(ctx context.Context, fn func(key string) error) error
+}
+
+type CacheType string
+
+const (
+	BadgerCache    CacheType = "badger"
+	BigCache       CacheType = "bigcache"
+	RistrettoCache CacheType = "ristretto"
+)
+
+// InitializeCache sets up the singleton cache instance based on config.
+// Call this once during application startup.
+func InitializeCache(ctx context.Context) error {
+	initCacheOnce.Do(func() {
+		cfg := config.GetConfig().Cache
+		var selectedType CacheType
+
+		switch strings.ToLower(cfg.CacheType) {
+		case "badger":
+			selectedType = BadgerCache
+		default:
+			log.Warn().Str("configured_type", cfg.CacheType).Msg("Unsupported cache type, defaulting to Badger")
+			selectedType = BadgerCache
+		}
+
+		log.Info().Str("type", string(selectedType)).Msg("Initializing cache")
+
+		switch selectedType {
+		case BadgerCache:
+			cacheInstance = badger_provider.NewBadgerProvider()
+		default:
+			// This case should technically not be reachable due to default above
+			cacheInitErr = errors.New("internal error: invalid cache type selected")
+			return
+		}
+
+		if err := cacheInstance.Initialize(ctx); err != nil {
+			log.Error().Err(err).Str("type", string(selectedType)).Msg("Failed to initialize cache instance")
+			cacheInitErr = err
 		} else {
-			log.Info().Msg("BadgerDB instance initialized successfully")
+			log.Info().Str("type", string(selectedType)).Msg("Cache instance initialized successfully")
 		}
 	})
-	return initErr // Return the potential error from initialization
+	return cacheInitErr
 }
 
-// GetBadgerInstance returns the singleton BadgerDB instance.
-// It assumes InitializeBadger has been called previously.
-func GetBadgerInstance() (*badger.DB, error) {
-	if instance == nil {
-		// If instance is nil here, it means InitializeBadger either wasn't called
-		// or it failed. It's better to return the initErr.
-		if initErr != nil {
-			return nil, initErr
+// GetCacheProvider returns the initialized singleton cache instance.
+func GetCacheProvider() (EntryCache, error) {
+	if cacheInstance == nil {
+		// If instance is nil here, it means InitializeCache either wasn't called
+		// or it failed.
+		if cacheInitErr != nil {
+			return nil, cacheInitErr
 		}
-		// This case ideally shouldn't be hit if InitializeBadger is called correctly at startup.
-		return nil, errors.New("badger instance is nil")
+		return nil, cache_errors.ErrCacheNotInitialized
 	}
-	return instance, nil
+	return cacheInstance, nil
 }
 
-// CloseBadger closes the singleton BadgerDB instance.
+// CloseCache closes the singleton cache instance.
 // Should only be called during application shutdown.
-func CloseBadger() {
-	if instance != nil {
-		err := instance.Close()
-		instance = nil // Set to nil after closing
+func CloseCache() {
+	if cacheInstance != nil {
+		err := cacheInstance.Close()
+		cacheInstance = nil         // Set to nil after closing
+		cacheInitErr = nil          // Reset init error
+		initCacheOnce = sync.Once{} // Reset sync.Once to allow re-initialization if needed (e.g., in tests)
 		if err != nil {
-			log.Error().Err(err).Msg("Failed to close badger instance")
+			log.Error().Err(err).Msg("Failed to close cache instance")
 		} else {
-			log.Info().Msg("Badger instance closed")
+			log.Info().Msg("Cache instance closed")
 		}
 	} else {
-		log.Warn().Msg("Attempted to close a nil Badger instance.")
+		log.Warn().Msg("Attempted to close a nil cache instance.")
 	}
 }

@@ -140,7 +140,7 @@ func (r *Runner) executeProvider(providerName string) {
 
 	// Execute the provider with immediate cache updates
 	if err := ExecuteProvider(context.Background(), provider, providers.ProcessOptions{
-		UpdateCacheMode: providers.UpdateCacheImmediate, // Use immediate updates for scheduled runs
+		UpdateCacheMode: providers.UpdateCacheDeferred,
 		TrackMetrics:    true,
 	}); err != nil {
 		log.Error().

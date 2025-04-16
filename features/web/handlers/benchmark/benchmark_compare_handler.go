@@ -4,13 +4,13 @@ package benchmark
 
 import (
 	"blacked/features/cache"
+	"blacked/features/cache/cache_errors"
 	"blacked/features/entries/enums"
 	"blacked/features/web/handlers/response"
 	"context"
 	"fmt"
 	"time"
 
-	"github.com/dgraph-io/badger/v4"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
 )
@@ -104,9 +104,9 @@ func (h *BenchmarkHandler) runComprehensiveBenchmark(ctx context.Context, input 
 			execFunc:   h.benchmarkRepositoryOnly,
 		},
 		{
-			name:       "Badger Only",
-			components: []string{"Badger"},
-			execFunc:   h.benchmarkBadgerOnly,
+			name:       "Cache Provider Only",
+			components: []string{"Cache Provider"},
+			execFunc:   h.benchmarkCacheProviderOnly,
 		},
 		{
 			name:       "Bloom Only (Check Only)",
@@ -114,18 +114,18 @@ func (h *BenchmarkHandler) runComprehensiveBenchmark(ctx context.Context, input 
 			execFunc:   h.benchmarkBloomOnly,
 		},
 		{
-			name:       "Badger + Repository",
-			components: []string{"Badger", "Repository"},
-			execFunc:   h.benchmarkBadgerRepo,
+			name:       "Cache Provider + Repository",
+			components: []string{"Cache Provider", "Repository"},
+			execFunc:   h.benchmarkCacheProviderRepo,
 		},
 		{
-			name:       "Bloom + Badger",
-			components: []string{"Bloom", "Badger"},
-			execFunc:   h.benchmarkBloomBadger,
+			name:       "Bloom + Cache Provider",
+			components: []string{"Bloom", "Cache Provider"},
+			execFunc:   h.benchmarkBloomCacheProvider,
 		},
 		{
-			name:       "Bloom + Badger + Repository (Full Flow)",
-			components: []string{"Bloom", "Badger", "Repository"},
+			name:       "Bloom + Cache Provider + Repository (Full Flow)",
+			components: []string{"Bloom", "Cache Provider", "Repository"},
 			execFunc:   h.benchmarkFullFlow,
 		},
 	}
@@ -257,9 +257,9 @@ func (h *BenchmarkHandler) runComprehensiveBenchmark(ctx context.Context, input 
 	}
 
 	// Create human-readable recommendation
-	if methodData[fastestIdx].Name == "Bloom + Badger + Repository (Full Flow)" {
+	if methodData[fastestIdx].Name == "Bloom + Cache Provider + Repository (Full Flow)" {
 		report.Summary.Recommendation = fmt.Sprintf(
-			"The full flow with Bloom + Badger + Repository is the most efficient, with a %.2fx speedup over %s. "+
+			"The full flow with Bloom + Cache Provider + Repository is the most efficient, with a %.2fx speedup over %s. "+
 				"Average query time: %.3f ms (%.0f ns). "+
 				"This configuration is optimal for both hits (%.1f%% of URLs) and misses.",
 			report.Summary.SpeedupFactor,
@@ -275,9 +275,9 @@ func (h *BenchmarkHandler) runComprehensiveBenchmark(ctx context.Context, input 
 			methodData[fastestIdx].AverageTimeMs,
 			float64(methodData[fastestIdx].AverageTimeNs),
 		)
-	} else if methodData[fastestIdx].Name == "Bloom + Badger" {
+	} else if methodData[fastestIdx].Name == "Bloom + Cache Provider" {
 		report.Summary.Recommendation = fmt.Sprintf(
-			"Using Bloom + Badger without repository queries is fastest at %.3f ms (%.0f ns), with a %.2fx speedup. "+
+			"Using Bloom + Cache Provider without repository queries is fastest at %.3f ms (%.0f ns), with a %.2fx speedup. "+
 				"This suggests your cache is working effectively for the tested URLs.",
 			methodData[fastestIdx].AverageTimeMs,
 			float64(methodData[fastestIdx].AverageTimeNs),
@@ -319,10 +319,10 @@ func (h *BenchmarkHandler) benchmarkRepositoryOnly(ctx context.Context, url stri
 	return len(hits) > 0, duration
 }
 
-func (h *BenchmarkHandler) benchmarkBadgerOnly(ctx context.Context, url string) (bool, time.Duration) {
+func (h *BenchmarkHandler) benchmarkCacheProviderOnly(ctx context.Context, url string) (bool, time.Duration) {
 	start := time.Now()
 
-	entryStream, _ := cache.SearchBlacklistEntryStream(url)
+	entryStream, _ := cache.GetEntryStream(url)
 
 	duration := time.Since(start)
 	return len(entryStream.IDs) > 0, duration
@@ -337,18 +337,18 @@ func (h *BenchmarkHandler) benchmarkBloomOnly(ctx context.Context, url string) (
 	return isLikely, duration
 }
 
-func (h *BenchmarkHandler) benchmarkBadgerRepo(ctx context.Context, url string) (bool, time.Duration) {
+func (h *BenchmarkHandler) benchmarkCacheProviderRepo(ctx context.Context, url string) (bool, time.Duration) {
 	start := time.Now()
 
-	// First check badger
-	entryStream, err := cache.SearchBlacklistEntryStream(url)
-	if err != nil && err != badger.ErrKeyNotFound && err != cache.ErrBloomKeyNotFound {
+	// First check Cache Provider
+	entryStream, err := cache.GetEntryStream(url)
+	if err != nil && err != cache_errors.ErrKeyNotFound && err != cache.ErrBloomKeyNotFound {
 		return false, time.Since(start)
 	}
 
 	found := len(entryStream.IDs) > 0
 
-	// If not found in badger, check repository
+	// If not found in Cache Provider, check repository
 	if !found {
 		queryType := enums.QueryTypeFull
 		hits, _ := h.Service.Query(ctx, url, &queryType)
@@ -359,7 +359,7 @@ func (h *BenchmarkHandler) benchmarkBadgerRepo(ctx context.Context, url string) 
 	return found, duration
 }
 
-func (h *BenchmarkHandler) benchmarkBloomBadger(ctx context.Context, url string) (bool, time.Duration) {
+func (h *BenchmarkHandler) benchmarkBloomCacheProvider(ctx context.Context, url string) (bool, time.Duration) {
 	start := time.Now()
 
 	// First check bloom
@@ -370,9 +370,9 @@ func (h *BenchmarkHandler) benchmarkBloomBadger(ctx context.Context, url string)
 
 	found := false
 
-	// If bloom says it might be there, check badger
+	// If bloom says it might be there, check Cache Provider
 	if isLikely {
-		entryStream, _ := cache.SearchBlacklistEntryStream(url)
+		entryStream, _ := cache.GetEntryStream(url)
 		found = len(entryStream.IDs) > 0
 	}
 
@@ -391,17 +391,17 @@ func (h *BenchmarkHandler) benchmarkFullFlow(ctx context.Context, url string) (b
 
 	found := false
 
-	// If bloom says it might be there, check badger
+	// If bloom says it might be there, check Cache Provider
 	if isLikely {
-		entryStream, err := cache.SearchBlacklistEntryStream(url)
+		entryStream, err := cache.GetEntryStream(url)
 
-		if err != nil && err != badger.ErrKeyNotFound && err != cache.ErrBloomKeyNotFound {
+		if err != nil && err != cache_errors.ErrKeyNotFound && err != cache.ErrBloomKeyNotFound {
 			return false, time.Since(start)
 		}
 
 		found = len(entryStream.IDs) > 0
 
-		// If not found in badger, check repository
+		// If not found in Cache Provider, check repository
 		if !found {
 			queryType := enums.QueryTypeFull
 			hits, _ := h.Service.Query(ctx, url, &queryType)

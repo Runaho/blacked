@@ -25,9 +25,8 @@ func (s *ServerConfig) GetServerURL() string {
 }
 
 type CacheSettings struct {
-	BadgerPath string `koanf:"badger_path" default:""`
-	InMemory   bool   `koanf:"in_memory" default:"true"`
-	UseBloom   bool   `koanf:"use_bloom" default:"true"`
+	UseBloom  bool   `koanf:"use_bloom" default:"true"`
+	CacheType string `koanf:"cache_type" default:"badger"` // Options: "badger", "bigcache"
 }
 
 type APPConfig struct {
@@ -36,12 +35,11 @@ type APPConfig struct {
 }
 
 type CollectorConfig struct {
-	MaxWorkers     int           `koanf:"max_workers" default:"10"` // Not Implemented yet
-	BatchSize      int           `koanf:"batch_size" default:"100"`
-	CronSchedule   string        `koanf:"cron_schedule" default:"0 0 0 * * *"`
-	StoreResponses bool          `koanf:"store_responses" default:"true"`
-	StorePath      string        `koanf:"store_path" default:"./responses"`
-	RateLimit      time.Duration `koanf:"rate_limit" default:"10s"` // Not Implemented yet
+	Concurrency    int    `koanf:"concurrency" default:"10"`
+	BatchSize      int    `koanf:"batch_size" default:"100"`
+	CronSchedule   string `koanf:"cron_schedule" default:"0 0 0 * * *"`
+	StoreResponses bool   `koanf:"store_responses" default:"true"`
+	StorePath      string `koanf:"store_path" default:"./responses"`
 }
 
 type ProviderConfig struct {

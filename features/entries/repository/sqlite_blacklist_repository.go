@@ -82,6 +82,7 @@ func (r *SQLiteRepository) StreamEntries(ctx context.Context, out chan<- entries
 			out <- entries.EntryStream{
 				SourceUrl: sourceURL,
 				IDs:       ids,
+				IDsRaw:    idsConcat,
 			}
 		}
 	}
@@ -379,11 +380,10 @@ func (r *SQLiteRepository) SaveEntry(ctx context.Context, entry entries.Entry) e
 }
 
 // blackLinks/repository.go
-
 // BatchSaveEntries performs a batch UPSERT of multiple BlackListEntry records for performance.
-func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []entries.Entry) error {
+func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []*entries.Entry) error {
 	if len(entries) == 0 {
-		return nil // Nothing to do if batch is empty
+		return nil
 	}
 	r.writeLock.Lock()
 	defer r.writeLock.Unlock()
@@ -393,36 +393,45 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []entri
 		log.Error().Err(err).Msg("Failed to begin transaction for BatchSaveEntries")
 		return ErrTx
 	}
-	defer tx.Rollback() // Ensure rollback in case of errors
+	defer tx.Rollback()
 
 	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO blacklist_entries (
-			id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, category, confidence, created_at, updated_at, deleted_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL) -- Insert with NULL deleted_at initially, now includes process_id
-		ON CONFLICT (source_url, source) DO UPDATE SET -- UPSERT logic on conflict of 'source_url' and 'source'
-			process_id = EXCLUDED.process_id,
-			scheme = EXCLUDED.scheme,
-			domain = EXCLUDED.domain,
-			host = EXCLUDED.host,
-			sub_domains = EXCLUDED.sub_domains,
-			path = EXCLUDED.path,
-			raw_query = EXCLUDED.raw_query,
-			category = EXCLUDED.category,
-			confidence = EXCLUDED.confidence,
-			updated_at = EXCLUDED.updated_at,
-			deleted_at = NULL  -- Reset deleted_at on update to ensure entry becomes active again if it was soft-deleted
-	`)
+        INSERT INTO blacklist_entries (
+            id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, category, confidence, created_at, updated_at, deleted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        ON CONFLICT (source_url, source) DO UPDATE SET
+            process_id = EXCLUDED.process_id,
+            scheme = EXCLUDED.scheme,
+            domain = EXCLUDED.domain,
+            host = EXCLUDED.host,
+            sub_domains = EXCLUDED.sub_domains,
+            path = EXCLUDED.path,
+            raw_query = EXCLUDED.raw_query,
+            category = EXCLUDED.category,
+            confidence = EXCLUDED.confidence,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = NULL
+    `)
 	if err != nil {
 		log.Err(err).Msg("Failed to prepare batch insert statement")
 		return ErrTxPrepare
 	}
-	defer stmt.Close() // Ensure statement closure
+	defer stmt.Close()
+
+	var subDomainsBuilder strings.Builder
 
 	for _, entry := range entries {
-		log.Debug().Interface("entry", entry).Msg("About to insert entry") // Print the entry data
+		subDomainsBuilder.Reset()
+		for i, sub := range entry.SubDomains {
+			if i > 0 {
+				subDomainsBuilder.WriteString(",")
+			}
+			subDomainsBuilder.WriteString(sub)
+		}
+		subDomainsStr := subDomainsBuilder.String()
 
 		_, err := stmt.ExecContext(ctx,
-			entry.ID, entry.ProcessID, entry.Scheme, entry.Domain, entry.Host, strings.Join(entry.SubDomains, ","), // Include processID here
+			entry.ID, entry.ProcessID, entry.Scheme, entry.Domain, entry.Host, subDomainsStr,
 			entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Category, entry.Confidence,
 			entry.CreatedAt, entry.UpdatedAt,
 		)
@@ -432,8 +441,122 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []entri
 		}
 	}
 
-	return tx.Commit() // Commit the whole batch transaction
+	return tx.Commit()
 }
+
+/* When one item fails, the whole batch fails. This is a more efficient way to do it but we need the fix.
+
+
+// BatchSaveEntries performs a batch UPSERT of multiple BlackListEntry records for performance.
+func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []entries.Entry) error {
+	totalEntries := len(entries)
+	if totalEntries == 0 {
+		return nil
+	}
+
+	r.writeLock.Lock()
+	defer r.writeLock.Unlock()
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to begin transaction for BatchSaveEntries")
+		return ErrTx
+	}
+
+	var txErr error
+	defer func() {
+		if txErr != nil {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				log.Error().Err(rbErr).Msg("Failed to rollback transaction after error")
+			}
+		}
+	}()
+
+	var (
+		numArgsPerEntry = 14
+
+		sqlInsertPrefix = `
+			INSERT INTO blacklist_entries (
+				id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, category, confidence, created_at, updated_at, deleted_at
+			) VALUES `
+		sqlConflictSuffix = `
+			ON CONFLICT (source_url, source) DO UPDATE SET
+				process_id = EXCLUDED.process_id,
+				scheme = EXCLUDED.scheme,
+				domain = EXCLUDED.domain,
+				host = EXCLUDED.host,
+				sub_domains = EXCLUDED.sub_domains,
+				path = EXCLUDED.path,
+				raw_query = EXCLUDED.raw_query,
+				category = EXCLUDED.category,
+				confidence = EXCLUDED.confidence,
+				updated_at = EXCLUDED.updated_at,
+				deleted_at = NULL`
+
+		valuePlaceholder = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)"
+	)
+
+	args := make([]any, 0, totalEntries*numArgsPerEntry)
+
+	var subDomainsBuilder strings.Builder
+	var queryBuilder strings.Builder
+
+	for _, entry := range entries {
+		subDomainsBuilder.Reset()
+		for i, sub := range entry.SubDomains {
+			if i > 0 {
+				subDomainsBuilder.WriteString(",")
+			}
+			subDomainsBuilder.WriteString(sub)
+		}
+		subDomainsStr := subDomainsBuilder.String()
+
+		args = append(args,
+			entry.ID, entry.ProcessID, entry.Scheme, entry.Domain, entry.Host, subDomainsStr,
+			entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Category, entry.Confidence,
+			entry.CreatedAt, entry.UpdatedAt,
+		)
+
+		if log.Debug().Enabled() {
+			log.Debug().
+				Str("entry_id", entry.ID).
+				Str("source_url", entry.SourceURL).
+				Msg("Preparing entry for batch")
+		}
+	}
+
+	queryBuilder.Grow(len(sqlInsertPrefix) + len(sqlConflictSuffix) + totalEntries*(len(valuePlaceholder)+2)) // Pre-allocate approximate size
+
+	queryBuilder.WriteString(sqlInsertPrefix)
+
+	for i := 0; i < totalEntries; i++ {
+		if i > 0 {
+			queryBuilder.WriteString(", ")
+		}
+		queryBuilder.WriteString(valuePlaceholder)
+	}
+
+	queryBuilder.WriteString(sqlConflictSuffix)
+	query := queryBuilder.String()
+
+	if log.Trace().Enabled() {
+		log.Trace().Int("batch_size", totalEntries).Str("query", query).Msg("Executing batch UPSERT")
+	}
+
+	_, err = tx.ExecContext(ctx, query, args...)
+	if err != nil {
+		log.Error().Err(err).Int("batch_size", totalEntries).Msg("Failed to execute batch UPSERT statement")
+		return err
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to commit transaction for BatchSaveEntries")
+	}
+
+	return nil
+}
+*/
 
 // RemoveOlderInsertions soft deletes blacklist entries from a provider that do not have the latest insertion ID.
 func (r *SQLiteRepository) RemoveOlderInsertions(ctx context.Context, providerName string, currentProcessID string) error {

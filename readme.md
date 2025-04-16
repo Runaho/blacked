@@ -106,7 +106,7 @@ use_bloom = true    # Enable Bloom filter for faster lookups
 
 ```bash
 # Start the web server and scheduler
-go run main.go serve
+go run . serve
 
 # Or with the built binary
 ./blacked serve
@@ -120,10 +120,10 @@ Blacked includes a robust CLI for direct interaction:
 
 ```bash
 # Process all providers immediately
-go run main.go process
+go run . process
 
 # Process specific providers only
-go run main.go process --provider OISD_BIG --provider URLHAUS
+go run . process --provider OISD_BIG --provider URLHAUS
 
 # Query if a URL is blacklisted
 go run main.go query --url "http://suspicious-site.com/path"
@@ -179,31 +179,21 @@ Adding a new blacklist provider is straightforward:
 ```go
 package myprovider
 
-import (
-    "blacked/features/entries"
-    "blacked/features/providers/base"
-    "blacked/internal/config"
-    "io"
-    
-    "github.com/gocolly/colly/v2"
-    "github.com/google/uuid"
-    "github.com/rs/zerolog/log"
-)
-
 func NewMyProvider(settings *config.CollectorConfig, collyClient *colly.Collector) base.Provider {
     const (
         providerName = "MY_PROVIDER"
         providerURL  = "https://example.com/blacklist.txt"
         cronSchedule = "0 */6 * * *" // Every 6 hours
     )
-    
+
     // Define how to parse provider data
-    parseFunc := func(data io.Reader) ([]entries.Entry, error) {
+    parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
         // Parse the data format specific to this provider
-        // Return slice of entries.Entry
-        // ...
+        // Submit entries.Entry to collector
+        //
+        collector.Submit(*entry)
     }
-    
+
     // Create and register the provider
     provider := base.NewBaseProvider(
         providerName,
@@ -212,11 +202,11 @@ func NewMyProvider(settings *config.CollectorConfig, collyClient *colly.Collecto
         collyClient,
         parseFunc,
     )
-    
+
     provider.
         SetCronSchedule(cronSchedule).
         Register()
-        
+
     return provider
 }
 ```
@@ -224,39 +214,23 @@ func NewMyProvider(settings *config.CollectorConfig, collyClient *colly.Collecto
 3. Add your provider to `features/providers/main.go`:
 
 ```go
-func NewProviders() (Providers, error) {
-    // ...existing code...
-    
-    var providers = Providers{
-        // ...existing providers...
-        myprovider.NewMyProvider(&cfg.Collector, cc),
-    }
-    
-    // ...existing code...
+
+func getProviders(cfg *config.Config, cc *colly.Collector) Providers {
+	oisd.NewOISDBigProvider(&cfg.Collector, cc)
+
+	/* ... */
+		// Add your new provider here
+	/* ... */
+
+	providers := Providers(base.GetRegisteredProviders())
+	return providers
 }
+
 ```
 
 ## 📦 Deployment
 
 ### Using Docker
-
-```dockerfile
-FROM golang:1.24-alpine AS builder
-WORKDIR /app
-COPY . .
-RUN go mod download
-RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o /blacked main.go
-
-FROM alpine:latest
-WORKDIR /app
-COPY --from=builder /blacked /app/blacked
-# Mount config and data volumes when running
-EXPOSE 8082
-ENTRYPOINT ["/app/blacked"]
-CMD ["serve"]
-```
-
-Run with:
 
 ```bash
 docker build -t blacked:latest .
@@ -264,34 +238,6 @@ docker run -d --name blacked -p 8082:8082 \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/.env.toml:/app/.env.toml \
   blacked:latest
-```
-
-### Using Systemd (Linux)
-
-Create `/etc/systemd/system/blacked.service`:
-
-```ini
-[Unit]
-Description=Blacked Blacklist Service
-After=network.target
-
-[Service]
-Type=simple
-User=blacked
-WorkingDirectory=/opt/blacked
-ExecStart=/opt/blacked/blacked serve
-Restart=on-failure
-StandardOutput=journal
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-
-```bash
-sudo systemctl enable blacked.service
-sudo systemctl start blacked.service
 ```
 
 ## 🤝 Contributing

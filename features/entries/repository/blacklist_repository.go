@@ -15,8 +15,8 @@ type BlacklistRepository interface {
 	GetEntriesByCategory(ctx context.Context, category string) ([]entries.Entry, error)
 	GetEntriesByIDs(ctx context.Context, ids []string) ([]*entries.Entry, error)
 	SaveEntry(ctx context.Context, entry entries.Entry) error
-	BatchSaveEntries(ctx context.Context, entries []entries.Entry) error // Batched UPSERT
-	ClearAllEntries(ctx context.Context) error                           // Soft Delete All
+	BatchSaveEntries(ctx context.Context, entries []*entries.Entry) error // Batched UPSERT
+	ClearAllEntries(ctx context.Context) error                            // Soft Delete All
 	SoftDeleteEntryByID(ctx context.Context, id string) error
 	QueryLink(ctx context.Context, link string) ([]entries.Hit, error)
 	QueryLinkByType(ctx context.Context, link string, queryType *enums.QueryType) ([]entries.Hit, error)

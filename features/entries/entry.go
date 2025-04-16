@@ -72,7 +72,7 @@ func (b *Entry) SetURL(link string) error {
 		if mc != nil {
 			mc.IncrementImportErrors(b.Source)
 		}
-		log.Err(err).Str("link", link).Msg("Failed to parse URL")
+		log.Warn().Err(err).Str("link", link).Msg("Failed to parse URL")
 		return ErrURLParse
 	}
 

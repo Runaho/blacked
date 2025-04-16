@@ -1,12 +1,11 @@
 package base
 
 import (
-	"blacked/features/entries"
 	"blacked/features/entries/repository"
-	"blacked/internal/collector"
+	"blacked/features/entry_collector"
 	"blacked/internal/config"
+
 	"bytes"
-	"context"
 	"errors"
 	"io"
 	"time"
@@ -57,11 +56,11 @@ type BaseProvider struct {
 	CronSchedule  string
 	RateLimit     time.Duration
 	Repository    repository.BlacklistRepository
-	ParseFunction func(io.Reader) ([]entries.Entry, error)
+	ParseFunction func(io.Reader, entry_collector.Collector) error
 }
 
 // NewBaseProvider creates a new BaseProvider
-func NewBaseProvider(name, sourceURL string, settings *config.CollectorConfig, collyClient *colly.Collector, parseFunc func(io.Reader) ([]entries.Entry, error)) *BaseProvider {
+func NewBaseProvider(name, sourceURL string, settings *config.CollectorConfig, collyClient *colly.Collector, parseFunc func(io.Reader, entry_collector.Collector) error) *BaseProvider {
 	p := &BaseProvider{
 		Name:          name,
 		SourceURL:     sourceURL,
@@ -172,52 +171,22 @@ func (b *BaseProvider) Parse(data io.Reader) error {
 		return ErrRepositoryNotSet
 	}
 
-	ctx := context.Background()
-	startsAt := time.Now()
-	processID := b.GetProcessID()
+	if b.ParseFunction == nil {
+		log.Error().Str("provider", b.Name).Msg("Parse function not set")
+		return ErrParsingData
+	}
 
-	entries, err := b.ParseFunction(data)
+	collector := entry_collector.GetPondCollector()
+	if collector == nil {
+		log.Error().Str("provider", b.Name).Msg("Entry collector not set")
+		return ErrParsingData
+	}
+
+	err := b.ParseFunction(data, collector)
 	if err != nil {
 		log.Err(err).Str("provider", b.Name).Msg("Error parsing data")
 		return ErrParsingData
 	}
-
-	totalProcessed := 0
-	for i := 0; i < len(entries); i += b.Settings.BatchSize {
-		end := min(i+b.Settings.BatchSize, len(entries))
-
-		batch := entries[i:end]
-		if err := b.Repository.BatchSaveEntries(ctx, batch); err != nil {
-			log.Err(err).
-				Str("provider", b.Name).
-				Int("batch_start", i).
-				Int("batch_end", end).
-				Int("batch_size", len(batch)).
-				Msg("Failed to save batch entries")
-
-			return ErrBatchSaving
-		}
-
-		totalProcessed += len(batch)
-
-		mc, _ := collector.GetMetricsCollector()
-		if mc != nil {
-			mc.IncrementSavedCount(b.Name, len(batch))
-		}
-	}
-
-	mc, _ := collector.GetMetricsCollector()
-	if mc != nil {
-		mc.SetTotalProcessed(b.Name, totalProcessed)
-	}
-
-	duration := time.Since(startsAt)
-	log.Info().
-		Str("provider", b.Name).
-		Int("entries", totalProcessed).
-		Dur("duration", duration).
-		Str("processID", processID.String()).
-		Msg("Provider processing completed")
 
 	return nil
 }

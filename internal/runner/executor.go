@@ -1,7 +1,7 @@
 package runner
 
 import (
-	"blacked/features/cache"
+	"blacked/features/entry_collector"
 	"blacked/features/providers"
 	"blacked/features/providers/base"
 	"context"
@@ -36,7 +36,9 @@ func ExecuteProviders(ctx context.Context, providersList []base.Provider) error 
 		TrackMetrics:    true,
 	})
 
-	cache.FireAndForgetSync()
+	entryCollector := entry_collector.GetPondCollector()
+	entryCollector.ScheduleCacheSync(true)
+	entryCollector.WaitForCacheSyncCompletion()
 
 	if err != nil {
 		log.Error().Err(err).Msg("Error processing providers")
