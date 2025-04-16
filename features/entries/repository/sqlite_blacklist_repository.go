@@ -381,9 +381,9 @@ func (r *SQLiteRepository) SaveEntry(ctx context.Context, entry entries.Entry) e
 
 // blackLinks/repository.go
 // BatchSaveEntries performs a batch UPSERT of multiple BlackListEntry records for performance.
-func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []entries.Entry) error {
+func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []*entries.Entry) error {
 	if len(entries) == 0 {
-		return nil // Nothing to do if batch is empty
+		return nil
 	}
 	r.writeLock.Lock()
 	defer r.writeLock.Unlock()
@@ -393,50 +393,40 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []entri
 		log.Error().Err(err).Msg("Failed to begin transaction for BatchSaveEntries")
 		return ErrTx
 	}
-
 	defer tx.Rollback()
 
 	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO blacklist_entries (
-			id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, category, confidence, created_at, updated_at, deleted_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL) -- Insert with NULL deleted_at initially, now includes process_id
-		ON CONFLICT (source_url, source) DO UPDATE SET -- UPSERT logic on conflict of 'source_url' and 'source'
-			process_id = EXCLUDED.process_id,
-			scheme = EXCLUDED.scheme,
-			domain = EXCLUDED.domain,
-			host = EXCLUDED.host,
-			sub_domains = EXCLUDED.sub_domains,
-			path = EXCLUDED.path,
-			raw_query = EXCLUDED.raw_query,
-			category = EXCLUDED.category,
-			confidence = EXCLUDED.confidence,
-			updated_at = EXCLUDED.updated_at,
-			deleted_at = NULL  -- Reset deleted_at on update to ensure entry becomes active again if it was soft-deleted
-	`)
+        INSERT INTO blacklist_entries (
+            id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, category, confidence, created_at, updated_at, deleted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        ON CONFLICT (source_url, source) DO UPDATE SET
+            process_id = EXCLUDED.process_id,
+            scheme = EXCLUDED.scheme,
+            domain = EXCLUDED.domain,
+            host = EXCLUDED.host,
+            sub_domains = EXCLUDED.sub_domains,
+            path = EXCLUDED.path,
+            raw_query = EXCLUDED.raw_query,
+            category = EXCLUDED.category,
+            confidence = EXCLUDED.confidence,
+            updated_at = EXCLUDED.updated_at,
+            deleted_at = NULL
+    `)
 	if err != nil {
 		log.Err(err).Msg("Failed to prepare batch insert statement")
 		return ErrTxPrepare
 	}
-	defer stmt.Close() // Ensure statement closure
+	defer stmt.Close()
 
 	var subDomainsBuilder strings.Builder
 
 	for _, entry := range entries {
-
-		if log.Trace().Enabled() {
-			log.Trace().
-				Str("entry_id", entry.ID).
-				Str("domain", entry.Domain).
-				Str("source_url", entry.SourceURL).
-				Msg("About to insert entry")
-		}
-
 		subDomainsBuilder.Reset()
 		for i, sub := range entry.SubDomains {
 			if i > 0 {
 				subDomainsBuilder.WriteString(",")
 			}
-			subDomainsBuilder.WriteString(sub) // Write the subdomain
+			subDomainsBuilder.WriteString(sub)
 		}
 		subDomainsStr := subDomainsBuilder.String()
 
@@ -445,7 +435,6 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []entri
 			entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Category, entry.Confidence,
 			entry.CreatedAt, entry.UpdatedAt,
 		)
-
 		if err != nil {
 			log.Error().Err(err).Str("entry_id", entry.ID).Str("source_url", entry.SourceURL).Msg("Error executing batch statement for entry")
 			return err

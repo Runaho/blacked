@@ -6,7 +6,7 @@ import (
 
 // Collector defines an interface for collecting and processing entries
 type Collector interface {
-	Submit(entry entries.Entry)
+	Submit(entry *entries.Entry)
 	Wait()
 	Close()
 	GetProcessedCount(source string) int

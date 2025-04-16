@@ -43,7 +43,7 @@ func NewURLHausProvider(settings *config.CollectorConfig, collyClient *colly.Col
 				log.Error().Err(err).Msgf("error setting URL: %s", line)
 			}
 
-			collector.Submit(*entry)
+			collector.Submit(entry)
 		}
 
 		if err := scanner.Err(); err != nil {

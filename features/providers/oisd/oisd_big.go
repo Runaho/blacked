@@ -43,7 +43,7 @@ func NewOISDBigProvider(settings *config.CollectorConfig, collyClient *colly.Col
 				continue
 			}
 
-			collector.Submit(*entry)
+			collector.Submit(entry)
 		}
 
 		if err := scanner.Err(); err != nil {

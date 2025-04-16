@@ -57,7 +57,7 @@ func NewPhishTankProvider(settings *config.CollectorConfig, collyClient *colly.C
 				continue
 			}
 
-			collector.Submit(*entry)
+			collector.Submit(entry)
 
 		}
 

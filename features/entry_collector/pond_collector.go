@@ -23,19 +23,23 @@ var (
 	// Global singleton instance
 	globalCollector *PondCollector
 	once            sync.Once
+	batchSlicePool  = sync.Pool{
+		New: func() any {
+			return make([]*entries.Entry, 0, config.GetConfig().Collector.BatchSize)
+		},
+	}
 )
 
 type PondCollector struct {
-	pool             pond.Pool
-	repo             repository.BlacklistRepository
-	batchSize        int
-	buffer           []entries.Entry
-	bufferMu         sync.Mutex
-	providerStats    map[string]*ProviderStats
-	statsMu          sync.RWMutex
-	metricsCollector *collector.MetricsCollector
-	ctx              context.Context
-	cancel           context.CancelFunc
+	pool          pond.Pool
+	repo          repository.BlacklistRepository
+	batchSize     int
+	buffer        []*entries.Entry
+	bufferMu      sync.Mutex
+	providerStats map[string]*ProviderStats
+	statsMu       sync.RWMutex
+	ctx           context.Context
+	cancel        context.CancelFunc
 
 	// Cache sync state management
 	cacheSyncState     CacheSyncState
@@ -57,18 +61,15 @@ func InitPondCollector(
 		// Create a new pond with specified concurrency
 		pool := pond.NewPool(collectorConfig.Concurrency)
 
-		mc, _ := collector.GetMetricsCollector()
-
 		globalCollector = &PondCollector{
-			pool:             pool,
-			repo:             repository.NewSQLiteRepository(db),
-			batchSize:        collectorConfig.BatchSize,
-			buffer:           make([]entries.Entry, 0, collectorConfig.BatchSize),
-			providerStats:    make(map[string]*ProviderStats),
-			metricsCollector: mc,
-			ctx:              ctxWithCancel,
-			cancel:           cancel,
-			cacheSyncState:   CacheSyncStateIdle,
+			pool:           pool,
+			repo:           repository.NewSQLiteRepository(db),
+			batchSize:      collectorConfig.BatchSize,
+			buffer:         make([]*entries.Entry, 0, collectorConfig.BatchSize),
+			providerStats:  make(map[string]*ProviderStats),
+			ctx:            ctxWithCancel,
+			cancel:         cancel,
+			cacheSyncState: CacheSyncStateIdle,
 		}
 
 		// Start a goroutine to flush buffer periodically or on context done
@@ -116,7 +117,7 @@ func (c *PondCollector) StartProviderProcessing(providerName, processID string) 
 }
 
 // Submit adds an entry to the collector's buffer
-func (c *PondCollector) Submit(entry entries.Entry) {
+func (c *PondCollector) Submit(entry *entries.Entry) {
 	// First, mark that we have a pending operation for this provider
 	c.statsMu.RLock()
 	stats, exists := c.providerStats[entry.Source]
@@ -131,7 +132,7 @@ func (c *PondCollector) Submit(entry entries.Entry) {
 
 	// If buffer is full, submit a flush task
 	if len(c.buffer) >= c.batchSize {
-		batch := make([]entries.Entry, len(c.buffer))
+		batch := make([]*entries.Entry, len(c.buffer))
 		copy(batch, c.buffer)
 		c.buffer = c.buffer[:0]
 		c.bufferMu.Unlock()
@@ -141,51 +142,56 @@ func (c *PondCollector) Submit(entry entries.Entry) {
 		c.bufferMu.Unlock()
 	}
 }
-
-func (c *PondCollector) submitFlush(batch []entries.Entry) {
+func (c *PondCollector) submitFlush(batch []*entries.Entry) {
 	// Group entries by source for more efficient processing
-	entriesBySource := make(map[string][]entries.Entry)
+	entriesBySource := make(map[string][]*entries.Entry)
 	for _, entry := range batch {
 		entriesBySource[entry.Source] = append(entriesBySource[entry.Source], entry)
 	}
 
-	// Process each source's entries separately
-	for source, entries := range entriesBySource {
-		sourceEntries := entries // Create a local copy for the closure
-
-		// Use pond's Submit method
+	var wg sync.WaitGroup
+	for source, sourceEntries := range entriesBySource {
+		localEntries := sourceEntries
+		wg.Add(1)
 		c.pool.Submit(func() {
+			defer wg.Done()
 			defer func() {
-				// Mark operations as done when function completes
 				c.statsMu.RLock()
 				if stats, exists := c.providerStats[source]; exists {
-					// Release one operation per entry
-					for range sourceEntries {
+					for range localEntries {
 						stats.pendingOperations.Done()
 					}
 				}
 				c.statsMu.RUnlock()
 			}()
 
-			if err := c.repo.BatchSaveEntries(context.Background(), sourceEntries); err != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			if err := c.repo.BatchSaveEntries(ctx, localEntries); err != nil {
 				log.Error().Err(err).
-					Int("batch_size", len(sourceEntries)).
+					Int("batch_size", len(localEntries)).
 					Str("source", source).
 					Msg("Failed to save batch")
 				return
 			}
 
-			batchSize := len(sourceEntries)
+			batchSize := len(localEntries)
 
-			// Update provider-specific stats
 			c.statsMu.RLock()
 			if stats, exists := c.providerStats[source]; exists && stats.active {
 				stats.processedCount += batchSize
-				count := stats.processedCount // Copy for log
+				count := stats.processedCount
 				c.statsMu.RUnlock()
 
-				if c.metricsCollector != nil {
-					c.metricsCollector.IncrementSavedCount(source, batchSize)
+				mc, err := collector.GetMetricsCollector()
+				if err != nil || mc == nil {
+					log.Error().Err(err).Msg("Failed to get metrics collector")
+				}
+
+				if mc != nil {
+					log.Trace().Str("provider", source).Int("batch_size", batchSize).Msg("Incrementing saved count")
+					mc.IncrementSavedCount(source, batchSize)
 				}
 
 				if log.Info().Enabled() && count%100000 == 0 {
@@ -194,7 +200,6 @@ func (c *PondCollector) submitFlush(batch []entries.Entry) {
 						Str("source", source).
 						Msg("Processing milestone reached")
 				}
-
 			} else {
 				c.statsMu.RUnlock()
 				log.Debug().
@@ -204,6 +209,11 @@ func (c *PondCollector) submitFlush(batch []entries.Entry) {
 			}
 		})
 	}
+
+	// Wait for all goroutines to finish before returning batch to pool
+	wg.Wait()
+	batch = batch[:0]
+	batchSlicePool.Put(batch)
 }
 
 func (c *PondCollector) periodicFlush() {
@@ -224,12 +234,17 @@ func (c *PondCollector) periodicFlush() {
 func (c *PondCollector) flushBuffer() {
 	c.bufferMu.Lock()
 	if len(c.buffer) > 0 {
-		batch := make([]entries.Entry, len(c.buffer))
-		copy(batch, c.buffer)
+		batch := batchSlicePool.Get().([]*entries.Entry)
+		batch = batch[:0]
+		batch = append(batch, c.buffer...)
+
 		c.buffer = c.buffer[:0]
 		c.bufferMu.Unlock()
 
 		c.submitFlush(batch)
+
+		batch = batch[:0]
+		batchSlicePool.Put(batch)
 	} else {
 		c.bufferMu.Unlock()
 	}
@@ -266,7 +281,7 @@ func (c *PondCollector) GetProcessedCount(source string) int {
 
 // FinishProviderProcessing logs stats and finalizes metrics for a provider
 func (c *PondCollector) FinishProviderProcessing(providerName, processID string) {
-	// First get the stats and mark as inactive
+	// Lock to get the stats and check processID
 	c.statsMu.Lock()
 	stats, exists := c.providerStats[providerName]
 	if !exists || stats.processID != processID {
@@ -277,26 +292,22 @@ func (c *PondCollector) FinishProviderProcessing(providerName, processID string)
 			Msg("Attempted to finish provider processing but stats not found")
 		return
 	}
-
-	// Mark as inactive but don't delete yet - we still need to wait for pending operations
-	stats.active = false
 	c.statsMu.Unlock()
 
 	// Wait for all pending operations to complete
 	stats.pendingOperations.Wait()
 
-	// Now we can safely get final stats and delete
+	// Now it's safe to mark as inactive and delete
 	c.statsMu.Lock()
+	stats.active = false
 	count := stats.processedCount
 	duration := time.Since(stats.startTime)
 
-	// Now it's safe to delete
 	delete(c.providerStats, providerName)
 	c.statsMu.Unlock()
 
-	// Update metrics collector
-	if c.metricsCollector != nil {
-		c.metricsCollector.SetTotalProcessed(providerName, count)
+	if mc, _ := collector.GetMetricsCollector(); mc != nil {
+		mc.SetTotalProcessed(providerName, count)
 	}
 
 	// Log final stats

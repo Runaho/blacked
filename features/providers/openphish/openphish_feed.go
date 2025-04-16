@@ -41,7 +41,7 @@ func NewOpenPhishFeedProvider(settings *config.CollectorConfig, collyClient *col
 				continue
 			}
 
-			collector.Submit(*entry)
+			collector.Submit(entry)
 		}
 
 		if err := scanner.Err(); err != nil {
