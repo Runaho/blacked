@@ -182,9 +182,10 @@ package myprovider
 import (
     "blacked/features/entries"
     "blacked/features/providers/base"
+    "blacked/features/entry_collector"
     "blacked/internal/config"
     "io"
-    
+
     "github.com/gocolly/colly/v2"
     "github.com/google/uuid"
     "github.com/rs/zerolog/log"
@@ -196,14 +197,15 @@ func NewMyProvider(settings *config.CollectorConfig, collyClient *colly.Collecto
         providerURL  = "https://example.com/blacklist.txt"
         cronSchedule = "0 */6 * * *" // Every 6 hours
     )
-    
+
     // Define how to parse provider data
-    parseFunc := func(data io.Reader) ([]entries.Entry, error) {
+    parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
         // Parse the data format specific to this provider
-        // Return slice of entries.Entry
-        // ...
+        // Submit entries.Entry to collector
+        //
+        collector.Submit(*entry)
     }
-    
+
     // Create and register the provider
     provider := base.NewBaseProvider(
         providerName,
@@ -212,11 +214,11 @@ func NewMyProvider(settings *config.CollectorConfig, collyClient *colly.Collecto
         collyClient,
         parseFunc,
     )
-    
+
     provider.
         SetCronSchedule(cronSchedule).
         Register()
-        
+
     return provider
 }
 ```
@@ -226,12 +228,12 @@ func NewMyProvider(settings *config.CollectorConfig, collyClient *colly.Collecto
 ```go
 func NewProviders() (Providers, error) {
     // ...existing code...
-    
+
     var providers = Providers{
         // ...existing providers...
         myprovider.NewMyProvider(&cfg.Collector, cc),
     }
-    
+
     // ...existing code...
 }
 ```
