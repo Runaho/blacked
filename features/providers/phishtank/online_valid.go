@@ -1,7 +1,9 @@
+// phishtank is not implemented yet
 package phishtank
 
 import (
 	"blacked/features/entries"
+	"blacked/features/entry_collector"
 	"blacked/features/providers/base"
 	"blacked/internal/config"
 	"encoding/json"
@@ -25,8 +27,7 @@ func NewPhishTankProvider(settings *config.CollectorConfig, collyClient *colly.C
 		cronSchedule = "45 */6 * * *" // Every 6 hours at 45 minutes past the hour
 	)
 
-	parseFunc := func(data io.Reader) ([]entries.Entry, error) {
-		var result []entries.Entry
+	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
 		var phishEntries []PhishTankEntry
 		id := uuid.New().String()
 
@@ -34,7 +35,7 @@ func NewPhishTankProvider(settings *config.CollectorConfig, collyClient *colly.C
 		decoder := json.NewDecoder(data)
 		if err := decoder.Decode(&phishEntries); err != nil {
 			log.Error().Err(err).Msg("error decoding PhishTank JSON")
-			return nil, err
+			return err
 		}
 
 		// Process each entry
@@ -56,10 +57,11 @@ func NewPhishTankProvider(settings *config.CollectorConfig, collyClient *colly.C
 				continue
 			}
 
-			result = append(result, *entry)
+			collector.Submit(*entry)
+
 		}
 
-		return result, nil
+		return nil
 	}
 
 	provider := base.NewBaseProvider(

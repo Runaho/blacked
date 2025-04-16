@@ -2,11 +2,11 @@ package query
 
 import (
 	"blacked/features/cache"
+	"blacked/features/cache/cache_errors"
 	"blacked/features/entries"
 	"blacked/features/web/handlers/response"
 	"net/http"
 
-	"github.com/dgraph-io/badger/v4"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
 )
@@ -43,9 +43,9 @@ func (h *SearchHandler) QueryByURL(c echo.Context) error {
 
 	log.Debug().Str("url", input.URL).Msg("Searching for entry")
 
-	entry, err := cache.SearchBlacklistEntryStream(input.URL)
+	entry, err := cache.GetEntryStream(input.URL)
 
-	if err == cache.ErrBloomKeyNotFound || err == badger.ErrKeyNotFound {
+	if err == cache.ErrBloomKeyNotFound || err == cache_errors.ErrKeyNotFound {
 		log.Debug().Str("url", input.URL).Msg("Entry not found")
 		var entryError string
 

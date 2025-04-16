@@ -3,6 +3,7 @@ package benchmark
 
 import (
 	"blacked/features/cache"
+	"blacked/features/cache/cache_errors"
 	"blacked/features/entries"
 	"blacked/features/entries/enums"
 	"blacked/features/entries/services"
@@ -11,20 +12,19 @@ import (
 	"errors"
 	"time"
 
-	"github.com/dgraph-io/badger/v4"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
 )
 
 // Error variables
 var (
-	ErrInvalidInput       = errors.New("invalid benchmark input")
-	ErrValidationFailed   = errors.New("validation failed")
-	ErrNoURLsProvided     = errors.New("no URLs provided for benchmark")
-	ErrBadgerAccess       = errors.New("error accessing badger database")
-	ErrBloomAccess        = errors.New("error accessing bloom filter")
-	ErrRepositoryAccess   = errors.New("error accessing repository")
-	ErrBenchmarkExecution = errors.New("error executing benchmark")
+	ErrInvalidInput         = errors.New("invalid benchmark input")
+	ErrValidationFailed     = errors.New("validation failed")
+	ErrNoURLsProvided       = errors.New("no URLs provided for benchmark")
+	Errcache_providerAccess = errors.New("error accessing cache_provider database")
+	ErrBloomAccess          = errors.New("error accessing bloom filter")
+	ErrRepositoryAccess     = errors.New("error accessing repository")
+	ErrBenchmarkExecution   = errors.New("error executing benchmark")
 )
 
 type BenchmarkHandler struct {
@@ -45,17 +45,17 @@ type BenchmarkResult struct {
 	Iterations int    `json:"iterations"`
 
 	// Component timings (in nanoseconds)
-	BloomOnlyTimeNs      int64 `json:"bloom_only_time_ns"`
-	BloomResult          bool  `json:"bloom_result"`
-	BadgerOnlyTimeNs     int64 `json:"badger_only_time_ns"`
-	FoundInBadger        bool  `json:"found_in_badger"`
-	RepositoryOnlyTimeNs int64 `json:"repository_only_time_ns"`
-	FoundInRepository    bool  `json:"found_in_repository"`
+	BloomOnlyTimeNs          int64 `json:"bloom_only_time_ns"`
+	BloomResult              bool  `json:"bloom_result"`
+	cache_providerOnlyTimeNs int64 `json:"cache_provider_only_time_ns"`
+	FoundIncache_provider    bool  `json:"found_in_cache_provider"`
+	RepositoryOnlyTimeNs     int64 `json:"repository_only_time_ns"`
+	FoundInRepository        bool  `json:"found_in_repository"`
 
 	// Complete flows (in nanoseconds)
-	BloomThenBadgerTimeNs       int64 `json:"bloom_then_badger_time_ns"`
-	BloomBadgerRepositoryTimeNs int64 `json:"bloom_badger_repository_time_ns"`
-	BadgerRepositoryTimeNs      int64 `json:"badger_repository_time_ns"`
+	BloomThencache_providerTimeNs       int64 `json:"bloom_then_cache_provider_time_ns"`
+	Bloomcache_providerRepositoryTimeNs int64 `json:"bloom_cache_provider_repository_time_ns"`
+	cache_providerRepositoryTimeNs      int64 `json:"cache_provider_repository_time_ns"`
 
 	// Summary
 	FastestMethod string  `json:"fastest_method"`
@@ -101,7 +101,7 @@ func (h *BenchmarkHandler) benchmarkSingleURL(ctx context.Context, url string, i
 	var bloomTotalTime int64
 	isLikely := false
 
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		start := time.Now()
 		var err error
 		isLikely, err = cache.CheckURL(url)
@@ -114,25 +114,25 @@ func (h *BenchmarkHandler) benchmarkSingleURL(ctx context.Context, url string, i
 	result.BloomOnlyTimeNs = bloomTotalTime / int64(iterations) // Average nanoseconds
 	result.BloomResult = isLikely
 
-	// 2. Benchmark Badger only
-	var badgerTotalTime int64
-	foundInBadger := false
+	// 2. Benchmark cache_provider only
+	var cache_providerTotalTime int64
+	foundIncache_provider := false
 	var entryStream entries.EntryStream
 
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		start := time.Now()
 		var err error
-		entryStream, err = cache.SearchBlacklistEntryStream(url)
+		entryStream, err = cache.GetEntryStream(url)
 
-		badgerTotalTime += time.Since(start).Nanoseconds()
+		cache_providerTotalTime += time.Since(start).Nanoseconds()
 
 		if err == nil && len(entryStream.IDs) > 0 {
-			foundInBadger = true
+			foundIncache_provider = true
 		}
 	}
 
-	result.BadgerOnlyTimeNs = badgerTotalTime / int64(iterations) // Average nanoseconds
-	result.FoundInBadger = foundInBadger
+	result.cache_providerOnlyTimeNs = cache_providerTotalTime / int64(iterations) // Average nanoseconds
+	result.FoundIncache_provider = foundIncache_provider
 
 	// 3. Benchmark Repository only
 	var repoTotalTime int64
@@ -153,8 +153,8 @@ func (h *BenchmarkHandler) benchmarkSingleURL(ctx context.Context, url string, i
 	result.RepositoryOnlyTimeNs = repoTotalTime / int64(iterations) // Average nanoseconds
 	result.FoundInRepository = foundInRepo
 
-	// 4. Benchmark Bloom + Badger flow (no repository)
-	var bloomBadgerTotalTime int64
+	// 4. Benchmark Bloom + cache_provider flow (no repository)
+	var bloomcache_providerTotalTime int64
 
 	for i := 0; i < iterations; i++ {
 		start := time.Now()
@@ -162,51 +162,51 @@ func (h *BenchmarkHandler) benchmarkSingleURL(ctx context.Context, url string, i
 		// First check bloom filter
 		isLikely, _ = cache.CheckURL(url)
 
-		// If likely, check badger
+		// If likely, check cache_provider
 		if isLikely {
-			_, _ = cache.SearchBlacklistEntryStream(url)
+			_, _ = cache.GetEntryStream(url)
 		}
 
-		bloomBadgerTotalTime += time.Since(start).Nanoseconds()
+		bloomcache_providerTotalTime += time.Since(start).Nanoseconds()
 	}
 
-	result.BloomThenBadgerTimeNs = bloomBadgerTotalTime / int64(iterations)
+	result.BloomThencache_providerTimeNs = bloomcache_providerTotalTime / int64(iterations)
 
-	// 5. Benchmark Badger + Repository flow (no bloom)
-	var badgerRepoTotalTime int64
+	// 5. Benchmark cache_provider + Repository flow (no bloom)
+	var cache_providerRepoTotalTime int64
 
 	for i := 0; i < iterations; i++ {
 		start := time.Now()
 
-		// First check badger
-		entryStream, err := cache.SearchBlacklistEntryStream(url)
+		// First check cache_provider
+		entryStream, err := cache.GetEntryStream(url)
 
-		// If not found in badger, check repository
-		if err == badger.ErrKeyNotFound || (err == nil && len(entryStream.IDs) == 0) {
+		// If not found in cache_provider, check repository
+		if err == cache_errors.ErrKeyNotFound || (err == nil && len(entryStream.IDs) == 0) {
 			queryType := enums.QueryTypeFull
 			_, _ = h.Service.Query(ctx, url, &queryType)
 		}
 
-		badgerRepoTotalTime += time.Since(start).Nanoseconds()
+		cache_providerRepoTotalTime += time.Since(start).Nanoseconds()
 	}
 
-	result.BadgerRepositoryTimeNs = badgerRepoTotalTime / int64(iterations)
+	result.cache_providerRepositoryTimeNs = cache_providerRepoTotalTime / int64(iterations)
 
-	// 6. Benchmark full flow (Bloom + Badger + Repository)
+	// 6. Benchmark full flow (Bloom + cache_provider + Repository)
 	var fullFlowTotalTime int64
 
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		start := time.Now()
 
 		// First check bloom filter
 		isLikely, _ = cache.CheckURL(url)
 
-		// If likely, check badger
+		// If likely, check cache_provider
 		if isLikely {
-			entryStream, err := cache.SearchBlacklistEntryStream(url)
+			entryStream, err := cache.GetEntryStream(url)
 
-			// If not found in badger, check repository
-			if err == badger.ErrKeyNotFound || (err == nil && len(entryStream.IDs) == 0) {
+			// If not found in cache_provider, check repository
+			if err == cache_errors.ErrKeyNotFound || (err == nil && len(entryStream.IDs) == 0) {
 				queryType := enums.QueryTypeFull
 				_, _ = h.Service.Query(ctx, url, &queryType)
 			}
@@ -215,14 +215,14 @@ func (h *BenchmarkHandler) benchmarkSingleURL(ctx context.Context, url string, i
 		fullFlowTotalTime += time.Since(start).Nanoseconds()
 	}
 
-	result.BloomBadgerRepositoryTimeNs = fullFlowTotalTime / int64(iterations)
+	result.Bloomcache_providerRepositoryTimeNs = fullFlowTotalTime / int64(iterations)
 
 	// Determine fastest method and speedup factor
 	methods := map[string]int64{
-		"Repository Only":       result.RepositoryOnlyTimeNs,
-		"Badger + Repository":   result.BadgerRepositoryTimeNs,
-		"Bloom + Badger":        result.BloomThenBadgerTimeNs,
-		"Bloom + Badger + Repo": result.BloomBadgerRepositoryTimeNs,
+		"Repository Only":               result.RepositoryOnlyTimeNs,
+		"cache_provider + Repository":   result.cache_providerRepositoryTimeNs,
+		"Bloom + cache_provider":        result.BloomThencache_providerTimeNs,
+		"Bloom + cache_provider + Repo": result.Bloomcache_providerRepositoryTimeNs,
 	}
 
 	// Find fastest and slowest methods

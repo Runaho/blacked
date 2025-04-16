@@ -3,6 +3,7 @@ module blacked
 go 1.24.0
 
 require (
+	github.com/alitto/pond/v2 v2.3.2
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
 	github.com/creasty/defaults v1.8.0
 	github.com/dgraph-io/badger/v4 v4.6.0
@@ -22,7 +23,6 @@ require (
 	github.com/prometheus/client_golang v1.20.5
 	github.com/rs/xid v1.5.0
 	github.com/rs/zerolog v1.33.0
-	github.com/samber/lo v1.49.1
 	github.com/stretchr/testify v1.10.0
 	github.com/unrolled/secure v1.17.0
 	github.com/urfave/cli/v2 v2.27.5

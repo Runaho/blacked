@@ -6,32 +6,40 @@ import (
 	"blacked/features/providers/openphish"
 	"blacked/features/providers/phishtank"
 	"blacked/features/providers/urlhaus"
-	"blacked/internal/collector"
-	"blacked/internal/colly"
-	"blacked/internal/config"
-	"net/url"
 
+	"github.com/gocolly/colly/v2"
 	"github.com/rs/zerolog/log"
+
+	"blacked/internal/collector"
+	collyClient "blacked/internal/colly"
+	"blacked/internal/config"
+
+	"net/url"
 )
+
+func getProviders(cfg *config.Config, cc *colly.Collector) Providers {
+	oisd.NewOISDBigProvider(&cfg.Collector, cc)
+	oisd.NewOISDNSFWProvider(&cfg.Collector, cc)
+	urlhaus.NewURLHausProvider(&cfg.Collector, cc)
+	openphish.NewOpenPhishFeedProvider(&cfg.Collector, cc)
+	phishtank.NewPhishTankProvider(&cfg.Collector, cc)
+
+	providers := Providers(base.GetRegisteredProviders())
+	return providers
+}
 
 type Providers []base.Provider
 
 func NewProviders() (Providers, error) {
 	cfg := config.GetConfig()
 
-	cc, err := colly.InitCollyClient()
+	cc, err := collyClient.InitCollyClient()
 	if err != nil {
 		log.Error().Err(err).Msg("error initializing colly client")
 		return nil, err
 	}
 
-	var providers = Providers{
-		oisd.NewOISDBigProvider(&cfg.Collector, cc),
-		oisd.NewOISDNSFWProvider(&cfg.Collector, cc),
-		urlhaus.NewURLHausProvider(&cfg.Collector, cc),
-		openphish.NewOpenPhishFeedProvider(&cfg.Collector, cc),
-		phishtank.NewPhishTankProvider(&cfg.Collector, cc),
-	}
+	providers := getProviders(cfg, cc)
 
 	// Example: Collect their source URLs for logging or metrics
 	srcs := providers.Sources()

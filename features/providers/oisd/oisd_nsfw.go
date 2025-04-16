@@ -2,6 +2,7 @@ package oisd
 
 import (
 	"blacked/features/entries"
+	"blacked/features/entry_collector"
 	"blacked/features/providers/base"
 	"blacked/internal/config"
 	"bufio"
@@ -21,8 +22,7 @@ func NewOISDNSFWProvider(settings *config.CollectorConfig, collyClient *colly.Co
 		cronSchedule = "22 6 * * *" // Run at 6:22 AM every day
 	)
 
-	parseFunc := func(data io.Reader) ([]entries.Entry, error) {
-		var result []entries.Entry
+	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
 		scanner := bufio.NewScanner(data)
 		id := uuid.New().String()
 
@@ -44,14 +44,14 @@ func NewOISDNSFWProvider(settings *config.CollectorConfig, collyClient *colly.Co
 				continue
 			}
 
-			result = append(result, *entry)
+			collector.Submit(*entry)
 		}
 
 		if err := scanner.Err(); err != nil {
-			return nil, err
+			return err
 		}
 
-		return result, nil
+		return nil
 	}
 
 	provider := base.NewBaseProvider(

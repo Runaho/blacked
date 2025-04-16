@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"blacked/features/cache"
+	"blacked/features/entry_collector"
 	"blacked/features/web"
 	"blacked/internal/config"
 	"blacked/internal/runner"
@@ -32,15 +33,16 @@ func serve(c *cli.Context) (err error) {
 		return err
 	}
 
-	log.Trace().Msg("Initializing badger cache")
-	if err = cache.InitializeBadger(); err != nil {
-		log.Error().Err(err).Msg("Failed to initialize badger cache")
+	log.Trace().Msg("Initializing Cache Provider")
+	if err = cache.InitializeCache(c.Context); err != nil {
+		log.Error().Err(err).Msg("Failed to initialize Cache Provider")
 		return err
 	}
 
-	err = cache.SyncBlacklistsToBadger(c.Context)
-	if err != nil {
-		log.Error().Err(err).Stack().Msg("Failed to sync blacklists to badger")
+	entryCollector := entry_collector.GetPondCollector()
+	if ok := entryCollector.ScheduleCacheSync(true); !ok {
+		log.Error().Msg("Failed to schedule cache sync")
+		return err
 	}
 	log.Debug().Msg("Badger cache initialized")
 

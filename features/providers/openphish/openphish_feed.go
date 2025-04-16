@@ -2,6 +2,7 @@ package openphish
 
 import (
 	"blacked/features/entries"
+	"blacked/features/entry_collector"
 	"blacked/features/providers/base"
 	"blacked/internal/config"
 	"bufio"
@@ -20,8 +21,7 @@ func NewOpenPhishFeedProvider(settings *config.CollectorConfig, collyClient *col
 		cronSchedule = "30 */4 * * *" // Every 4 hours (30 minutes past the hour
 	)
 
-	parseFunc := func(data io.Reader) ([]entries.Entry, error) {
-		var result []entries.Entry
+	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
 		scanner := bufio.NewScanner(data)
 		id := uuid.New().String()
 
@@ -41,14 +41,14 @@ func NewOpenPhishFeedProvider(settings *config.CollectorConfig, collyClient *col
 				continue
 			}
 
-			result = append(result, *entry)
+			collector.Submit(*entry)
 		}
 
 		if err := scanner.Err(); err != nil {
-			return nil, err
+			return err
 		}
 
-		return result, nil
+		return nil
 	}
 
 	provider := base.NewBaseProvider(
