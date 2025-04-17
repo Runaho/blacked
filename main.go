@@ -107,15 +107,15 @@ func before(ctx context.Context) cli.BeforeFunc {
 func cleanup() {
 	log.Info().Msg("Shutting down: closing resources...")
 
-	// Close cache
-	cache.CloseCache()
-	log.Debug().Msg("Cache closed")
-
 	// Close pond collector
 	if pond := entry_collector.GetPondCollector(); pond != nil {
 		pond.Close()
 		log.Debug().Msg("Pond collector closed")
 	}
+
+	// Close cache
+	cache.CloseCache()
+	log.Debug().Msg("Cache closed")
 
 	// Close DB
 	db.Close()
