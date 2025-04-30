@@ -5,8 +5,8 @@ import (
 	"errors"
 	"os"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/rs/zerolog/log"
+	_ "modernc.org/sqlite"
 )
 
 // Error variables for database connections
@@ -159,7 +159,7 @@ func Connect(options ...Option) (*sql.DB, error) {
 }
 
 func connectSQLite(dataSourceName string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", dataSourceName)
+	db, err := sql.Open("sqlite", dataSourceName)
 	if err != nil {
 		log.Err(err).Str("dsn", dataSourceName).Msg("Failed to open SQLite database")
 		return nil, ErrOpenDatabase
