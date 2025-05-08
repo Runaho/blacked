@@ -80,6 +80,7 @@ Blacked is configured via a `.env.toml` file in the project root. You can also u
 [APP]
 environment = "development" # or "production"
 log_level = "info"          # debug, info, warn, error
+ttl = "10m"                 # Time to live for cache entries default is 5m if not set everything is cached to forever
 
 [Server]
 port = 8082
@@ -147,6 +148,7 @@ Blacked provides a comprehensive REST API for integration:
 | Endpoint | Method | Description | Example |
 |----------|--------|-------------|---------|
 | `/entry` | GET | Quick check if a URL is blacklisted | `/entry?url=example.com` |
+| `/entry/likely` | GET | Bloom check return 404 or 200 | `/entry/likely?url=example.com` |
 | `/entry/{id}` | GET | Get details for a specific entry by ID | `/entry/550e8400-e29b-41d4-a716-446655440000` |
 | `/entry/search` | POST | Advanced search with query options | `{"url": "example.com", "query_type": "domain"}` |
 | `/provider/process` | POST | Trigger provider processing | `{"providers_to_process": ["URLHAUS"]}` |

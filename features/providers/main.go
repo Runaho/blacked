@@ -21,6 +21,8 @@ func getProviders(cfg *config.Config, cc *colly.Collector) Providers {
 	oisd.NewOISDBigProvider(&cfg.Collector, cc)
 	oisd.NewOISDNSFWProvider(&cfg.Collector, cc)
 	urlhaus.NewURLHausProvider(&cfg.Collector, cc)
+
+	// They need to be updated
 	openphish.NewOpenPhishFeedProvider(&cfg.Collector, cc)
 	phishtank.NewPhishTankProvider(&cfg.Collector, cc)
 

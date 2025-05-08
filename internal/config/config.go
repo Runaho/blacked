@@ -25,8 +25,9 @@ func (s *ServerConfig) GetServerURL() string {
 }
 
 type CacheSettings struct {
-	UseBloom  bool   `koanf:"use_bloom" default:"true"`
-	CacheType string `koanf:"cache_type" default:"badger"` // Options: "badger", "bigcache"
+	UseBloom  bool           `koanf:"use_bloom" default:"true"`
+	CacheType string         `koanf:"cache_type" default:"badger"` // Options: "badger"
+	TTL       *time.Duration `kaonf:"ttl" default:"5m"`
 }
 
 type APPConfig struct {

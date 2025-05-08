@@ -145,7 +145,6 @@ func syncToCache(ctx context.Context) error {
 
 	repo := repository.NewSQLiteRepository(_db)
 
-	count := 0
 	ch := make(chan entries.EntryStream)
 
 	log.Debug().Msg("Starting to stream entries from repository")
@@ -158,6 +157,31 @@ func syncToCache(ctx context.Context) error {
 		log.Debug().Msg("Finished streaming entries")
 	}()
 
+	// if there is no ttl we can use badger for building bloom
+	if config.GetConfig().Cache.TTL == nil {
+		log.Debug().Msg("Cache will be filled and bloom will filled from badger")
+		err = buildBloomFromCacheProvider(ctx, ch, cacheProvider)
+		if err != nil {
+			log.Error().Err(err).Msg("Error while processing entries")
+			return err
+		}
+		return nil
+	}
+
+	count, err := repo.StreamEntriesCount(ctx)
+	if err != nil {
+		return err
+	}
+
+	log.Debug().Int("Stream Entry Count", count).Msg("Bloom will be builded from db channel")
+
+	// this option does not set any items to cache just builds bloom
+	// requests will responsible for adding items to cache when items not found on cache but in db with ttl
+	return cache.BuildBloomFromChannel(ctx, count, ch)
+}
+
+func buildBloomFromCacheProvider(ctx context.Context, ch <-chan entries.EntryStream, cacheProvider cache.EntryCache) error {
+	count := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -173,12 +197,7 @@ func syncToCache(ctx context.Context) error {
 				}
 				log.Debug().Msg("Cache changes committed")
 
-				if config.GetConfig().Cache.UseBloom {
-					if err := cache.BuildBloomFilterFromCacheProvider(ctx, cacheProvider, count); err != nil {
-						log.Error().Err(err).Msg("Failed to build bloom filter")
-						return err
-					}
-				}
+				cache.BuildBloomFilterFromCacheProvider(ctx, cacheProvider, count)
 
 				log.Debug().Msg("Bloom filter built successfully")
 
@@ -190,7 +209,7 @@ func syncToCache(ctx context.Context) error {
 				log.Trace().Int("processed_count", count).Msg("Processing blacklist entries")
 			}
 
-			err = cacheProvider.Set(entry.SourceUrl, entry.IDsRaw)
+			err := cacheProvider.Set(entry.SourceUrl, entry.IDsRaw)
 			if err != nil {
 				log.Error().Err(err).Str("key", entry.SourceUrl).Msg("Failed to set entry in cache")
 				return err
