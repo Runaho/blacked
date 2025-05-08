@@ -25,8 +25,9 @@ type EntryCache interface {
 	Close() error
 
 	// Main data operations
-	Get(key string) ([]string, error) // Returns parsed IDs and error
-	Set(key string, ids string) error // Takes raw comma-separated string
+	Get(key string) ([]string, error)      // Returns parsed IDs and error
+	Set(key string, ids string) error      // Takes raw comma-separated string
+	SetIds(key string, ids []string) error // Takes array of IDs
 	Commit() error
 	Delete(key string) error
 	Iterate(ctx context.Context, fn func(key string) error) error

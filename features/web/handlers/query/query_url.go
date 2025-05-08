@@ -68,3 +68,28 @@ func (h *SearchHandler) QueryByURL(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, foundEntry)
 }
+
+func (h *SearchHandler) Likely(c echo.Context) error {
+	input := new(URLQueryInput)
+	if err := c.Bind(input); err != nil {
+		return response.BadRequest(c, "Failed to bind URL")
+	}
+
+	if err := c.Validate(input); err != nil {
+		return response.BadRequest(c, "Validation failed")
+	}
+
+	log.Debug().Str("url", input.URL).Msg("Looking bloom for entry")
+	isLikely, err := cache.CheckURL(input.URL)
+	if err != nil {
+		log.Error().Err(err).Str("url", input.URL).Msg("Failed to check bloom filter")
+		return response.ErrorWithDetails(c, http.StatusInternalServerError,
+			"Failed to check bloom filter", err.Error())
+	}
+
+	if isLikely {
+		return c.NoContent(http.StatusOK)
+	}
+
+	return c.NoContent(http.StatusNotFound)
+}

@@ -56,3 +56,14 @@ func (s *QueryService) GetEntryByID(ctx context.Context, id string) (*entries.En
 
 	return entry, nil
 }
+
+func (s *QueryService) GetIdsByLink(ctx context.Context, link string) ([]string, error) {
+	hits := s.repo.QueryExactURLMatch(ctx, link)
+
+	ids := make([]string, len(hits))
+	for i, hit := range hits {
+		ids[i] = hit.ID
+	}
+
+	return ids, nil
+}

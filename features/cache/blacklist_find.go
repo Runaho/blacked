@@ -3,7 +3,9 @@ package cache
 import (
 	"blacked/features/cache/cache_errors"
 	"blacked/features/entries"
+	"blacked/features/entries/services"
 	"blacked/internal/config"
+	"context"
 	"errors"
 
 	"github.com/rs/zerolog/log"
@@ -15,6 +17,8 @@ var (
 
 func GetEntryStream(sourceUrl string) (entryStream entries.EntryStream, err error) {
 	cacheProvider, err := GetCacheProvider()
+	entryStream.SourceUrl = sourceUrl
+
 	if err != nil {
 		log.Err(err).Msg("Failed to connect to badger instance for memory cache")
 		return
@@ -39,7 +43,23 @@ func GetEntryStream(sourceUrl string) (entryStream entries.EntryStream, err erro
 			log.Warn().
 				Str("source_url", sourceUrl).
 				Msg("Key not found in cache")
-			return entries.EntryStream{}, cache_errors.ErrKeyNotFound
+
+			querySerivce, err := services.NewQueryService()
+			if err != nil {
+				log.Err(err).Msg("Failed to create query service")
+				return entryStream, err
+			}
+
+			entryStream.IDs, err = querySerivce.GetIdsByLink(context.Background(), sourceUrl)
+			if err != nil {
+				log.Err(err).Msg("Failed to query blacklist entries")
+				return entryStream, err
+			}
+
+			err = cacheProvider.SetIds(sourceUrl, entryStream.IDs)
+			cacheProvider.Commit()
+
+			return entryStream, err
 		}
 
 		log.Err(err).

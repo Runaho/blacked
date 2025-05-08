@@ -39,6 +39,25 @@ func NewSQLiteRepository(db *sql.DB) *SQLiteRepository {
 	return &SQLiteRepository{db: db}
 }
 
+func (r *SQLiteRepository) StreamEntriesCount(ctx context.Context) (int, error) {
+	query := `
+	SELECT
+        COUNT(DISTINCT source_url)
+    FROM
+        blacklist_entries
+    WHERE
+        deleted_at IS NULL;
+	`
+
+	row := r.db.QueryRowContext(ctx, query)
+	var count int
+	if err := row.Scan(&count); err != nil {
+		log.Error().Err(err).Msg("Failed to count entries in SQLite")
+		return 0, err
+	}
+	return count, nil
+}
+
 func (r *SQLiteRepository) StreamEntries(ctx context.Context, out chan<- entries.EntryStream) error {
 	defer close(out)
 
@@ -444,120 +463,6 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []*entr
 	return tx.Commit()
 }
 
-/* When one item fails, the whole batch fails. This is a more efficient way to do it but we need the fix.
-
-
-// BatchSaveEntries performs a batch UPSERT of multiple BlackListEntry records for performance.
-func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []entries.Entry) error {
-	totalEntries := len(entries)
-	if totalEntries == 0 {
-		return nil
-	}
-
-	r.writeLock.Lock()
-	defer r.writeLock.Unlock()
-
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to begin transaction for BatchSaveEntries")
-		return ErrTx
-	}
-
-	var txErr error
-	defer func() {
-		if txErr != nil {
-			if rbErr := tx.Rollback(); rbErr != nil {
-				log.Error().Err(rbErr).Msg("Failed to rollback transaction after error")
-			}
-		}
-	}()
-
-	var (
-		numArgsPerEntry = 14
-
-		sqlInsertPrefix = `
-			INSERT INTO blacklist_entries (
-				id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, category, confidence, created_at, updated_at, deleted_at
-			) VALUES `
-		sqlConflictSuffix = `
-			ON CONFLICT (source_url, source) DO UPDATE SET
-				process_id = EXCLUDED.process_id,
-				scheme = EXCLUDED.scheme,
-				domain = EXCLUDED.domain,
-				host = EXCLUDED.host,
-				sub_domains = EXCLUDED.sub_domains,
-				path = EXCLUDED.path,
-				raw_query = EXCLUDED.raw_query,
-				category = EXCLUDED.category,
-				confidence = EXCLUDED.confidence,
-				updated_at = EXCLUDED.updated_at,
-				deleted_at = NULL`
-
-		valuePlaceholder = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)"
-	)
-
-	args := make([]any, 0, totalEntries*numArgsPerEntry)
-
-	var subDomainsBuilder strings.Builder
-	var queryBuilder strings.Builder
-
-	for _, entry := range entries {
-		subDomainsBuilder.Reset()
-		for i, sub := range entry.SubDomains {
-			if i > 0 {
-				subDomainsBuilder.WriteString(",")
-			}
-			subDomainsBuilder.WriteString(sub)
-		}
-		subDomainsStr := subDomainsBuilder.String()
-
-		args = append(args,
-			entry.ID, entry.ProcessID, entry.Scheme, entry.Domain, entry.Host, subDomainsStr,
-			entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Category, entry.Confidence,
-			entry.CreatedAt, entry.UpdatedAt,
-		)
-
-		if log.Debug().Enabled() {
-			log.Debug().
-				Str("entry_id", entry.ID).
-				Str("source_url", entry.SourceURL).
-				Msg("Preparing entry for batch")
-		}
-	}
-
-	queryBuilder.Grow(len(sqlInsertPrefix) + len(sqlConflictSuffix) + totalEntries*(len(valuePlaceholder)+2)) // Pre-allocate approximate size
-
-	queryBuilder.WriteString(sqlInsertPrefix)
-
-	for i := 0; i < totalEntries; i++ {
-		if i > 0 {
-			queryBuilder.WriteString(", ")
-		}
-		queryBuilder.WriteString(valuePlaceholder)
-	}
-
-	queryBuilder.WriteString(sqlConflictSuffix)
-	query := queryBuilder.String()
-
-	if log.Trace().Enabled() {
-		log.Trace().Int("batch_size", totalEntries).Str("query", query).Msg("Executing batch UPSERT")
-	}
-
-	_, err = tx.ExecContext(ctx, query, args...)
-	if err != nil {
-		log.Error().Err(err).Int("batch_size", totalEntries).Msg("Failed to execute batch UPSERT statement")
-		return err
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to commit transaction for BatchSaveEntries")
-	}
-
-	return nil
-}
-*/
-
 // RemoveOlderInsertions soft deletes blacklist entries from a provider that do not have the latest insertion ID.
 func (r *SQLiteRepository) RemoveOlderInsertions(ctx context.Context, providerName string, currentProcessID string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -647,7 +552,7 @@ func (r *SQLiteRepository) QueryLink(ctx context.Context, link string) (
 	if parseErr != nil {
 		// --- URL Parsing Failed ---
 		log.Warn().Err(parseErr).Str("raw_link", link).Msg("Failed to parse input URL, attempting exact match query only")
-		hits = append(hits, r.queryExactURLMatch(ctx, normalizedLink)...)
+		hits = append(hits, r.QueryExactURLMatch(ctx, normalizedLink)...)
 		return hits, nil
 	}
 
@@ -667,7 +572,7 @@ func (r *SQLiteRepository) QueryLink(ctx context.Context, link string) (
 	path := parsedURL.Path
 
 	// Exact URL match
-	hits = append(hits, r.queryExactURLMatch(ctx, normalizedLink)...)
+	hits = append(hits, r.QueryExactURLMatch(ctx, normalizedLink)...)
 
 	// Host match
 	hits = append(hits, r.queryHostMatch(ctx, host)...)
@@ -750,7 +655,7 @@ func (r *SQLiteRepository) QueryLinkByType(ctx context.Context, link string, que
 	return hits, nil
 }
 
-func (r *SQLiteRepository) queryExactURLMatch(ctx context.Context, normalizedLink string) []entries.Hit {
+func (r *SQLiteRepository) QueryExactURLMatch(ctx context.Context, normalizedLink string) []entries.Hit {
 	startTime := time.Now()
 	query := "SELECT id FROM blacklist_entries WHERE source_url = ? AND deleted_at IS NULL"
 	rows, err := r.db.QueryContext(ctx, query, normalizedLink)

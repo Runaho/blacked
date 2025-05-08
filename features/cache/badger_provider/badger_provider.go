@@ -2,9 +2,11 @@ package badger_provider
 
 import (
 	"blacked/features/cache/cache_errors"
+	"blacked/internal/config"
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/dgraph-io/badger/v4"
@@ -18,6 +20,7 @@ type BadgerProvider struct {
 	bloomMutex  sync.RWMutex
 	initialized bool
 	txn         *badger.Txn
+	ttl         *time.Duration
 }
 
 // NewBadgerProvider creates a new Badger provider
@@ -42,6 +45,8 @@ func (p *BadgerProvider) Initialize(ctx context.Context) error {
 	p.db = db
 	p.initialized = true
 	log.Info().Msg("Badger initialized successfully")
+
+	p.ttl = config.GetConfig().Cache.TTL
 
 	return nil
 }
@@ -103,7 +108,12 @@ func (p *BadgerProvider) Set(key string, ids string) error {
 		p.txn = p.db.NewTransaction(true)
 	}
 
-	err := p.txn.Set([]byte(key), []byte(ids))
+	entry := badger.NewEntry([]byte(key), []byte(ids))
+	if p.ttl != nil {
+		entry.WithTTL(*p.ttl)
+	}
+
+	err := p.txn.SetEntry(entry)
 
 	if err == badger.ErrTxnTooBig {
 		if log.Debug().Enabled() {
@@ -115,7 +125,61 @@ func (p *BadgerProvider) Set(key string, ids string) error {
 
 		_ = p.txn.Commit()
 		p.txn = p.db.NewTransaction(true)
-		err = p.txn.Set([]byte(key), []byte(ids))
+
+		entry := badger.NewEntry([]byte(key), []byte(ids))
+		if p.ttl != nil {
+			entry.WithTTL(*p.ttl)
+		}
+
+		err := p.txn.SetEntry(entry)
+
+		if err == badger.ErrTxnTooBig {
+			log.Error().
+				Str("key", key).
+				Msg("Transaction too big, skipping even after commit")
+			p.txn.Discard()
+			p.txn = nil
+			return err
+		}
+
+		return nil
+	}
+
+	return err
+}
+
+func (p *BadgerProvider) SetIds(key string, ids []string) error {
+	if !p.initialized {
+		return cache_errors.ErrCacheNotInitialized
+	}
+
+	if p.txn == nil {
+		p.txn = p.db.NewTransaction(true)
+	}
+
+	entry := badger.NewEntry([]byte(key), []byte(strings.Join(ids, ",")))
+	if p.ttl != nil {
+		entry.WithTTL(*p.ttl)
+	}
+
+	err := p.txn.SetEntry(entry)
+
+	if err == badger.ErrTxnTooBig {
+		if log.Debug().Enabled() {
+			log.Debug().
+				Str("key", key).
+				Int("bytes", len(ids)).
+				Msg("Transaction item limit reached, committing and retrying")
+		}
+
+		_ = p.txn.Commit()
+		p.txn = p.db.NewTransaction(true)
+		entry := badger.NewEntry([]byte(key), []byte(strings.Join(ids, ",")))
+		if p.ttl != nil {
+			entry.WithTTL(*p.ttl)
+		}
+
+		err := p.txn.SetEntry(entry)
 
 		if err == badger.ErrTxnTooBig {
 			log.Error().
