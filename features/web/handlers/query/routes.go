@@ -12,6 +12,7 @@ func MapQueryRoutes(e *echo.Echo, svc *services.QueryService) error {
 
 	g := e.Group("/entry")
 	g.GET("", handler.QueryByURL)
+	g.GET("/likely", handler.Likely)
 	g.POST("/search", handler.Search)
 	g.GET("/:id", handler.QueryByID)
 
