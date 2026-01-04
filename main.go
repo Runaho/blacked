@@ -53,7 +53,7 @@ func app(ctx context.Context) *cli.App {
 	app := &cli.App{
 		Usage:       "Backend Service",
 		HelpName:    helpName,
-		Version:     "v0.1.0",
+		Version:     "v0.2.0",
 		Compiled:    time.Now().UTC(),
 		Copyright:   "© " + year + " RUNAHO",
 		Description: "This application aims to check links in the blacklist.",
