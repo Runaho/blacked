@@ -75,8 +75,8 @@ func (p Providers) Process(ctx context.Context, opts ...ProcessOptions) error {
 		Str("cache_mode", string(options.UpdateCacheMode)).
 		Msg("Processing providers")
 
-	// Get database connection
-	rwDB, err := db.GetDB()
+	// Get write database connection (used for provider repository)
+	rwDB, err := db.GetWriteDB()
 	if err != nil {
 		log.Err(err).Msg("Failed to open read-write database")
 		return ErrCreateRepository

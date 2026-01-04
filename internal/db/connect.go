@@ -134,31 +134,93 @@ func Connect(options ...Option) (*sql.DB, error) {
 		dsn = dbName
 	}
 
-	// IMPORTANT: Enable WAL mode if you want better concurrency (readers).
-	// This must be added to the DSN or executed via a PRAGMA after open.
-	//
-	// If you want WAL mode for a file-based DB, you append: "?_journal_mode=WAL"
-	// or do something like this:
-	// dsn = dsn + "?_journal_mode=WAL"
-	//
-
-	if opts.isInWALMode {
+	if opts.isInWALMode && !opts.inMemory {
 		dsn = dsn + "?_journal_mode=WAL"
 	}
 
-	db, err := connectSQLite(dsn)
+	db, err := connectSQLite(dsn, 1, 1) // Default: single connection
 	if err != nil {
 		return nil, err
 	}
 
-	// If your app is long-running, you can set how long to keep idle conns:
-	// db.SetConnMaxIdleTime(5 * time.Minute)
-	// db.SetConnMaxLifetime(30 * time.Minute)
-
 	return db, nil
 }
 
-func connectSQLite(dataSourceName string) (*sql.DB, error) {
+// ConnectReadOnly creates a read-only connection pool optimized for concurrent reads.
+// In WAL mode, multiple readers can read simultaneously without blocking.
+func ConnectReadOnly(options ...Option) (*sql.DB, error) {
+	opts := dbOptions{
+		isTesting:   false,
+		inMemory:    false,
+		isInWALMode: true,
+	}
+	for _, opt := range options {
+		opt(&opts)
+	}
+
+	var dsn string
+	switch {
+	case opts.inMemory:
+		dsn = memoryDB
+	case opts.isTesting:
+		dsn = testDB
+	default:
+		dsn = dbName
+	}
+
+	// Add read-only mode and WAL mode for file-based databases
+	if !opts.inMemory {
+		dsn = dsn + "?_journal_mode=WAL&mode=ro"
+	}
+
+	// Allow multiple concurrent readers (e.g., 10 connections for parallel query handling)
+	db, err := connectSQLite(dsn, 10, 5)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Debug().Int("max_open", 10).Int("max_idle", 5).Msg("Read-only connection pool created")
+	return db, nil
+}
+
+// ConnectReadWrite creates a write connection optimized for single-writer pattern.
+// SQLite only allows one writer at a time, so we use a single connection.
+func ConnectReadWrite(options ...Option) (*sql.DB, error) {
+	opts := dbOptions{
+		isTesting:   false,
+		inMemory:    false,
+		isInWALMode: true,
+	}
+	for _, opt := range options {
+		opt(&opts)
+	}
+
+	var dsn string
+	switch {
+	case opts.inMemory:
+		dsn = memoryDB
+	case opts.isTesting:
+		dsn = testDB
+	default:
+		dsn = dbName
+	}
+
+	// Add WAL mode for file-based databases (read-write is default)
+	if opts.isInWALMode && !opts.inMemory {
+		dsn = dsn + "?_journal_mode=WAL"
+	}
+
+	// Single connection for writes to prevent contention
+	db, err := connectSQLite(dsn, 1, 1)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Debug().Int("max_open", 1).Int("max_idle", 1).Msg("Read-write connection created")
+	return db, nil
+}
+
+func connectSQLite(dataSourceName string, maxOpen, maxIdle int) (*sql.DB, error) {
 	db, err := sql.Open("sqlite", dataSourceName)
 	if err != nil {
 		log.Err(err).Str("dsn", dataSourceName).Msg("Failed to open SQLite database")
@@ -171,11 +233,9 @@ func connectSQLite(dataSourceName string) (*sql.DB, error) {
 		return nil, ErrPingDatabase
 	}
 
-	// Configure connection pool for optimal concurrent access
-	// With WAL mode enabled, we can have multiple readers but only ONE writer at a time
-	// Since PondCollector now uses a single-threaded writer, we optimize accordingly
-	db.SetMaxOpenConns(1) // Only 1 connection needed since we have single-threaded writes
-	db.SetMaxIdleConns(1)
+	// Configure connection pool
+	db.SetMaxOpenConns(maxOpen)
+	db.SetMaxIdleConns(maxIdle)
 
 	// Enable foreign keys
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {

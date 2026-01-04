@@ -87,13 +87,17 @@ func before(ctx context.Context) cli.BeforeFunc {
 		c.Context = context.WithValue(ctx, "telemetry_shutdown", shutdownTelemetry)
 		log.Debug().Msg("Telemetry initialized")
 
-		log.Trace().Msg("Initializing database connection")
-		dbConn, err := db.GetDB()
+		log.Trace().Msg("Initializing database connections")
+		// Initialize DB triggers creation of both read and write connections
+		db.InitializeDB()
+
+		// Get the write connection for the collector (handles inserts/updates)
+		writeDB, err := db.GetWriteDB()
 		if err != nil {
-			log.Error().Err(err).Stack().Msg("Failed to connect to database")
+			log.Error().Err(err).Stack().Msg("Failed to get write database connection")
 			return err
 		}
-		log.Debug().Msg("Database connection established")
+		log.Debug().Msg("Database connections established (read + write pools)")
 
 		log.Trace().Msg("Initializing Cache Provider")
 		if err := cache.InitializeCache(ctx); err != nil {
@@ -103,7 +107,7 @@ func before(ctx context.Context) cli.BeforeFunc {
 		log.Debug().Msg("Cache Provider Initialized")
 
 		log.Debug().Msg("Initializing Pond Collector")
-		entry_collector.InitPondCollector(ctx, dbConn)
+		entry_collector.InitPondCollector(ctx, writeDB)
 		log.Debug().Msg("Pond Collector Initialized")
 
 		log.Trace().Msg("Initializing providers")

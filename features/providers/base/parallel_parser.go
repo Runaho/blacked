@@ -5,12 +5,96 @@ import (
 	"blacked/features/entry_collector"
 	"bufio"
 	"io"
+	"os"
+	"path/filepath"
 	"runtime"
+	"runtime/trace"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
+
+var (
+	execTraceMu     sync.Mutex
+	execTraceActive bool
+)
+
+func shouldStartExecTrace(providerName string) bool {
+	if os.Getenv("BLACKEDEXECTRACE") != "1" {
+		return false
+	}
+	if wantedProvider := os.Getenv("BLACKEDEXECTRACE_PROVIDER"); wantedProvider != "" && wantedProvider != providerName {
+		return false
+	}
+	return true
+}
+
+func maybeStartExecTrace(providerName, processID string) (stop func()) {
+	if !shouldStartExecTrace(providerName) {
+		return func() {}
+	}
+
+	execTraceMu.Lock()
+	if execTraceActive {
+		execTraceMu.Unlock()
+		return func() {}
+	}
+	execTraceActive = true
+	execTraceMu.Unlock()
+
+	startedAt := time.Now()
+	traceDir := filepath.Join(".", "traces")
+	if err := os.MkdirAll(traceDir, 0o755); err != nil {
+		log.Warn().Err(err).Msg("Failed to create traces directory; skipping exec trace")
+		execTraceMu.Lock()
+		execTraceActive = false
+		execTraceMu.Unlock()
+		return func() {}
+	}
+
+	fileName := filepath.Join(traceDir, "parallel-parse-"+providerName+"-"+processID+"-"+startedAt.UTC().Format("20060102T150405Z")+".out")
+	traceFile, err := os.Create(fileName)
+	if err != nil {
+		log.Warn().Err(err).Str("file", fileName).Msg("Failed to create exec trace file; skipping exec trace")
+		execTraceMu.Lock()
+		execTraceActive = false
+		execTraceMu.Unlock()
+		return func() {}
+	}
+
+	if err := trace.Start(traceFile); err != nil {
+		_ = traceFile.Close()
+		log.Warn().Err(err).Str("file", fileName).Msg("Failed to start exec trace")
+		execTraceMu.Lock()
+		execTraceActive = false
+		execTraceMu.Unlock()
+		return func() {}
+	}
+
+	log.Info().
+		Str("provider", providerName).
+		Str("process_id", processID).
+		Str("file", fileName).
+		Msg("Go exec trace started for parallel parsing")
+
+	return func() {
+		trace.Stop()
+		_ = traceFile.Close()
+
+		execTraceMu.Lock()
+		execTraceActive = false
+		execTraceMu.Unlock()
+
+		log.Info().
+			Str("provider", providerName).
+			Str("process_id", processID).
+			Dur("duration", time.Since(startedAt)).
+			Str("file", fileName).
+			Msg("Go exec trace stopped")
+	}
+}
 
 // LineProcessor is a function that processes a single line and returns an entry
 // Returns nil entry to skip the line (e.g., for comments or invalid data)
@@ -37,6 +121,8 @@ func ParseLinesParallel(
 	}
 
 	processID := uuid.New().String()
+	stopExecTrace := maybeStartExecTrace(providerName, processID)
+	defer stopExecTrace()
 
 	log.Debug().
 		Str("provider", providerName).

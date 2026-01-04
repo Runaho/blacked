@@ -35,7 +35,8 @@ func SetProcessDeadlineDuration(duration time.Duration) func(*ProviderProcessSer
 	}
 }
 func NewProviderProcessService() (*ProviderProcessService, error) {
-	conn, err := db.GetDB()
+	// Use write connection since this service inserts/updates process records
+	conn, err := db.GetWriteDB()
 	if err != nil {
 		log.Err(err).Msg("Failed to connect to database")
 		return nil, ErrDatabaseConnection
