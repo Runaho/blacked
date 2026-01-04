@@ -9,7 +9,6 @@ import (
 	"errors"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -33,8 +32,8 @@ var (
 
 // SQLiteRepository is the concrete implementation of BlacklistRepository using SQLite.
 type SQLiteRepository struct {
-	db        *sql.DB
-	writeLock sync.Mutex // Add this
+	db *sql.DB
+	// writeLock removed - no longer needed with single-threaded writer
 }
 
 // NewSQLiteRepository creates a new SQLiteRepository instance.
@@ -360,8 +359,7 @@ func (r *SQLiteRepository) GetEntriesByCategory(ctx context.Context, category st
 
 // SaveEntry performs UPSERT (Insert or Update) for a single entries.Entry.
 func (r *SQLiteRepository) SaveEntry(ctx context.Context, entry entries.Entry) error {
-	r.writeLock.Lock()
-	defer r.writeLock.Unlock()
+	// No lock needed - single-threaded writer ensures no concurrent access
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -415,8 +413,8 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []*entr
 	if len(entries) == 0 {
 		return nil
 	}
-	r.writeLock.Lock()
-	defer r.writeLock.Unlock()
+
+	// No lock needed - single-threaded writer ensures no concurrent access
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

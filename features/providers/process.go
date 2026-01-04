@@ -88,10 +88,34 @@ func (p Providers) Process(ctx context.Context, opts ...ProcessOptions) error {
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(p))
 
-	// Process providers concurrently
+	// Get max concurrent providers from config (0 = unlimited)
+	providerConfig := config.GetConfig().Provider
+	maxConcurrent := providerConfig.MaxConcurrentProviders
+	if maxConcurrent <= 0 {
+		maxConcurrent = len(p) // No limit, process all concurrently
+	}
+
+	// Create a semaphore to limit concurrent provider processing
+	semaphore := make(chan struct{}, maxConcurrent)
+
+	log.Info().
+		Int("max_concurrent", maxConcurrent).
+		Int("total_providers", len(p)).
+		Msg("Starting provider processing with concurrency control")
+
+	// Process providers concurrently with optional limit
 	for _, provider := range p {
 		wg.Add(1)
-		go p.processProvider(ctx, provider, repo, pondCollector, options.TrackMetrics, &wg, errChan)
+		go func(prov base.Provider) {
+			defer wg.Done()
+
+			// Acquire semaphore
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+
+			// Process the provider
+			p.processProvider(ctx, prov, repo, pondCollector, options.TrackMetrics, &sync.WaitGroup{}, errChan)
+		}(provider)
 	}
 
 	wg.Wait()
@@ -154,7 +178,9 @@ func (p Providers) processProvider(
 	wg *sync.WaitGroup,
 	errChan chan error,
 ) {
-	defer wg.Done()
+	if wg != nil {
+		defer wg.Done()
+	}
 
 	name := provider.GetName()
 	source := provider.Source()

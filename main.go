@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -25,6 +26,9 @@ import (
 )
 
 func main() {
+	// Set GOMAXPROCS to use all available CPU cores for maximum concurrency
+	runtime.GOMAXPROCS(runtime.NumCPU())
+
 	ctx, cancel := signal.NotifyContext(context.Background(),
 		os.Interrupt,
 		syscall.SIGTERM,

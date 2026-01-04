@@ -171,13 +171,30 @@ func connectSQLite(dataSourceName string) (*sql.DB, error) {
 		return nil, ErrPingDatabase
 	}
 
-	// Configure connection pool (use reasonable defaults)
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
+	// Configure connection pool for optimal concurrent access
+	// With WAL mode enabled, we can have multiple readers but only ONE writer at a time
+	// Since PondCollector now uses a single-threaded writer, we optimize accordingly
+	db.SetMaxOpenConns(1) // Only 1 connection needed since we have single-threaded writes
+	db.SetMaxIdleConns(1)
 
 	// Enable foreign keys
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		log.Warn().Err(err).Msg("Failed to enable foreign keys")
+	}
+
+	// Optimize SQLite for better write performance with WAL mode
+	if _, err := db.Exec("PRAGMA synchronous = NORMAL"); err != nil {
+		log.Warn().Err(err).Msg("Failed to set synchronous mode")
+	}
+
+	// Increase cache size for better performance (10MB)
+	if _, err := db.Exec("PRAGMA cache_size = -10000"); err != nil {
+		log.Warn().Err(err).Msg("Failed to set cache size")
+	}
+
+	// Set busy timeout to handle any remaining contention
+	if _, err := db.Exec("PRAGMA busy_timeout = 5000"); err != nil {
+		log.Warn().Err(err).Msg("Failed to set busy timeout")
 	}
 
 	return db, nil
