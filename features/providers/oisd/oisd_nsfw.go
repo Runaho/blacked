@@ -5,12 +5,10 @@ import (
 	"blacked/features/entry_collector"
 	"blacked/features/providers/base"
 	"blacked/internal/config"
-	"bufio"
 	"io"
 	"strings"
 
 	"github.com/gocolly/colly/v2"
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
@@ -23,35 +21,26 @@ func NewOISDNSFWProvider(settings *config.CollectorConfig, collyClient *colly.Co
 	)
 
 	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
-		scanner := bufio.NewScanner(data)
-		id := uuid.New().String()
-
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
+		return base.ParseLinesParallel(data, collector, providerName, settings.ParserWorkers, settings.ParserBatchSize, func(line, processID string) (*entries.Entry, error) {
+			line = strings.TrimSpace(line)
 			if line == "" || strings.HasPrefix(line, "#") {
-				continue
+				return nil, nil // Skip empty lines and comments
 			}
 
 			// Create a new entry
 			entry := entries.NewEntry().
 				WithSource(providerName).
-				WithProcessID(id).
+				WithProcessID(processID).
 				WithCategory("nsfw")
 
 			// SetURL may fail, so handle it separately
 			if err := entry.SetURL(line); err != nil {
 				log.Error().Err(err).Msgf("error setting URL: %s", line)
-				continue
+				return nil, nil // Skip invalid URLs
 			}
 
-			collector.Submit(entry)
-		}
-
-		if err := scanner.Err(); err != nil {
-			return err
-		}
-
-		return nil
+			return entry, nil
+		})
 	}
 
 	provider := base.NewBaseProvider(

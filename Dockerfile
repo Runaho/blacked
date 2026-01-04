@@ -7,9 +7,7 @@ RUN go mod download
 
 COPY . .
 
-# Enable CGO for SQLite
-RUN apk add --no-cache gcc musl-dev
-RUN CGO_ENABLED=1 go build -ldflags="-w -s" -o /blacked main.go
+RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o /blacked main.go
 
 FROM alpine:latest
 

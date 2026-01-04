@@ -242,6 +242,24 @@ docker run -d --name blacked -p 8082:8082 \
   blacked:latest
 ```
 
+### Using Docker Compose
+
+You can use docker compose for example deployments It's implemented with opentelemetry and prometheus metrics out of the box.
+
+#### Podman Commands
+
+```bash
+podman compose -f f:\Projects\blacked\docker-compose.yml down
+podman compose -f f:\Projects\blacked\docker-compose.yml up -d --build
+```
+
+#### Docker Compose Commands
+
+```bash
+docker-compose -f ./docker-compose.yml down
+docker-compose -f ./docker-compose.yml up -d --build
+```
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit pull requests or open issues.

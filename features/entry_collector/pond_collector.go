@@ -354,7 +354,7 @@ func (c *PondCollector) GetProcessedCount(source string) int {
 }
 
 // FinishProviderProcessing logs stats and finalizes metrics for a provider
-func (c *PondCollector) FinishProviderProcessing(providerName, processID string) {
+func (c *PondCollector) FinishProviderProcessing(providerName, processID string) (count int, duration time.Duration, ok bool) {
 	// Lock to get the stats and check processID
 	c.statsMu.Lock()
 	stats, exists := c.providerStats[providerName]
@@ -364,7 +364,7 @@ func (c *PondCollector) FinishProviderProcessing(providerName, processID string)
 			Str("provider", providerName).
 			Str("processID", processID).
 			Msg("Attempted to finish provider processing but stats not found")
-		return
+		return 0, 0, false
 	}
 	c.statsMu.Unlock()
 
@@ -374,8 +374,8 @@ func (c *PondCollector) FinishProviderProcessing(providerName, processID string)
 	// Now it's safe to mark as inactive and delete
 	c.statsMu.Lock()
 	stats.active = false
-	count := stats.processedCount
-	duration := time.Since(stats.startTime)
+	count = stats.processedCount
+	duration = time.Since(stats.startTime)
 
 	delete(c.providerStats, providerName)
 	c.statsMu.Unlock()
@@ -393,6 +393,8 @@ func (c *PondCollector) FinishProviderProcessing(providerName, processID string)
 		Str("processID", processID).
 		Float64("entries_per_second", entriesPerSec).
 		Msg("Provider processing completed")
+
+	return count, duration, true
 }
 
 // GetStatsMapSize returns the current size of the provider stats map

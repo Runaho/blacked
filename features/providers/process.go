@@ -114,7 +114,7 @@ func (p Providers) Process(ctx context.Context, opts ...ProcessOptions) error {
 			defer func() { <-semaphore }()
 
 			// Process the provider
-			p.processProvider(ctx, prov, repo, pondCollector, options.TrackMetrics, &sync.WaitGroup{}, errChan)
+			p.processProvider(ctx, prov, repo, pondCollector, options.TrackMetrics, nil, errChan)
 		}(provider)
 	}
 
@@ -286,7 +286,7 @@ func (p Providers) processProvider(
 	span.AddEvent("parsing completed")
 
 	// Finish tracking provider metrics in the pond collector
-	pondCollector.FinishProviderProcessing(name, strProcessID)
+	entriesProcessed, processingTime, _ := pondCollector.FinishProviderProcessing(name, strProcessID)
 	span.AddEvent("provider processing finished")
 
 	// Cleanup if needed
@@ -302,9 +302,6 @@ func (p Providers) processProvider(
 			mc.SetSyncSuccess(name, time.Since(startedAt))
 		}
 	}
-
-	processingTime := time.Since(startedAt)
-	entriesProcessed := pondCollector.GetProcessedCount(name)
 
 	// Calculate entries per second
 	var entriesPerSecond float64

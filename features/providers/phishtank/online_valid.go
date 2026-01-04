@@ -38,30 +38,27 @@ func NewPhishTankProvider(settings *config.CollectorConfig, collyClient *colly.C
 			return err
 		}
 
-		// Process each entry
-		for _, phishEntry := range phishEntries {
+		// Process entries in parallel for large datasets
+		return base.ProcessEntriesParallel(phishEntries, collector, settings.ParserWorkers, func(phishEntry PhishTankEntry, processID string) (*entries.Entry, error) {
 			// Skip unverified entries
 			if !phishEntry.Verified {
-				continue
+				return nil, nil
 			}
 
 			// Create a new entry
 			entry := entries.NewEntry().
 				WithSource(providerName).
-				WithProcessID(id).
+				WithProcessID(processID).
 				WithCategory("phishing")
 
 			// SetURL may fail, so handle it separately
 			if err := entry.SetURL(phishEntry.URL); err != nil {
 				log.Error().Err(err).Msgf("error setting URL: %s", phishEntry.URL)
-				continue
+				return nil, nil // Skip invalid URLs
 			}
 
-			collector.Submit(entry)
-
-		}
-
-		return nil
+			return entry, nil
+		}, id)
 	}
 
 	provider := base.NewBaseProvider(

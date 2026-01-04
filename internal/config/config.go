@@ -36,11 +36,13 @@ type APPConfig struct {
 }
 
 type CollectorConfig struct {
-	Concurrency    int    `koanf:"concurrency" default:"10"`
-	BatchSize      int    `koanf:"batch_size" default:"100"`
-	CronSchedule   string `koanf:"cron_schedule" default:"0 0 0 * * *"`
-	StoreResponses bool   `koanf:"store_responses" default:"true"`
-	StorePath      string `koanf:"store_path" default:"./responses"`
+	Concurrency     int    `koanf:"concurrency" default:"10"`
+	BatchSize       int    `koanf:"batch_size" default:"100"`
+	CronSchedule    string `koanf:"cron_schedule" default:"0 0 0 * * *"`
+	StoreResponses  bool   `koanf:"store_responses" default:"true"`
+	StorePath       string `koanf:"store_path" default:"./responses"`
+	ParserWorkers   int    `koanf:"parser_workers" default:"4"`       // Number of parallel workers for parsing large files
+	ParserBatchSize int    `koanf:"parser_batch_size" default:"1000"` // Lines per batch for parallel parsing
 }
 
 type ProviderConfig struct {
