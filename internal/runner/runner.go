@@ -217,6 +217,56 @@ func (r *Runner) RunProviderJobsNow() {
 	}
 }
 
+// RunProviderJobsAsync runs all provider jobs asynchronously (non-blocking).
+// This allows the server to start serving requests while processing continues in the background.
+func (r *Runner) RunProviderJobsAsync() {
+	r.mu.RLock()
+	providersList := make([]base.Provider, 0, len(r.providers))
+	for _, provider := range r.providers {
+		providersList = append(providersList, provider)
+	}
+	r.mu.RUnlock()
+
+	if len(providersList) == 0 {
+		log.Info().Msg("No providers to run at startup")
+		return
+	}
+
+	// Get provider names for the process manager
+	providerNames := make([]string, len(providersList))
+	for i, p := range providersList {
+		providerNames[i] = p.GetName()
+	}
+
+	// Try to acquire process lock via the process manager
+	pm := providers.GetProcessManager()
+	processID, err := pm.TryStartProcess(context.Background(), "startup", providerNames, nil)
+	if err != nil {
+		log.Warn().Err(err).Msg("Cannot run startup providers - another process is running")
+		return
+	}
+
+	log.Info().
+		Str("process_id", processID).
+		Int("count", len(providersList)).
+		Msg("Starting async provider processing at startup")
+
+	// Run in background goroutine
+	go func() {
+		var processErr error
+		defer func() {
+			pm.FinishProcess(processID, processErr)
+		}()
+
+		processErr = ExecuteProviders(context.Background(), providersList)
+		if processErr != nil {
+			log.Error().Err(processErr).Msg("Error executing providers in bulk at startup")
+		} else {
+			log.Info().Msg("Successfully executed all providers at startup")
+		}
+	}()
+}
+
 // GetAllNextRunTimes returns all scheduled run times by provider
 func (r *Runner) GetAllNextRunTimes() map[string]time.Time {
 	result := make(map[string]time.Time)

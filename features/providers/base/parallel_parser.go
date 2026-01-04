@@ -3,6 +3,7 @@ package base
 import (
 	"blacked/features/entries"
 	"blacked/features/entry_collector"
+	"blacked/internal/tracing"
 	"bufio"
 	"io"
 	"os"
@@ -22,6 +23,10 @@ var (
 )
 
 func shouldStartExecTrace(providerName string) bool {
+	// Skip per-provider trace if a parent trace is already running
+	if tracing.IsExecTraceActive() {
+		return false
+	}
 	if os.Getenv("BLACKEDEXECTRACE") != "1" {
 		return false
 	}

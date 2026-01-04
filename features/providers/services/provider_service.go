@@ -9,7 +9,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
@@ -48,18 +47,17 @@ func NewProviderProcessService() (*ProviderProcessService, error) {
 }
 
 func (s *ProviderProcessService) StartProcess(ctx context.Context, providersToProcess []string, providersToRemove []string) (processID string, err error) {
-	isRunning, err := s.IsProcessRunning(ctx)
+	// Use the centralized process manager to check and acquire lock
+	pm := providers.GetProcessManager()
+	processIDStr, err := pm.TryStartProcess(ctx, "api", providersToProcess, providersToRemove)
 	if err != nil {
-		log.Err(err).Msg("Failed to check if process is running")
+		if err == providers.ErrProcessAlreadyRunning {
+			log.Info().Msg("Another process is already running")
+			return "", ErrProcessRunning
+		}
+		log.Err(err).Msg("Failed to start process")
 		return "", err
 	}
-	if isRunning {
-		log.Info().Msg("Another process is already running")
-		return "", ErrProcessRunning
-	}
-
-	processUUID := uuid.New()
-	processIDStr := processUUID.String()
 
 	status := &providers.ProcessStatus{
 		ID:                 processIDStr,
@@ -69,17 +67,26 @@ func (s *ProviderProcessService) StartProcess(ctx context.Context, providersToPr
 		ProvidersRemoved:   providersToRemove,
 	}
 
+	// Also persist to database for historical records
 	if err := s.repo.InsertProcess(ctx, status); err != nil {
+		// Release the process lock since we failed
+		pm.FinishProcess(processIDStr, err)
 		log.Err(err).Msg("Failed to insert process status")
 		return "", ErrInsertProcess
 	}
 
 	go func() {
-		err := providers.GetProviders().Processor(providersToProcess, providersToRemove)
-		if err != nil {
+		var processErr error
+		defer func() {
+			// Release the centralized process lock
+			pm.FinishProcess(processIDStr, processErr)
+		}()
+
+		processErr = providers.GetProviders().Processor(providersToProcess, providersToRemove)
+		if processErr != nil {
 			status.Status = "failed"
 			status.EndTime = time.Now()
-			status.Error = err.Error()
+			status.Error = processErr.Error()
 		} else {
 			status.Status = "completed"
 			status.EndTime = time.Now()
@@ -95,18 +102,17 @@ func (s *ProviderProcessService) StartProcess(ctx context.Context, providersToPr
 }
 
 func (s *ProviderProcessService) StartProcessAsync(ctx context.Context, providersToProcess []string, providersToRemove []string) (processID string, err error) {
-	isRunning, err := s.IsProcessRunning(ctx)
+	// Use the centralized process manager to check and acquire lock
+	pm := providers.GetProcessManager()
+	processIDStr, err := pm.TryStartProcess(ctx, "api-sync", providersToProcess, providersToRemove)
 	if err != nil {
-		log.Err(err).Msg("Failed to check if process is running")
+		if err == providers.ErrProcessAlreadyRunning {
+			log.Info().Msg("Another process is already running")
+			return "", ErrProcessRunning
+		}
+		log.Err(err).Msg("Failed to start process")
 		return "", err
 	}
-	if isRunning {
-		log.Info().Msg("Another process is already running")
-		return "", ErrProcessRunning
-	}
-
-	processUUID := uuid.New()
-	processIDStr := processUUID.String()
 
 	status := &providers.ProcessStatus{
 		ID:                 processIDStr,
@@ -117,18 +123,22 @@ func (s *ProviderProcessService) StartProcessAsync(ctx context.Context, provider
 	}
 
 	if err := s.repo.InsertProcess(ctx, status); err != nil {
+		pm.FinishProcess(processIDStr, err)
 		log.Err(err).Msg("Failed to insert process status")
 		return "", ErrInsertProcess
 	}
 
-	// Get the providers
+	// Get the providers and run synchronously (this method blocks)
 	allProviders := providers.GetProviders()
-	err = allProviders.Processor(providersToProcess, providersToRemove)
+	processErr := allProviders.Processor(providersToProcess, providersToRemove)
 
-	if err != nil {
+	// Finish the process
+	pm.FinishProcess(processIDStr, processErr)
+
+	if processErr != nil {
 		status.Status = "failed"
 		status.EndTime = time.Now()
-		status.Error = err.Error()
+		status.Error = processErr.Error()
 	} else {
 		status.Status = "completed"
 		status.EndTime = time.Now()
@@ -144,6 +154,13 @@ func (s *ProviderProcessService) StartProcessAsync(ctx context.Context, provider
 }
 
 func (s *ProviderProcessService) GetProcessStatus(ctx context.Context, processID string) (*providers.ProcessStatus, error) {
+	// First check in-memory process manager for current/recent processes
+	pm := providers.GetProcessManager()
+	if status, err := pm.GetProcessByID(processID); err == nil {
+		return status, nil
+	}
+
+	// Fall back to database for older records
 	status, err := s.repo.GetProcessByID(ctx, processID)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -162,19 +179,41 @@ func (s *ProviderProcessService) GetProcessStatus(ctx context.Context, processID
 }
 
 func (s *ProviderProcessService) ListProcesses(ctx context.Context) ([]*providers.ProcessStatus, error) {
-	statuses, err := s.repo.ListProcesses(ctx)
+	// Get processes from database
+	dbStatuses, err := s.repo.ListProcesses(ctx)
 	if err != nil {
 		log.Err(err).Msg("Failed to list processes")
 		return nil, ErrListProcesses
 	}
-	return statuses, nil
+
+	// Create a map of DB process IDs for quick lookup
+	dbProcessIDs := make(map[string]bool)
+	for _, s := range dbStatuses {
+		dbProcessIDs[s.ID] = true
+	}
+
+	// Get in-memory processes (current + recent history) from ProcessManager
+	pm := providers.GetProcessManager()
+	inMemoryProcesses := pm.GetRecentProcesses(50) // Get up to 50 recent processes
+
+	// Initialize result as empty slice (not nil) so JSON returns [] instead of null
+	result := make([]*providers.ProcessStatus, 0)
+
+	// Merge: add in-memory processes that aren't already in DB
+	for _, p := range inMemoryProcesses {
+		if !dbProcessIDs[p.ID] {
+			result = append(result, p)
+		}
+	}
+
+	// Append DB processes
+	result = append(result, dbStatuses...)
+
+	return result, nil
 }
 
 func (s *ProviderProcessService) IsProcessRunning(ctx context.Context) (bool, error) {
-	running, err := s.repo.IsProcessRunning(ctx, s.processDeadlineDuration)
-	if err != nil {
-		log.Err(err).Msg("Failed to check if process is running")
-		return false, ErrCheckRunningProcess
-	}
-	return running, nil
+	// Use the centralized process manager for real-time status
+	pm := providers.GetProcessManager()
+	return pm.IsRunning(), nil
 }

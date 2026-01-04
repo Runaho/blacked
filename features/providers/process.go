@@ -7,6 +7,7 @@ import (
 	"blacked/internal/collector"
 	"blacked/internal/config"
 	"blacked/internal/db"
+	"blacked/internal/tracing"
 	"blacked/internal/utils"
 
 	"context"
@@ -62,6 +63,15 @@ func (p Providers) Process(ctx context.Context, opts ...ProcessOptions) error {
 	options := DefaultProcessOptions
 	if len(opts) > 0 {
 		options = opts[0]
+	}
+
+	// Generate a unique process ID for this run
+	processID := uuid.New().String()
+
+	// Start execution trace if enabled (captures all providers in one trace file)
+	if tracing.ShouldStartExecTrace("providers") {
+		stopTrace := tracing.StartExecTrace("providers", processID)
+		defer stopTrace()
 	}
 
 	// Check if pond collector exists - we expect it to be initialized elsewhere

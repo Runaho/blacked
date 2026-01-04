@@ -16,8 +16,8 @@ services:
       - OTEL_TRACES_EXPORTER=otlp
       - OTEL_METRICS_EXPORTER=prometheus
       - OTEL_LOGS_EXPORTER=none
-      - BLACKEDEXECTRACE=1
-      - BLACKEDEXECTRACE_PROVIDER=URLHAUS
+      #- BLACKEDEXECTRACE=1
+      #- BLACKEDEXECTRACE_SCOPE=providers
     depends_on:
       - tempo
       - prometheus
