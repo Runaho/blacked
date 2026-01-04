@@ -1,6 +1,6 @@
 module blacked
 
-go 1.24.0
+go 1.25.5
 
 require (
 	github.com/alitto/pond/v2 v2.3.3
@@ -18,7 +18,6 @@ require (
 	github.com/knadh/koanf/v2 v2.2.0
 	github.com/labstack/echo/v4 v4.13.3
 	github.com/mattn/go-isatty v0.0.20
-	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/ory/graceful v0.1.3
 	github.com/prometheus/client_golang v1.22.0
 	github.com/rs/xid v1.6.0
@@ -28,6 +27,7 @@ require (
 	github.com/urfave/cli/v2 v2.27.6
 	github.com/ziflex/lecho/v3 v3.7.0
 	golang.org/x/net v0.39.0
+	modernc.org/sqlite v1.37.0
 )
 
 require (
@@ -49,7 +49,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
-	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
+	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
@@ -96,5 +96,4 @@ require (
 	modernc.org/libc v1.62.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.9.1 // indirect
-	modernc.org/sqlite v1.37.0 // indirect
 )
