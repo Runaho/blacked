@@ -8,10 +8,12 @@ import (
 	"blacked/internal/config"
 	"blacked/internal/db"
 	"blacked/internal/logger"
+	"blacked/internal/telemetry"
 	"context"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -24,6 +26,9 @@ import (
 )
 
 func main() {
+	// Set GOMAXPROCS to use all available CPU cores for maximum concurrency
+	runtime.GOMAXPROCS(runtime.NumCPU())
+
 	ctx, cancel := signal.NotifyContext(context.Background(),
 		os.Interrupt,
 		syscall.SIGTERM,
@@ -48,7 +53,7 @@ func app(ctx context.Context) *cli.App {
 	app := &cli.App{
 		Usage:       "Backend Service",
 		HelpName:    helpName,
-		Version:     "v0.1.0",
+		Version:     "v0.2.0",
 		Compiled:    time.Now().UTC(),
 		Copyright:   "© " + year + " RUNAHO",
 		Description: "This application aims to check links in the blacklist.",
@@ -72,13 +77,27 @@ func before(ctx context.Context) cli.BeforeFunc {
 		}
 		log.Debug().Msg("Configuration loaded")
 
-		log.Trace().Msg("Initializing database connection")
-		dbConn, err := db.GetDB()
+		log.Trace().Msg("Initializing telemetry")
+		shutdownTelemetry, err := telemetry.InitTelemetry(ctx, "blacked", "v0.1.0")
 		if err != nil {
-			log.Error().Err(err).Stack().Msg("Failed to connect to database")
+			log.Error().Err(err).Stack().Msg("Failed to initialize telemetry")
 			return err
 		}
-		log.Debug().Msg("Database connection established")
+		// Store shutdown function for cleanup
+		c.Context = context.WithValue(ctx, "telemetry_shutdown", shutdownTelemetry)
+		log.Debug().Msg("Telemetry initialized")
+
+		log.Trace().Msg("Initializing database connections")
+		// Initialize DB triggers creation of both read and write connections
+		db.InitializeDB()
+
+		// Get the write connection for the collector (handles inserts/updates)
+		writeDB, err := db.GetWriteDB()
+		if err != nil {
+			log.Error().Err(err).Stack().Msg("Failed to get write database connection")
+			return err
+		}
+		log.Debug().Msg("Database connections established (read + write pools)")
 
 		log.Trace().Msg("Initializing Cache Provider")
 		if err := cache.InitializeCache(ctx); err != nil {
@@ -88,7 +107,7 @@ func before(ctx context.Context) cli.BeforeFunc {
 		log.Debug().Msg("Cache Provider Initialized")
 
 		log.Debug().Msg("Initializing Pond Collector")
-		entry_collector.InitPondCollector(ctx, dbConn)
+		entry_collector.InitPondCollector(ctx, writeDB)
 		log.Debug().Msg("Pond Collector Initialized")
 
 		log.Trace().Msg("Initializing providers")
@@ -120,4 +139,14 @@ func cleanup() {
 	// Close DB
 	db.Close()
 	log.Debug().Msg("Database closed")
+
+	// Shutdown telemetry
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if tp := telemetry.GetTracerProvider(); tp != nil {
+		if err := tp.Shutdown(ctx); err != nil {
+			log.Error().Err(err).Msg("Failed to shutdown tracer provider")
+		}
+		log.Debug().Msg("Telemetry shutdown")
+	}
 }

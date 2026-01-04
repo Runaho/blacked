@@ -9,7 +9,9 @@ COPY . .
 
 RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o /blacked main.go
 
-FROM gcr.io/distroless/static-debian12
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates
 
 WORKDIR /app
 

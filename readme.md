@@ -145,14 +145,14 @@ Blacked provides a comprehensive REST API for integration:
 
 #### Core Endpoints
 
-| Endpoint | Method | Description | Example |
-|----------|--------|-------------|---------|
-| `/entry` | GET | Quick check if a URL is blacklisted | `/entry?url=example.com` |
-| `/entry/likely` | GET | Bloom check return 404 or 200 | `/entry/likely?url=example.com` |
-| `/entry/{id}` | GET | Get details for a specific entry by ID | `/entry/550e8400-e29b-41d4-a716-446655440000` |
-| `/entry/search` | POST | Advanced search with query options | `{"url": "example.com", "query_type": "domain"}` |
-| `/provider/process` | POST | Trigger provider processing | `{"providers_to_process": ["URLHAUS"]}` |
-| `/benchmark/query` | POST | Benchmark query performance | `{"urls": ["example.com"], "iterations": 100}` |
+| Endpoint              | Method | Description                            | Example                                            |
+| --------------------- | ------ | -------------------------------------- | -------------------------------------------------- |
+| `/entry`            | GET    | Quick check if a URL is blacklisted    | `/entry?url=example.com`                         |
+| `/entry/likely`     | GET    | Bloom check return 404 or 200          | `/entry/likely?url=example.com`                  |
+| `/entry/{id}`       | GET    | Get details for a specific entry by ID | `/entry/550e8400-e29b-41d4-a716-446655440000`    |
+| `/entry/search`     | POST   | Advanced search with query options     | `{"url": "example.com", "query_type": "domain"}` |
+| `/provider/process` | POST   | Trigger provider processing            | `{"providers_to_process": ["URLHAUS"]}`          |
+| `/benchmark/query`  | POST   | Benchmark query performance            | `{"urls": ["example.com"], "iterations": 100}`   |
 
 #### Example Queries
 
@@ -240,6 +240,40 @@ docker run -d --name blacked -p 8082:8082 \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/.env.toml:/app/.env.toml \
   blacked:latest
+```
+
+### Using Docker Compose
+
+You can use docker compose for example deployments It's implemented with opentelemetry and prometheus metrics out of the box.
+
+#### Podman Commands
+
+```bash
+podman compose -f f:\Projects\blacked\docker-compose.yml down
+podman compose -f f:\Projects\blacked\docker-compose.yml up -d --build
+```
+
+#### Docker Compose Commands
+
+```bash
+docker-compose -f ./docker-compose.yml down
+docker-compose -f ./docker-compose.yml up -d --build
+```
+
+#### Accessing Traces with go tool trace
+
+First open it from environment;
+
+*BLACKEDEXECTRACE=1*
+
+*BLACKEDEXECTRACE_SCOPE=providers*
+
+Then run the server or process command to generate trace files.
+Wait the message that trace file is saved '**Go exec trace stopped**', then run:
+
+```bash
+podman cp blacked:/app/traces/ f:\Projects\blacked\traces\                                                                              
+go tool trace .\traces\traces\providers-x.out
 ```
 
 ## 🤝 Contributing

@@ -36,17 +36,20 @@ type APPConfig struct {
 }
 
 type CollectorConfig struct {
-	Concurrency    int    `koanf:"concurrency" default:"10"`
-	BatchSize      int    `koanf:"batch_size" default:"100"`
-	CronSchedule   string `koanf:"cron_schedule" default:"0 0 0 * * *"`
-	StoreResponses bool   `koanf:"store_responses" default:"true"`
-	StorePath      string `koanf:"store_path" default:"./responses"`
+	Concurrency     int    `koanf:"concurrency" default:"10"`
+	BatchSize       int    `koanf:"batch_size" default:"100"`
+	CronSchedule    string `koanf:"cron_schedule" default:"0 0 0 * * *"`
+	StoreResponses  bool   `koanf:"store_responses" default:"true"`
+	StorePath       string `koanf:"store_path" default:"./responses"`
+	ParserWorkers   int    `koanf:"parser_workers" default:"4"`       // Number of parallel workers for parsing large files
+	ParserBatchSize int    `koanf:"parser_batch_size" default:"1000"` // Lines per batch for parallel parsing
 }
 
 type ProviderConfig struct {
-	EnabledProviders []string          `koanf:"enabled_providers"` // List of enabled providers if is empty all providers are enabled
-	CronSchedules    map[string]string `koanf:"provider_crons"`    // Provider-specific cron schedules
-	RunAtStartup     bool              `koanf:"run_at_startup" default:"true"`
+	EnabledProviders       []string          `koanf:"enabled_providers"` // List of enabled providers if is empty all providers are enabled
+	CronSchedules          map[string]string `koanf:"provider_crons"`    // Provider-specific cron schedules
+	RunAtStartup           bool              `koanf:"run_at_startup" default:"true"`
+	MaxConcurrentProviders int               `koanf:"max_concurrent_providers" default:"0"` // 0 means no limit, process all providers concurrently
 }
 
 type CollyConfig struct {

@@ -3,8 +3,11 @@ package provider_processor
 import (
 	"blacked/features/providers"
 	"blacked/features/providers/services"
+	"blacked/internal/config"
 	"context"
 	"errors"
+	"os"
+	"runtime/trace"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -18,6 +21,8 @@ var (
 	ErrProviderProcessForceFailed        = errors.New("failed to force start provider process")
 	ErrProviderProcessServiceFailed      = errors.New("failed to initialize provider process service")
 	ErrProviderProcessServiceStartFailed = errors.New("failed to start provider process via service")
+
+	traceFile *os.File
 )
 
 func Process(selectedProviders, providersToRemove []string, force bool) error {
@@ -62,6 +67,18 @@ func Process(selectedProviders, providersToRemove []string, force bool) error {
 		} else {
 			log.Warn().Msg("Forcing process to start even though another process is running after 5 seconds")
 			time.Sleep(5 * time.Second)
+		}
+	}
+
+	if config.IsDevMode() {
+		if traceFile, err := os.Create("start-process-trace.out"); err == nil {
+			defer traceFile.Close()
+			if err := trace.Start(traceFile); err == nil {
+				defer trace.Stop()
+				log.Info().Msg("Trace started for provider processing")
+			} else {
+				log.Warn().Err(err).Msg("Failed to start trace")
+			}
 		}
 	}
 

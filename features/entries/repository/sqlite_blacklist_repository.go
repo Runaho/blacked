@@ -9,10 +9,12 @@ import (
 	"errors"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -30,8 +32,8 @@ var (
 
 // SQLiteRepository is the concrete implementation of BlacklistRepository using SQLite.
 type SQLiteRepository struct {
-	db        *sql.DB
-	writeLock sync.Mutex // Add this
+	db *sql.DB
+	// writeLock removed - no longer needed with single-threaded writer
 }
 
 // NewSQLiteRepository creates a new SQLiteRepository instance.
@@ -357,8 +359,7 @@ func (r *SQLiteRepository) GetEntriesByCategory(ctx context.Context, category st
 
 // SaveEntry performs UPSERT (Insert or Update) for a single entries.Entry.
 func (r *SQLiteRepository) SaveEntry(ctx context.Context, entry entries.Entry) error {
-	r.writeLock.Lock()
-	defer r.writeLock.Unlock()
+	// No lock needed - single-threaded writer ensures no concurrent access
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -401,11 +402,19 @@ func (r *SQLiteRepository) SaveEntry(ctx context.Context, entry entries.Entry) e
 // blackLinks/repository.go
 // BatchSaveEntries performs a batch UPSERT of multiple BlackListEntry records for performance.
 func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []*entries.Entry) error {
+	tracer := otel.Tracer("blacked/repository")
+	ctx, span := tracer.Start(ctx, "repository.batch_save",
+		trace.WithAttributes(
+			attribute.Int("batch_size", len(entries)),
+		),
+	)
+	defer span.End()
+
 	if len(entries) == 0 {
 		return nil
 	}
-	r.writeLock.Lock()
-	defer r.writeLock.Unlock()
+
+	// No lock needed - single-threaded writer ensures no concurrent access
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -546,6 +555,13 @@ func (r *SQLiteRepository) SoftDeleteEntryByID(ctx context.Context, id string) e
 func (r *SQLiteRepository) QueryLink(ctx context.Context, link string) (
 	hits []entries.Hit,
 	err error) {
+	tracer := otel.Tracer("blacked/repository")
+	ctx, span := tracer.Start(ctx, "repository.query_link",
+		trace.WithAttributes(
+			attribute.String("query.link", link),
+		),
+	)
+	defer span.End()
 
 	normalizedLink := utils.NormalizeURL(link)
 	parsedURL, parseErr := url.Parse(normalizedLink)
@@ -656,6 +672,14 @@ func (r *SQLiteRepository) QueryLinkByType(ctx context.Context, link string, que
 }
 
 func (r *SQLiteRepository) QueryExactURLMatch(ctx context.Context, normalizedLink string) []entries.Hit {
+	tracer := otel.Tracer("blacked/repository")
+	_, span := tracer.Start(ctx, "repository.query_exact_url",
+		trace.WithAttributes(
+			attribute.String("query.url", normalizedLink),
+		),
+	)
+	defer span.End()
+
 	startTime := time.Now()
 	query := "SELECT id FROM blacklist_entries WHERE source_url = ? AND deleted_at IS NULL"
 	rows, err := r.db.QueryContext(ctx, query, normalizedLink)
@@ -699,6 +723,14 @@ func (r *SQLiteRepository) QueryExactURLMatch(ctx context.Context, normalizedLin
 }
 
 func (r *SQLiteRepository) queryHostMatch(ctx context.Context, host string) []entries.Hit {
+	tracer := otel.Tracer("blacked/repository")
+	_, span := tracer.Start(ctx, "repository.query_host",
+		trace.WithAttributes(
+			attribute.String("query.host", host),
+		),
+	)
+	defer span.End()
+
 	startTime := time.Now()
 	query := "SELECT id FROM blacklist_entries WHERE host = ? AND deleted_at IS NULL"
 	rows, err := r.db.QueryContext(ctx, query, host)
@@ -742,6 +774,14 @@ func (r *SQLiteRepository) queryHostMatch(ctx context.Context, host string) []en
 }
 
 func (r *SQLiteRepository) queryDomainMatch(ctx context.Context, domain string) []entries.Hit {
+	tracer := otel.Tracer("blacked/repository")
+	_, span := tracer.Start(ctx, "repository.query_domain",
+		trace.WithAttributes(
+			attribute.String("query.domain", domain),
+		),
+	)
+	defer span.End()
+
 	startTime := time.Now()
 	query := "SELECT id FROM blacklist_entries WHERE domain = ? AND deleted_at IS NULL"
 	rows, err := r.db.QueryContext(ctx, query, domain)
@@ -786,6 +826,14 @@ func (r *SQLiteRepository) queryDomainMatch(ctx context.Context, domain string) 
 }
 
 func (r *SQLiteRepository) queryPathMatch(ctx context.Context, path string) []entries.Hit {
+	tracer := otel.Tracer("blacked/repository")
+	_, span := tracer.Start(ctx, "repository.query_path",
+		trace.WithAttributes(
+			attribute.String("query.path", path),
+		),
+	)
+	defer span.End()
+
 	startTime := time.Now()
 	query := "SELECT id FROM blacklist_entries WHERE path = ? AND deleted_at IS NULL"
 	rows, err := r.db.QueryContext(ctx, query, path)

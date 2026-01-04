@@ -53,8 +53,9 @@ func serve(c *cli.Context) (err error) {
 		log.Fatal().Err(err).Msg("Failed to initialize scheduler runner")
 	} else {
 		if cfg.Provider.RunAtStartup {
-			log.Info().Msg("Running provider jobs at startup")
-			_runner.RunProviderJobsNow()
+			log.Info().Msg("Scheduling provider jobs to run async at startup")
+			// Run asynchronously so the server can start immediately
+			_runner.RunProviderJobsAsync()
 		}
 	}
 

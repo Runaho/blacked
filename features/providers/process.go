@@ -7,6 +7,7 @@ import (
 	"blacked/internal/collector"
 	"blacked/internal/config"
 	"blacked/internal/db"
+	"blacked/internal/tracing"
 	"blacked/internal/utils"
 
 	"context"
@@ -16,6 +17,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Process error variables
@@ -60,6 +65,15 @@ func (p Providers) Process(ctx context.Context, opts ...ProcessOptions) error {
 		options = opts[0]
 	}
 
+	// Generate a unique process ID for this run
+	processID := uuid.New().String()
+
+	// Start execution trace if enabled (captures all providers in one trace file)
+	if tracing.ShouldStartExecTrace("providers") {
+		stopTrace := tracing.StartExecTrace("providers", processID)
+		defer stopTrace()
+	}
+
 	// Check if pond collector exists - we expect it to be initialized elsewhere
 	pondCollector := entry_collector.GetPondCollector()
 	if pondCollector == nil {
@@ -71,8 +85,8 @@ func (p Providers) Process(ctx context.Context, opts ...ProcessOptions) error {
 		Str("cache_mode", string(options.UpdateCacheMode)).
 		Msg("Processing providers")
 
-	// Get database connection
-	rwDB, err := db.GetDB()
+	// Get write database connection (used for provider repository)
+	rwDB, err := db.GetWriteDB()
 	if err != nil {
 		log.Err(err).Msg("Failed to open read-write database")
 		return ErrCreateRepository
@@ -84,10 +98,34 @@ func (p Providers) Process(ctx context.Context, opts ...ProcessOptions) error {
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(p))
 
-	// Process providers concurrently
+	// Get max concurrent providers from config (0 = unlimited)
+	providerConfig := config.GetConfig().Provider
+	maxConcurrent := providerConfig.MaxConcurrentProviders
+	if maxConcurrent <= 0 {
+		maxConcurrent = len(p) // No limit, process all concurrently
+	}
+
+	// Create a semaphore to limit concurrent provider processing
+	semaphore := make(chan struct{}, maxConcurrent)
+
+	log.Info().
+		Int("max_concurrent", maxConcurrent).
+		Int("total_providers", len(p)).
+		Msg("Starting provider processing with concurrency control")
+
+	// Process providers concurrently with optional limit
 	for _, provider := range p {
 		wg.Add(1)
-		go p.processProvider(ctx, provider, repo, pondCollector, options.TrackMetrics, &wg, errChan)
+		go func(prov base.Provider) {
+			defer wg.Done()
+
+			// Acquire semaphore
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+
+			// Process the provider
+			p.processProvider(ctx, prov, repo, pondCollector, options.TrackMetrics, nil, errChan)
+		}(provider)
 	}
 
 	wg.Wait()
@@ -150,13 +188,26 @@ func (p Providers) processProvider(
 	wg *sync.WaitGroup,
 	errChan chan error,
 ) {
-	defer wg.Done()
+	if wg != nil {
+		defer wg.Done()
+	}
 
 	name := provider.GetName()
 	source := provider.Source()
 	processID := uuid.New()
 	startedAt := time.Now()
 	strProcessID := processID.String()
+
+	// Start tracing span
+	tracer := otel.Tracer("blacked/providers")
+	ctx, span := tracer.Start(ctx, "provider.process",
+		trace.WithAttributes(
+			attribute.String("provider.name", name),
+			attribute.String("provider.source", source),
+			attribute.String("process.id", strProcessID),
+		),
+	)
+	defer span.End()
 
 	// Track metrics if enabled in Prometheus
 	if trackMetrics {
@@ -177,8 +228,12 @@ func (p Providers) processProvider(
 	provider.SetProcessID(processID)
 
 	// Fetch data
+	fetchSpan := trace.SpanFromContext(ctx)
+	fetchSpan.AddEvent("fetching data from source")
 	reader, meta, err := utils.GetResponseReader(source, provider.Fetch, name, strProcessID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to fetch data")
 		providerLogger.
 			Err(err).
 			Str("source", source).
@@ -196,6 +251,7 @@ func (p Providers) processProvider(
 		errChan <- err
 		return
 	}
+	span.AddEvent("data fetched successfully")
 
 	// Handle metadata if present
 	if meta != nil {
@@ -213,7 +269,10 @@ func (p Providers) processProvider(
 	pondCollector.StartProviderProcessing(name, strProcessID)
 
 	// Parse the data - this delegates to the provider's implementation
+	span.AddEvent("parsing provider data")
 	if err := provider.Parse(reader); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to parse data")
 		providerLogger.
 			Err(err).
 			Str("source", source).
@@ -234,9 +293,11 @@ func (p Providers) processProvider(
 		errChan <- err
 		return
 	}
+	span.AddEvent("parsing completed")
 
 	// Finish tracking provider metrics in the pond collector
-	pondCollector.FinishProviderProcessing(name, strProcessID)
+	entriesProcessed, processingTime, _ := pondCollector.FinishProviderProcessing(name, strProcessID)
+	span.AddEvent("provider processing finished")
 
 	// Cleanup if needed
 	cfg := config.GetConfig()
@@ -251,9 +312,6 @@ func (p Providers) processProvider(
 			mc.SetSyncSuccess(name, time.Since(startedAt))
 		}
 	}
-
-	processingTime := time.Since(startedAt)
-	entriesProcessed := pondCollector.GetProcessedCount(name)
 
 	// Calculate entries per second
 	var entriesPerSecond float64

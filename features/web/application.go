@@ -13,12 +13,15 @@ import (
 	"net/http/pprof"
 	rpprof "runtime/pprof"
 
+	"github.com/labstack/echo-contrib/echoprometheus"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/xid"
 	"github.com/rs/zerolog/log"
 	"github.com/unrolled/secure"
 	"github.com/ziflex/lecho/v3"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
 )
 
 // Application errors
@@ -117,6 +120,11 @@ func (app *Application) configureMetricCollector() error {
 
 	mc.ExposeWebMetrics(app.Echo)
 
+	// Add OpenTelemetry Prometheus metrics endpoint
+	// The metrics are exposed via the global MeterProvider automatically
+	app.Echo.GET("/otel-metrics", echo.WrapHandler(promhttp.Handler()))
+	log.Info().Msg("OpenTelemetry metrics endpoint configured at /otel-metrics")
+
 	return nil
 }
 
@@ -129,6 +137,12 @@ func (app *Application) configureMiddleware() {
 			return xid.New().String()
 		},
 	}))
+
+	// Add OpenTelemetry tracing middleware
+	e.Use(otelecho.Middleware("blacked"))
+
+	// Add Echo Prometheus metrics middleware (use "echo" prefix for dashboard compatibility)
+	e.Use(echoprometheus.NewMiddleware("echo"))
 
 	secureMiddleware := secure.New(secure.Options{
 		FrameDeny:        true,

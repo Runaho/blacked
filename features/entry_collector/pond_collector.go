@@ -12,6 +12,9 @@ import (
 
 	"github.com/alitto/pond/v2"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -45,6 +48,10 @@ type PondCollector struct {
 	cacheSyncState     CacheSyncState
 	cacheSyncMutex     sync.Mutex
 	cacheSyncWaitGroup sync.WaitGroup
+
+	// Single-threaded database writer
+	dbWriteChan chan []*entries.Entry
+	dbWriteWg   sync.WaitGroup
 }
 
 // InitPondCollector initializes the global pond collector
@@ -58,7 +65,8 @@ func InitPondCollector(
 
 		collectorConfig := config.GetConfig().Collector
 
-		// Create a new pond with specified concurrency
+		// Create a new pond with specified concurrency for processing work
+		// This pool is for non-DB operations (parsing, validation, etc.)
 		pool := pond.NewPool(collectorConfig.Concurrency)
 
 		globalCollector = &PondCollector{
@@ -70,7 +78,12 @@ func InitPondCollector(
 			ctx:            ctxWithCancel,
 			cancel:         cancel,
 			cacheSyncState: CacheSyncStateIdle,
+			dbWriteChan:    make(chan []*entries.Entry, 100), // Buffered channel for batches
 		}
+
+		// Start a single goroutine for ALL database writes (single-threaded writer)
+		globalCollector.dbWriteWg.Add(1)
+		go globalCollector.singleThreadedDBWriter()
 
 		// Start a goroutine to flush buffer periodically or on context done
 		go globalCollector.periodicFlush()
@@ -78,7 +91,7 @@ func InitPondCollector(
 		log.Info().
 			Int("concurrency", collectorConfig.Concurrency).
 			Int("batch_size", collectorConfig.BatchSize).
-			Msg("Global pond collector initialized")
+			Msg("Global pond collector initialized with single-threaded DB writer")
 	})
 	return globalCollector
 }
@@ -143,77 +156,134 @@ func (c *PondCollector) Submit(entry *entries.Entry) {
 	}
 }
 func (c *PondCollector) submitFlush(batch []*entries.Entry) {
-	// Group entries by source for more efficient processing
-	entriesBySource := make(map[string][]*entries.Entry)
-	for _, entry := range batch {
-		entriesBySource[entry.Source] = append(entriesBySource[entry.Source], entry)
+	// Simply send the batch to the single-threaded DB writer channel
+	// The single writer goroutine will handle all database operations sequentially
+	select {
+	case c.dbWriteChan <- batch:
+		// Batch queued successfully
+	case <-c.ctx.Done():
+		// Context cancelled, drop the batch
+		log.Warn().
+			Int("batch_size", len(batch)).
+			Msg("Context cancelled, dropping batch")
 	}
+}
 
-	var wg sync.WaitGroup
-	for source, sourceEntries := range entriesBySource {
-		localEntries := sourceEntries
-		wg.Add(1)
-		c.pool.Submit(func() {
-			defer wg.Done()
-			defer func() {
-				c.statsMu.RLock()
-				if stats, exists := c.providerStats[source]; exists {
-					for range localEntries {
-						stats.pendingOperations.Done()
+// singleThreadedDBWriter is the ONLY goroutine that writes to the database
+// This eliminates all database lock contention issues
+func (c *PondCollector) singleThreadedDBWriter() {
+	defer c.dbWriteWg.Done()
+
+	log.Info().Msg("Single-threaded database writer started")
+
+	for {
+		select {
+		case batch := <-c.dbWriteChan:
+			// Group entries by source for more efficient processing
+			entriesBySource := make(map[string][]*entries.Entry)
+			for _, entry := range batch {
+				entriesBySource[entry.Source] = append(entriesBySource[entry.Source], entry)
+			}
+
+			// Process each source's entries
+			for source, sourceEntries := range entriesBySource {
+				c.processBatch(source, sourceEntries)
+			}
+
+			// Return batch slice to pool
+			batch = batch[:0]
+			batchSlicePool.Put(batch)
+
+		case <-c.ctx.Done():
+			log.Info().Msg("Single-threaded database writer shutting down")
+			// Drain remaining batches
+			for {
+				select {
+				case batch := <-c.dbWriteChan:
+					entriesBySource := make(map[string][]*entries.Entry)
+					for _, entry := range batch {
+						entriesBySource[entry.Source] = append(entriesBySource[entry.Source], entry)
 					}
+					for source, sourceEntries := range entriesBySource {
+						c.processBatch(source, sourceEntries)
+					}
+					batch = batch[:0]
+					batchSlicePool.Put(batch)
+				default:
+					return
 				}
-				c.statsMu.RUnlock()
-			}()
-
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-
-			if err := c.repo.BatchSaveEntries(ctx, localEntries); err != nil {
-				log.Error().Err(err).
-					Int("batch_size", len(localEntries)).
-					Str("source", source).
-					Msg("Failed to save batch")
-				return
 			}
-
-			batchSize := len(localEntries)
-
-			c.statsMu.RLock()
-			if stats, exists := c.providerStats[source]; exists && stats.active {
-				stats.processedCount += batchSize
-				count := stats.processedCount
-				c.statsMu.RUnlock()
-
-				mc, err := collector.GetMetricsCollector()
-				if err != nil || mc == nil {
-					log.Error().Err(err).Msg("Failed to get metrics collector")
-				}
-
-				if mc != nil {
-					log.Trace().Str("provider", source).Int("batch_size", batchSize).Msg("Incrementing saved count")
-					mc.IncrementSavedCount(source, batchSize)
-				}
-
-				if log.Info().Enabled() && count%100000 == 0 {
-					log.Info().
-						Int("processed_count", count).
-						Str("source", source).
-						Msg("Processing milestone reached")
-				}
-			} else {
-				c.statsMu.RUnlock()
-				log.Debug().
-					Int("batch_size", batchSize).
-					Str("source", source).
-					Msg("Processed batch for inactive provider")
-			}
-		})
+		}
 	}
+}
 
-	// Wait for all goroutines to finish before returning batch to pool
-	wg.Wait()
-	batch = batch[:0]
-	batchSlicePool.Put(batch)
+// processBatch handles the actual database write for a batch of entries
+func (c *PondCollector) processBatch(source string, localEntries []*entries.Entry) {
+	// Mark pending operations as done
+	defer func() {
+		c.statsMu.RLock()
+		if stats, exists := c.providerStats[source]; exists {
+			for range localEntries {
+				stats.pendingOperations.Done()
+			}
+		}
+		c.statsMu.RUnlock()
+	}()
+
+	// Create span for batch save operation
+	tracer := otel.Tracer("blacked/collector")
+	_, span := tracer.Start(context.Background(), "collector.batch_save",
+		trace.WithAttributes(
+			attribute.String("source", source),
+			attribute.Int("batch_size", len(localEntries)),
+		),
+	)
+	defer span.End()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := c.repo.BatchSaveEntries(ctx, localEntries); err != nil {
+		span.RecordError(err)
+		log.Error().Err(err).
+			Int("batch_size", len(localEntries)).
+			Str("source", source).
+			Msg("Failed to save batch")
+		return
+	}
+	span.AddEvent("batch saved to database")
+
+	batchSize := len(localEntries)
+
+	c.statsMu.RLock()
+	if stats, exists := c.providerStats[source]; exists && stats.active {
+		stats.processedCount += batchSize
+		count := stats.processedCount
+		c.statsMu.RUnlock()
+
+		mc, err := collector.GetMetricsCollector()
+		if err != nil || mc == nil {
+			log.Error().Err(err).Msg("Failed to get metrics collector")
+		}
+
+		if mc != nil {
+			log.Trace().Str("provider", source).Int("batch_size", batchSize).Msg("Incrementing saved count")
+			mc.IncrementSavedCount(source, batchSize)
+		}
+
+		if log.Info().Enabled() && count%100000 == 0 {
+			log.Info().
+				Int("processed_count", count).
+				Str("source", source).
+				Msg("Processing milestone reached")
+		}
+	} else {
+		c.statsMu.RUnlock()
+		log.Debug().
+			Int("batch_size", batchSize).
+			Str("source", source).
+			Msg("Processed batch for inactive provider")
+	}
 }
 
 func (c *PondCollector) periodicFlush() {
@@ -255,8 +325,12 @@ func (c *PondCollector) Wait() {
 	// Flush any remaining entries in buffer
 	c.flushBuffer()
 
-	// Wait for pond tasks to complete
+	// Wait for pond tasks to complete (non-DB work)
 	c.pool.StopAndWait()
+
+	// Close the DB write channel and wait for the writer to finish
+	close(c.dbWriteChan)
+	c.dbWriteWg.Wait()
 }
 
 // Close cancels the context and waits for all tasks to complete
@@ -280,7 +354,7 @@ func (c *PondCollector) GetProcessedCount(source string) int {
 }
 
 // FinishProviderProcessing logs stats and finalizes metrics for a provider
-func (c *PondCollector) FinishProviderProcessing(providerName, processID string) {
+func (c *PondCollector) FinishProviderProcessing(providerName, processID string) (count int, duration time.Duration, ok bool) {
 	// Lock to get the stats and check processID
 	c.statsMu.Lock()
 	stats, exists := c.providerStats[providerName]
@@ -290,7 +364,7 @@ func (c *PondCollector) FinishProviderProcessing(providerName, processID string)
 			Str("provider", providerName).
 			Str("processID", processID).
 			Msg("Attempted to finish provider processing but stats not found")
-		return
+		return 0, 0, false
 	}
 	c.statsMu.Unlock()
 
@@ -300,8 +374,8 @@ func (c *PondCollector) FinishProviderProcessing(providerName, processID string)
 	// Now it's safe to mark as inactive and delete
 	c.statsMu.Lock()
 	stats.active = false
-	count := stats.processedCount
-	duration := time.Since(stats.startTime)
+	count = stats.processedCount
+	duration = time.Since(stats.startTime)
 
 	delete(c.providerStats, providerName)
 	c.statsMu.Unlock()
@@ -319,6 +393,8 @@ func (c *PondCollector) FinishProviderProcessing(providerName, processID string)
 		Str("processID", processID).
 		Float64("entries_per_second", entriesPerSec).
 		Msg("Provider processing completed")
+
+	return count, duration, true
 }
 
 // GetStatsMapSize returns the current size of the provider stats map

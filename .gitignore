@@ -34,5 +34,8 @@ blacked
 data
 .env.toml
 .vscode
-blacked.db-shm
-blacked.db-wal
+*-shm
+*-wal
+*-journal
+*.txt
+
