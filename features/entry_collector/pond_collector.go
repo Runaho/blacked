@@ -12,6 +12,9 @@ import (
 
 	"github.com/alitto/pond/v2"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -165,16 +168,28 @@ func (c *PondCollector) submitFlush(batch []*entries.Entry) {
 				c.statsMu.RUnlock()
 			}()
 
+			// Create span for batch save operation
+			tracer := otel.Tracer("blacked/collector")
+			_, span := tracer.Start(context.Background(), "collector.batch_save",
+				trace.WithAttributes(
+					attribute.String("source", source),
+					attribute.Int("batch_size", len(localEntries)),
+				),
+			)
+			defer span.End()
+
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
 			if err := c.repo.BatchSaveEntries(ctx, localEntries); err != nil {
+				span.RecordError(err)
 				log.Error().Err(err).
 					Int("batch_size", len(localEntries)).
 					Str("source", source).
 					Msg("Failed to save batch")
 				return
 			}
+			span.AddEvent("batch saved to database")
 
 			batchSize := len(localEntries)
 

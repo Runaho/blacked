@@ -16,6 +16,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Process error variables
@@ -158,6 +162,17 @@ func (p Providers) processProvider(
 	startedAt := time.Now()
 	strProcessID := processID.String()
 
+	// Start tracing span
+	tracer := otel.Tracer("blacked/providers")
+	ctx, span := tracer.Start(ctx, "provider.process",
+		trace.WithAttributes(
+			attribute.String("provider.name", name),
+			attribute.String("provider.source", source),
+			attribute.String("process.id", strProcessID),
+		),
+	)
+	defer span.End()
+
 	// Track metrics if enabled in Prometheus
 	if trackMetrics {
 		mc, err := collector.GetMetricsCollector()
@@ -177,8 +192,12 @@ func (p Providers) processProvider(
 	provider.SetProcessID(processID)
 
 	// Fetch data
+	fetchSpan := trace.SpanFromContext(ctx)
+	fetchSpan.AddEvent("fetching data from source")
 	reader, meta, err := utils.GetResponseReader(source, provider.Fetch, name, strProcessID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to fetch data")
 		providerLogger.
 			Err(err).
 			Str("source", source).
@@ -196,6 +215,7 @@ func (p Providers) processProvider(
 		errChan <- err
 		return
 	}
+	span.AddEvent("data fetched successfully")
 
 	// Handle metadata if present
 	if meta != nil {
@@ -213,7 +233,10 @@ func (p Providers) processProvider(
 	pondCollector.StartProviderProcessing(name, strProcessID)
 
 	// Parse the data - this delegates to the provider's implementation
+	span.AddEvent("parsing provider data")
 	if err := provider.Parse(reader); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to parse data")
 		providerLogger.
 			Err(err).
 			Str("source", source).
@@ -234,9 +257,11 @@ func (p Providers) processProvider(
 		errChan <- err
 		return
 	}
+	span.AddEvent("parsing completed")
 
 	// Finish tracking provider metrics in the pond collector
 	pondCollector.FinishProviderProcessing(name, strProcessID)
+	span.AddEvent("provider processing finished")
 
 	// Cleanup if needed
 	cfg := config.GetConfig()

@@ -14,16 +14,11 @@ func (mc *MetricsCollector) ExposeMetricsHTTPHandler() http.Handler {
 	return promhttp.Handler()
 }
 
-func (mc *MetricsCollector) ExposeMetricsHTTPHandlerFunc(c echo.Context) error {
-	return c.String(http.StatusOK, "Metrics Exposed")
-}
-
 func (mc *MetricsCollector) ExposeWebMetrics(e *echo.Echo) {
-	e.GET("/metrics", mc.ExposeMetricsHTTPHandlerFunc)
-	e.GET("/metrics/prometheus", echo.WrapHandler(mc.ExposeMetricsHTTPHandler()))
+	// Expose Prometheus metrics at /metrics (standard endpoint)
+	e.GET("/metrics", echo.WrapHandler(mc.ExposeMetricsHTTPHandler()))
 
 	log.Info().
 		Str("path", "/metrics").
-		Str("prometheus", "/metrics/prometheus").
 		Msg("Metrics exposed successfully.")
 }

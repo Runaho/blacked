@@ -8,6 +8,7 @@ import (
 	"blacked/internal/config"
 	"blacked/internal/db"
 	"blacked/internal/logger"
+	"blacked/internal/telemetry"
 	"context"
 	"os"
 	"os/signal"
@@ -72,6 +73,16 @@ func before(ctx context.Context) cli.BeforeFunc {
 		}
 		log.Debug().Msg("Configuration loaded")
 
+		log.Trace().Msg("Initializing telemetry")
+		shutdownTelemetry, err := telemetry.InitTelemetry(ctx, "blacked", "v0.1.0")
+		if err != nil {
+			log.Error().Err(err).Stack().Msg("Failed to initialize telemetry")
+			return err
+		}
+		// Store shutdown function for cleanup
+		c.Context = context.WithValue(ctx, "telemetry_shutdown", shutdownTelemetry)
+		log.Debug().Msg("Telemetry initialized")
+
 		log.Trace().Msg("Initializing database connection")
 		dbConn, err := db.GetDB()
 		if err != nil {
@@ -120,4 +131,14 @@ func cleanup() {
 	// Close DB
 	db.Close()
 	log.Debug().Msg("Database closed")
+
+	// Shutdown telemetry
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if tp := telemetry.GetTracerProvider(); tp != nil {
+		if err := tp.Shutdown(ctx); err != nil {
+			log.Error().Err(err).Msg("Failed to shutdown tracer provider")
+		}
+		log.Debug().Msg("Telemetry shutdown")
+	}
 }

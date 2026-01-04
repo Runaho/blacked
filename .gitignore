@@ -36,3 +36,5 @@ data
 .vscode
 blacked.db-shm
 blacked.db-wal
+blacked.db-journal
+*.txt
