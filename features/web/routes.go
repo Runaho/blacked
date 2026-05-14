@@ -5,8 +5,10 @@ import (
 	"blacked/features/web/handlers/health"
 	"blacked/features/web/handlers/provider"
 	"blacked/features/web/handlers/query"
+	v2 "blacked/features/web/handlers/v2"
 
 	"github.com/labstack/echo/v4"
+	"github.com/rs/zerolog/log"
 )
 
 func (app *Application) ConfigureRoutes() error {
@@ -24,6 +26,17 @@ func (app *Application) ConfigureRoutes() error {
 	health.MapHealth(e, *app.config)
 
 	benchmark.MapBenchmarkRoutes(e, app.services.EntryQueryService)
+
+	// V2 API routes (check, hit, bulk)
+	v2Handler, err := v2.NewQueryHandler()
+	if err != nil {
+		log.Warn().Err(err).Msg("V2 query handler init failed — skipping v2 routes")
+	} else {
+		if err := v2.MapV2Routes(e, v2Handler); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

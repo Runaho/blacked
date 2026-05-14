@@ -1,0 +1,6 @@
+[ProviderTrust]
+  "spamhaus" = 0.95
+  "abuse-ch" = 0.90
+  "alienvault" = 0.80
+  "phishtank" = 0.70
+  "oisd" = 0.65
