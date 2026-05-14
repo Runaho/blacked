@@ -3,7 +3,7 @@ package urlhaus
 import (
 	"blacked/features/entries/repository"
 	"blacked/internal/config"
-	"blacked/internal/utils"
+	testutil "blacked/internal/testutil"
 	"testing"
 	"time"
 
@@ -14,7 +14,7 @@ import (
 
 // TestParse checks the URLHausProvider.Parse() method, ensuring it processes lines properly.
 func TestParse(t *testing.T) {
-	_, db, cc, err := utils.Initialize(t)
+	_, db, cc, err := testutil.Initialize(t)
 	defer db.Close()
 	assert.NoError(t, err, "Expected no error initializing providers")
 

@@ -4,7 +4,7 @@ import (
 	"blacked/features/entries"
 	"blacked/features/entries/repository"
 	"blacked/internal/config"
-	"blacked/internal/utils"
+	testutil "blacked/internal/testutil"
 	"testing"
 	"time"
 
@@ -14,7 +14,7 @@ import (
 )
 
 func TestSetURL(t *testing.T) {
-	_, _, _, _ = utils.Initialize(t)
+	_, _, _, _ = testutil.Initialize(t)
 
 	su := "21.red-80-39-44.staticip.rima-tde.net"
 	e := entries.Entry{}
@@ -72,7 +72,7 @@ func TestSecondURL(t *testing.T) {
 
 // TestParse checks the OisdBigProvider.Parse() method, ensuring it processes lines properly.
 func TestParse(t *testing.T) {
-	_, db, cc, err := utils.Initialize(t)
+	_, db, cc, err := testutil.Initialize(t)
 	defer db.Close()
 	assert.NoError(t, err, "Expected no error initializing providers")
 
