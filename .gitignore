@@ -29,6 +29,7 @@
 .env.toml
 .vscode
 /.claude-flow/
+/.claude/
 /.claude/\n/.claude-flow/\n/claude.json
 /features/entries/providers/oisd/responses
 /responses
