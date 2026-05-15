@@ -259,16 +259,32 @@ func (bm *BloomManager) RebuildSource(
 
 // entryToKeys converts an Entry into URLKeys.
 func entryToKeys(e Entry) *URLKeys {
+	return EntryToKeys(e)
+}
+
+// EntryToKeys converts an Entry into URLKeys. Public for use outside the bloom package.
+// Uses stored entry fields (Domain, Host, Path, RawQuery) to reconstruct bloom keys
+// without re-parsing the URL — saves ~310MB alloc during provider sync.
+func EntryToKeys(e Entry) *URLKeys {
 	hp := ""
 	if e.Host != "" && e.Path != "" && e.Path != "/" {
 		hp = e.Host + e.Path
 	}
+
+	base := path.Base(e.Path)	
+	file := ""
+	if base != "" && base != "/" && base != "." {
+		if ext := path.Ext(base); ext != "" && len(ext) > 1 {
+			file = base
+		}
+	}
+
 	return &URLKeys{
 		Domain:   e.Domain,
 		Host:     e.Host,
 		HostPath: hp,
 		Path:     e.Path,
-		File:     e.File,
+		File:     file,
 		Query:    e.Query,
 		Login:    e.Login,
 		IP:       e.IP,
