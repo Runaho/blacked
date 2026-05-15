@@ -26,10 +26,8 @@ func (c *PondCollector) ScheduleCacheSync(immediate bool) bool {
 	case CacheSyncStateIdle:
 		// No sync running, start one immediately
 		c.cacheSyncState = CacheSyncStateRunning
-		c.cacheSyncWaitGroup.Add(1)
 
-		go func() {
-			defer c.cacheSyncWaitGroup.Done()
+		c.cacheSyncWaitGroup.Go(func() {
 			defer c.completeCacheSync()
 
 			log.Info().Msg("Starting cache synchronization")
@@ -44,7 +42,7 @@ func (c *PondCollector) ScheduleCacheSync(immediate bool) bool {
 					Dur("duration", duration).
 					Msg("Cache sync completed successfully")
 			}
-		}()
+		})
 
 		// If immediate is true, wait for completion
 		if immediate {
@@ -170,7 +168,14 @@ func syncToCache(ctx context.Context) error {
 			case entry, ok := <-ch:
 				if !ok {
 					log.Debug().Int("processed_count", count).Msg("Finished streaming entries to cache")
-					break
+					if err := cacheProvider.Commit(); err != nil {
+						log.Error().Err(err).Msg("Failed to commit cache changes")
+						return err
+					}
+					log.Debug().Msg("Cache changes committed")
+					cache.BuildBloomFilterFromCacheProvider(ctx, cacheProvider, count)
+					log.Debug().Msg("Bloom filter built from cache provider")
+					return nil
 				}
 
 				if err := cacheProvider.Set(entry.SourceUrl, entry.IDsRaw); err != nil {
@@ -183,17 +188,6 @@ func syncToCache(ctx context.Context) error {
 				}
 			}
 		}
-
-		if err := cacheProvider.Commit(); err != nil {
-			log.Error().Err(err).Msg("Failed to commit cache changes")
-			return err
-		}
-		log.Debug().Msg("Cache changes committed")
-
-		// Build bloom from Badger
-		cache.BuildBloomFilterFromCacheProvider(ctx, cacheProvider, count)
-		log.Debug().Msg("Bloom filter built from cache provider")
-		return nil
 	}
 
 	count, err := repo.StreamEntriesCount(ctx)
@@ -206,42 +200,4 @@ func syncToCache(ctx context.Context) error {
 	// this option does not set any items to cache just builds bloom
 	// requests will responsible for adding items to cache when items not found on cache but in db with ttl
 	return cache.BuildBloomFromChannel(ctx, count, ch)
-}
-
-func buildBloomFromCacheProvider(ctx context.Context, ch <-chan entries.EntryStream, cacheProvider cache.EntryCache) error {
-	count := 0
-	for {
-		select {
-		case <-ctx.Done():
-			log.Debug().Int("processed_count", count).Msg("Sync interrupted by context cancellation")
-			return ctx.Err()
-		case entry, ok := <-ch:
-			if !ok {
-				log.Debug().Int("processed_count", count).Msg("Finished syncing blacklists to cache")
-
-				if err := cacheProvider.Commit(); err != nil {
-					log.Error().Err(err).Msg("Failed to commit cache changes")
-					return err
-				}
-				log.Debug().Msg("Cache changes committed")
-
-				cache.BuildBloomFilterFromCacheProvider(ctx, cacheProvider, count)
-
-				log.Debug().Msg("Bloom filter built successfully")
-
-				return nil
-			}
-
-			count++
-			if count%100 == 0 {
-				log.Trace().Int("processed_count", count).Msg("Processing blacklist entries")
-			}
-
-			err := cacheProvider.Set(entry.SourceUrl, entry.IDsRaw)
-			if err != nil {
-				log.Error().Err(err).Str("key", entry.SourceUrl).Msg("Failed to set entry in cache")
-				return err
-			}
-		}
-	}
 }

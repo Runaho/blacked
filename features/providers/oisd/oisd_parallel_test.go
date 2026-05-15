@@ -54,7 +54,7 @@ func TestOISDBigProvider_Configuration(t *testing.T) {
 func BenchmarkOISDNSFW_SmallDataset(b *testing.B) {
 	// Generate 1,000 domains
 	var buffer bytes.Buffer
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		buffer.WriteString("adult-site-")
 		buffer.WriteString(string(rune(i)))
 		buffer.WriteString(".com\n")
@@ -76,7 +76,7 @@ func BenchmarkOISDNSFW_SmallDataset(b *testing.B) {
 func BenchmarkOISDBig_LargeDataset(b *testing.B) {
 	// Generate 10,000 domains
 	var buffer bytes.Buffer
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		buffer.WriteString("domain-")
 		buffer.WriteString(string(rune(i)))
 		buffer.WriteString(".com\n")
@@ -134,7 +134,7 @@ func TestConcurrentProviderExecution(t *testing.T) {
 	var wg sync.WaitGroup
 	providerCount := 3
 
-	for i := 0; i < providerCount; i++ {
+	for i := range providerCount {
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
@@ -178,7 +178,7 @@ func TestParserMemoryEfficiency(t *testing.T) {
 	collyClient := colly.NewCollector()
 
 	// Create and destroy providers multiple times
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		provider := NewOISDNSFWProvider(settings, collyClient)
 		require.NotNil(t, provider)
 

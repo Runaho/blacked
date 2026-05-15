@@ -150,10 +150,7 @@ func (bm *BloomManager) Likely(urlStr string) (*BloomResult, error) {
 	var wg sync.WaitGroup
 
 	for _, ck := range checkKeys {
-		ck := ck
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 
 			// Check context before acquiring any lock
 			select {
@@ -186,7 +183,7 @@ func (bm *BloomManager) Likely(urlStr string) (*BloomResult, error) {
 					return
 				}
 			}
-		}()
+		})
 	}
 
 	// Close resultCh when all goroutines finish

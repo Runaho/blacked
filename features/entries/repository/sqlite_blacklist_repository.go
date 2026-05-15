@@ -204,7 +204,7 @@ func (r *SQLiteRepository) GetEntriesByIDs(ctx context.Context, ids []string) ([
 	// AND deleted_at IS NULL -- If you only want active entries
 
 	// Convert the slice of IDs to a slice of interfaces for the query
-	args := make([]interface{}, len(ids))
+	args := make([]any, len(ids))
 	for i, id := range ids {
 		args[i] = id
 	}

@@ -99,8 +99,8 @@ func ParseURL(raw string) (*URLKeys, error) {
 				isIP = false
 			}
 		} else if strings.Count(trimmed, ".") == 3 {
-			parts := strings.Split(trimmed, ".")
-			for _, p := range parts {
+			parts := strings.SplitSeq(trimmed, ".")
+			for p := range parts {
 				if p == "" || p == "." {
 					isIP = false
 					break

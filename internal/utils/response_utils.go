@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,7 +137,7 @@ func saveResponseToFile(dataFilename string, metaFilename string, data io.Reader
 		log.Err(err).Interface("metadata", metadata).Msg("Failed to marshal metadata to JSON")
 		return ErrMarshalMetadataJSON
 	}
-	if err := ioutil.WriteFile(metaFilename, metaJSON, 0644); err != nil {
+	if err := os.WriteFile(metaFilename, metaJSON, 0644); err != nil {
 		log.Err(err).Str("file", metaFilename).Msg("Failed to write metadata to file")
 		return ErrWriteMetadataFile
 	}

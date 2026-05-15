@@ -51,10 +51,7 @@ func (qs *QueryService) Likely(ctx context.Context, urlStr string) (*LikelyRespo
 		Matches:  matches,
 	}
 	if len(matches) > 0 {
-		resp.MaxDepth = len(matches) * 10
-		if resp.MaxDepth > 100 {
-			resp.MaxDepth = 100
-		}
+		resp.MaxDepth = min(len(matches)*10, 100)
 	}
 
 	_ = time.Since(start)

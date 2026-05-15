@@ -47,7 +47,7 @@ type BenchmarkResult struct {
 	// Component timings (in nanoseconds)
 	BloomOnlyTimeNs          int64 `json:"bloom_only_time_ns"`
 	BloomResult              bool  `json:"bloom_result"`
-	cache_providerOnlyTimeNs int64 `json:"cache_provider_only_time_ns"`
+	Cache_providerOnlyTimeNs int64 `json:"cache_provider_only_time_ns"`
 	FoundIncache_provider    bool  `json:"found_in_cache_provider"`
 	RepositoryOnlyTimeNs     int64 `json:"repository_only_time_ns"`
 	FoundInRepository        bool  `json:"found_in_repository"`
@@ -55,7 +55,7 @@ type BenchmarkResult struct {
 	// Complete flows (in nanoseconds)
 	BloomThencache_providerTimeNs       int64 `json:"bloom_then_cache_provider_time_ns"`
 	Bloomcache_providerRepositoryTimeNs int64 `json:"bloom_cache_provider_repository_time_ns"`
-	cache_providerRepositoryTimeNs      int64 `json:"cache_provider_repository_time_ns"`
+	Cache_providerRepositoryTimeNs      int64 `json:"cache_provider_repository_time_ns"`
 
 	// Summary
 	FastestMethod string  `json:"fastest_method"`
@@ -131,14 +131,14 @@ func (h *BenchmarkHandler) benchmarkSingleURL(ctx context.Context, url string, i
 		}
 	}
 
-	result.cache_providerOnlyTimeNs = cache_providerTotalTime / int64(iterations) // Average nanoseconds
+	result.Cache_providerOnlyTimeNs = cache_providerTotalTime / int64(iterations) // Average nanoseconds
 	result.FoundIncache_provider = foundIncache_provider
 
 	// 3. Benchmark Repository only
 	var repoTotalTime int64
 	foundInRepo := false
 
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		start := time.Now()
 		queryType := enums.QueryTypeFull
 		hits, err := h.Service.Query(ctx, url, &queryType)
@@ -156,7 +156,7 @@ func (h *BenchmarkHandler) benchmarkSingleURL(ctx context.Context, url string, i
 	// 4. Benchmark Bloom + cache_provider flow (no repository)
 	var bloomcache_providerTotalTime int64
 
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		start := time.Now()
 
 		// First check bloom filter
@@ -175,7 +175,7 @@ func (h *BenchmarkHandler) benchmarkSingleURL(ctx context.Context, url string, i
 	// 5. Benchmark cache_provider + Repository flow (no bloom)
 	var cache_providerRepoTotalTime int64
 
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		start := time.Now()
 
 		// First check cache_provider
@@ -190,7 +190,7 @@ func (h *BenchmarkHandler) benchmarkSingleURL(ctx context.Context, url string, i
 		cache_providerRepoTotalTime += time.Since(start).Nanoseconds()
 	}
 
-	result.cache_providerRepositoryTimeNs = cache_providerRepoTotalTime / int64(iterations)
+	result.Cache_providerRepositoryTimeNs = cache_providerRepoTotalTime / int64(iterations)
 
 	// 6. Benchmark full flow (Bloom + cache_provider + Repository)
 	var fullFlowTotalTime int64
@@ -220,7 +220,7 @@ func (h *BenchmarkHandler) benchmarkSingleURL(ctx context.Context, url string, i
 	// Determine fastest method and speedup factor
 	methods := map[string]int64{
 		"Repository Only":               result.RepositoryOnlyTimeNs,
-		"cache_provider + Repository":   result.cache_providerRepositoryTimeNs,
+		"cache_provider + Repository":   result.Cache_providerRepositoryTimeNs,
 		"Bloom + cache_provider":        result.BloomThencache_providerTimeNs,
 		"Bloom + cache_provider + Repo": result.Bloomcache_providerRepositoryTimeNs,
 	}

@@ -46,11 +46,11 @@ type testURLs struct {
 		Shopping  []string `json:"shopping"`
 	} `json:"safe_urls"`
 	Edge struct {
-		IPOnly      []string `json:"ip_only"`
-		Subdomains  []string `json:"subdomains"`
-		QueryParams []string `json:"query_params"`
-		SpecialChars []string `json:"special_chars"`
-		LongPaths   []string `json:"long_paths"`
+		IPOnly         []string `json:"ip_only"`
+		Subdomains     []string `json:"subdomains"`
+		QueryParams    []string `json:"query_params"`
+		SpecialChars   []string `json:"special_chars"`
+		LongPaths      []string `json:"long_paths"`
 		UnicodeDomains []string `json:"unicode_domains"`
 	} `json:"edge_cases"`
 }
@@ -100,10 +100,10 @@ func seedProviders(t testing.TB, db *sql.DB) {
 		id, name string
 		score    float64
 	}{
-		{"test-urlhaus",   "URLHaus Test",   0.90},
+		{"test-urlhaus", "URLHaus Test", 0.90},
 		{"test-phishtank", "PhishTank Test", 0.70},
 		{"test-oisd-nsfw", "OISD NSFW Test", 0.65},
-		{"test-oisd-big",  "OISD Big Test",  0.65},
+		{"test-oisd-big", "OISD Big Test", 0.65},
 		{"test-openphish", "OpenPhish Test", 0.70},
 	}
 	for _, p := range providers {
@@ -119,14 +119,14 @@ func seedProviders(t testing.TB, db *sql.DB) {
 func seedSources(t testing.TB, db *sql.DB) {
 	sources := []struct {
 		id, provID, name, url, typ string
-		score                        float64
-		interval                     int
+		score                      float64
+		interval                   int
 	}{
-		{"src-urlhaus",   "test-urlhaus",   "URLHaus Source",   "https://urlhaus.abuse.ch/downloads/csv/",   "urlhaus",   0.90, 3600},
-		{"src-phishtank", "test-phishtank", "PhishTank Source", "https://phishtank.org/files/valid/",        "phishtank", 0.70, 7200},
-		{"src-oisd-nsfw", "test-oisd-nsfw", "OISD NSFW Source", "https://nsfw.oisd.nl/",                   "oisd_nsfw", 0.65, 86400},
-		{"src-oisd-big",  "test-oisd-big",  "OISD Big Source",  "https://big.oisd.nl/",                    "oisd_big",  0.65, 86400},
-		{"src-openphish", "test-openphish", "OpenPhish Source", "https://openphish.com/feed.txt",          "openphish", 0.70, 1800},
+		{"src-urlhaus", "test-urlhaus", "URLHaus Source", "https://urlhaus.abuse.ch/downloads/csv/", "urlhaus", 0.90, 3600},
+		{"src-phishtank", "test-phishtank", "PhishTank Source", "https://phishtank.org/files/valid/", "phishtank", 0.70, 7200},
+		{"src-oisd-nsfw", "test-oisd-nsfw", "OISD NSFW Source", "https://nsfw.oisd.nl/", "oisd_nsfw", 0.65, 86400},
+		{"src-oisd-big", "test-oisd-big", "OISD Big Source", "https://big.oisd.nl/", "oisd_big", 0.65, 86400},
+		{"src-openphish", "test-openphish", "OpenPhish Source", "https://openphish.com/feed.txt", "openphish", 0.70, 1800},
 	}
 	for _, s := range sources {
 		_, err := db.Exec(`
@@ -548,17 +548,17 @@ func TestCategoryD_CacheAndReSyncStability(t *testing.T) {
 		urls := append(ts.urls.Malicious.URLHaus, ts.urls.Safe.Tech...)
 		// Run concurrent checks from multiple goroutines
 		done := make(chan struct{})
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			go func(idx int) {
 				defer func() { done <- struct{}{} }()
-				for j := 0; j < 10; j++ {
+				for j := range 10 {
 					url := urls[(idx+j)%len(urls)]
 					_, err := ts.bloom.Likely(url)
 					assert.NoError(t, err)
 				}
 			}(i)
 		}
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			<-done
 		}
 	})

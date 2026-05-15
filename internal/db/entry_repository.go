@@ -55,10 +55,7 @@ func (r *entryRepository) SearchEntries(ctx context.Context, filter query.Search
 	if limit > 1000 {
 		limit = 1000
 	}
-	offset := filter.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(filter.Offset, 0)
 
 	q := fmt.Sprintf(`
 		SELECT id, source_id, domain, host, path, file, query, login, ip, full_url, scheme, confidence, category

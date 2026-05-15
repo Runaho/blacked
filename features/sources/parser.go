@@ -20,9 +20,9 @@ type LineParserFunc func(line, sourceID, processID string) (*entries.Entry, erro
 
 // FlatListParser parses flat list (one URL per line) sources.
 type FlatListParser struct {
-	Category     string
+	Category      string
 	ParserWorkers int
-	BatchSize    int
+	BatchSize     int
 }
 
 // NewFlatListParser creates a parser for flat list sources.
@@ -109,9 +109,7 @@ func ParseLinesParallel(
 	var wg sync.WaitGroup
 
 	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for line := range lineCh {
 				entry, err := processor(line, sourceID, processID)
 				if err != nil {
@@ -122,7 +120,7 @@ func ParseLinesParallel(
 					collector.Submit(entry)
 				}
 			}
-		}()
+		})
 	}
 
 	// Feed lines
