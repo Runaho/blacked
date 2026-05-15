@@ -1,10 +1,9 @@
 package web
 
 import (
-	"blacked/features/web/handlers/benchmark"
+	"blacked/features/entry_collector"
 	"blacked/features/web/handlers/health"
 	"blacked/features/web/handlers/provider"
-	"blacked/features/web/handlers/query"
 	v2 "blacked/features/web/handlers/v2"
 
 	"github.com/labstack/echo/v4"
@@ -15,9 +14,6 @@ func (app *Application) ConfigureRoutes() error {
 	e := app.Echo
 
 	app.MapHome()
-	if err := query.MapQueryRoutes(e, app.services.EntryQueryService); err != nil {
-		return err
-	}
 
 	if err := provider.MapProviderRoutes(e, app.services.ProviderProcessService); err != nil {
 		return err
@@ -25,15 +21,19 @@ func (app *Application) ConfigureRoutes() error {
 
 	health.MapHealth(e, *app.config)
 
-	benchmark.MapBenchmarkRoutes(e, app.services.EntryQueryService)
-
-	// V2 API routes (check, hit, bulk)
-	v2Handler, err := v2.NewQueryHandler()
-	if err != nil {
-		log.Warn().Err(err).Msg("V2 query handler init failed — skipping v2 routes")
+	// V2 API routes — inject the singleton BloomManager from PondCollector
+	collector := entry_collector.GetPondCollector()
+	if collector == nil {
+		log.Warn().Msg("PondCollector not ready — v2 routes skipped")
 	} else {
-		if err := v2.MapV2Routes(e, v2Handler); err != nil {
-			return err
+		bloomMgr := collector.GetBloomManager()
+		v2Handler, err := v2.NewQueryHandler(bloomMgr)
+		if err != nil {
+			log.Warn().Err(err).Msg("V2 query handler init failed — skipping v2 routes")
+		} else {
+			if err := v2.MapV2Routes(e, v2Handler); err != nil {
+				return err
+			}
 		}
 	}
 

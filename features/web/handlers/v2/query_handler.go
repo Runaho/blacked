@@ -16,20 +16,16 @@ type QueryHandler struct {
 	svc *query.QueryService
 }
 
-// NewQueryHandler constructs a QueryHandler with live dependencies.
-func NewQueryHandler() (*QueryHandler, error) {
-	// Build BloomChecker adapter — default 1000 items per set
-	mgr := bloom.NewBloomManager(1000)
+// NewQueryHandler constructs a QueryHandler with the shared BloomManager.
+func NewQueryHandler(mgr *bloom.BloomManager) (*QueryHandler, error) {
 	checker := NewBloomAdapter(mgr)
 
-	// Build EntryRepository
 	database, err := db.GetDB()
 	if err != nil {
 		return nil, err
 	}
 	repo := db.NewEntryRepository(database)
 
-	// Scorer stub (real scoring in Phase 5)
 	scorer := query.NewScorer(nil)
 
 	svc := query.NewQueryService(checker, repo, scorer)
@@ -42,10 +38,11 @@ func NewQueryHandlerWithDeps(svc *query.QueryService) *QueryHandler {
 }
 
 // Check handles GET /api/v1/check?url= — fast bloom-only check (~0.4ms).
+// Returns 204 No Content if no match, 200 with body if matched.
 func (h *QueryHandler) Check(c echo.Context) error {
 	urlStr := c.QueryParam("url")
 	if urlStr == "" {
-		return response.BadRequest(c, "url parameter is required")
+		return c.NoContent(http.StatusNoContent)
 	}
 
 	result, err := h.svc.Likely(c.Request().Context(), urlStr)
@@ -55,14 +52,18 @@ func (h *QueryHandler) Check(c echo.Context) error {
 			"Bloom check failed", err.Error())
 	}
 
+	if !result.Likely {
+		return c.NoContent(http.StatusNoContent)
+	}
 	return c.JSON(http.StatusOK, result)
 }
 
 // Hit handles GET /api/v1/hit?url= — full check (bloom + DB + score ~5-15ms).
+// Returns 204 No Content if no match, 200 with body if matched.
 func (h *QueryHandler) Hit(c echo.Context) error {
 	urlStr := c.QueryParam("url")
 	if urlStr == "" {
-		return response.BadRequest(c, "url parameter is required")
+		return c.NoContent(http.StatusNoContent)
 	}
 
 	result, err := h.svc.Hit(c.Request().Context(), urlStr)
@@ -72,6 +73,9 @@ func (h *QueryHandler) Hit(c echo.Context) error {
 			"Hit check failed", err.Error())
 	}
 
+	if !result.Blocked {
+		return c.NoContent(http.StatusNoContent)
+	}
 	return c.JSON(http.StatusOK, result)
 }
 

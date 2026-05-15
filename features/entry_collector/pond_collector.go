@@ -107,6 +107,11 @@ func GetPondCollector() *PondCollector {
 	return globalCollector
 }
 
+// GetBloomManager returns the single *bloom.BloomManager shared across the application.
+func (c *PondCollector) GetBloomManager() *bloom.BloomManager {
+	return c.bloomMgr
+}
+
 // StartProviderProcessing initializes tracking for a provider process
 func (c *PondCollector) StartProviderProcessing(providerName, processID string) {
 	c.statsMu.Lock()
@@ -258,6 +263,15 @@ func (c *PondCollector) processBatch(source string, localEntries []*entries.Entr
 		return
 	}
 	span.AddEvent("batch saved to database")
+
+	// Populate the shared BloomManager so the API can check against live data
+	if c.bloomMgr != nil {
+		for _, e := range localEntries {
+			if keys, perr := bloom.ParseURL(e.SourceURL); perr == nil {
+				c.bloomMgr.PopulateEntry(e.Source, keys)
+			}
+		}
+	}
 
 	batchSize := len(localEntries)
 
