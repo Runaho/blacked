@@ -9,18 +9,21 @@ import (
 // Group at /api/v1 is expected — routes are:
 //   GET  /api/v1/check?url=   → QueryHandler.Check (bloom only)
 //   GET  /api/v1/hit?url=     → QueryHandler.Hit   (bloom + DB + score)
-//   POST /api/v1/bulk          → QueryHandler.Bulk  (batch check)
+//   POST /api/v1/bulk-check    → QueryHandler.BulkCheck (bloom-only batch)
+//   POST /api/v1/bulk-hit      → QueryHandler.BulkHit   (full batch: bloom + DB + score)
 func MapV2Routes(e *echo.Echo, handler *QueryHandler) error {
 	g := e.Group("/api/v1")
 
 	g.GET("/check", handler.Check)
 	g.GET("/hit", handler.Hit)
-	g.POST("/bulk", handler.Bulk)
+	g.POST("/bulk-check", handler.BulkCheck)
+	g.POST("/bulk-hit", handler.BulkHit)
 
 	log.Info().
 		Str("check", "GET /api/v1/check?url=").
 		Str("hit", "GET /api/v1/hit?url=").
-		Str("bulk", "POST /api/v1/bulk").
+		Str("bulk-check", "POST /api/v1/bulk-check").
+		Str("bulk-hit", "POST /api/v1/bulk-hit").
 		Msg("V2 API routes mapped successfully.")
 
 	return nil

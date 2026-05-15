@@ -596,14 +596,14 @@ func TestCategoryE_WebAPI(t *testing.T) {
 		return c.JSON(200, resp)
 	})
 
-	e.POST("/api/v1/bulk", func(c echo.Context) error {
+	e.POST("/api/v1/bulk-hit", func(c echo.Context) error {
 		var req struct {
 			URLs []string `json:"urls"`
 		}
 		if err := c.Bind(&req); err != nil {
 			return c.JSON(400, map[string]string{"error": "invalid JSON"})
 		}
-		results, err := ts.svc.Bulk(c.Request().Context(), req.URLs)
+		results, err := ts.svc.BulkHit(c.Request().Context(), req.URLs)
 		if err != nil {
 			return c.JSON(500, map[string]string{"error": err.Error()})
 		}
@@ -661,9 +661,9 @@ func TestCategoryE_WebAPI(t *testing.T) {
 		assert.Contains(t, body, `"level":"informational"`)
 	})
 
-	t.Run("E_6_POST_Bulk_Karma_URL_Listesi", func(t *testing.T) {
+	t.Run("E_6_POST_Bulk_Hit_Karma_URL_Listesi", func(t *testing.T) {
 		payload := `{"urls":["https://xxx.com/porn.jpg","https://github.com/guneskorkmaz","https://evil-bank.example.com/login"]}`
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/bulk", strings.NewReader(payload))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/bulk-hit", strings.NewReader(payload))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
@@ -674,9 +674,9 @@ func TestCategoryE_WebAPI(t *testing.T) {
 		assert.Contains(t, body, `"blocked":false`)
 	})
 
-	t.Run("E_7_POST_Bulk_Boş_Liste", func(t *testing.T) {
+	t.Run("E_7_POST_Bulk_Hit_Boş_Liste", func(t *testing.T) {
 		payload := `{"urls":[]}`
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/bulk", strings.NewReader(payload))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/bulk-hit", strings.NewReader(payload))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)

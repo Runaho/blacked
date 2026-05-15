@@ -102,8 +102,21 @@ func (qs *QueryService) Hit(ctx context.Context, urlStr string) (*QueryResponse,
 	return resp, nil
 }
 
-// Bulk performs lookups for multiple URLs.
-func (qs *QueryService) Bulk(ctx context.Context, urls []string) ([]QueryResponse, error) {
+// BulkCheck performs fast bloom-only checks for multiple URLs (~0.4ms per URL).
+func (qs *QueryService) BulkCheck(ctx context.Context, urls []string) ([]LikelyResponse, error) {
+	results := make([]LikelyResponse, len(urls))
+	for i, u := range urls {
+		resp, err := qs.Likely(ctx, u)
+		if err != nil {
+			return nil, fmt.Errorf("bulk check url=%s: %w", u, err)
+		}
+		results[i] = *resp
+	}
+	return results, nil
+}
+
+// BulkHit performs full lookups (bloom + DB + score) for multiple URLs.
+func (qs *QueryService) BulkHit(ctx context.Context, urls []string) ([]QueryResponse, error) {
 	results := make([]QueryResponse, len(urls))
 	for i, u := range urls {
 		resp, err := qs.Hit(ctx, u)

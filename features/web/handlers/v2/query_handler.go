@@ -79,12 +79,13 @@ func (h *QueryHandler) Hit(c echo.Context) error {
 	return c.JSON(http.StatusOK, result)
 }
 
-// Bulk handles POST /api/v1/bulk — bulk URL lookup.
+// bulkInput is the request body for bulk endpoints.
 type bulkInput struct {
 	URLs []string `json:"urls" validate:"required,min=1"`
 }
 
-func (h *QueryHandler) Bulk(c echo.Context) error {
+// BulkCheck handles POST /api/v1/bulk-check — bloom-only batch check (~0.4ms per URL).
+func (h *QueryHandler) BulkCheck(c echo.Context) error {
 	var input bulkInput
 	if err := c.Bind(&input); err != nil {
 		return response.BadRequest(c, "Invalid request body: "+err.Error())
@@ -93,11 +94,31 @@ func (h *QueryHandler) Bulk(c echo.Context) error {
 		return response.BadRequest(c, "Validation error: "+err.Error())
 	}
 
-	results, err := h.svc.Bulk(c.Request().Context(), input.URLs)
+	results, err := h.svc.BulkCheck(c.Request().Context(), input.URLs)
 	if err != nil {
-		log.Error().Err(err).Msg("v2 bulk failed")
+		log.Error().Err(err).Msg("v2 bulk-check failed")
 		return response.ErrorWithDetails(c, http.StatusInternalServerError,
 			"Bulk check failed", err.Error())
+	}
+
+	return c.JSON(http.StatusOK, results)
+}
+
+// BulkHit handles POST /api/v1/bulk-hit — full batch check (bloom + DB + score).
+func (h *QueryHandler) BulkHit(c echo.Context) error {
+	var input bulkInput
+	if err := c.Bind(&input); err != nil {
+		return response.BadRequest(c, "Invalid request body: "+err.Error())
+	}
+	if err := c.Validate(&input); err != nil {
+		return response.BadRequest(c, "Validation error: "+err.Error())
+	}
+
+	results, err := h.svc.BulkHit(c.Request().Context(), input.URLs)
+	if err != nil {
+		log.Error().Err(err).Msg("v2 bulk-hit failed")
+		return response.ErrorWithDetails(c, http.StatusInternalServerError,
+			"Bulk hit failed", err.Error())
 	}
 
 	return c.JSON(http.StatusOK, results)
