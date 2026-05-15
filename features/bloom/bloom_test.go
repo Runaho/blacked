@@ -77,15 +77,9 @@ func TestBloomSetBasicOperations(t *testing.T) {
 		t.Fatal("expected source1 not to match after reset")
 	}
 
-	// Global filter may still match due to source2's entries
-	// But source1-only keys should not match per-source
-	if bs.TestSource("source1", "evil.com") {
-		t.Fatal("expected reset source1 not to match its old key")
-	}
-
 	// source2 should still work
 	if !bs.TestSource("source2", "phishing.com") {
-		t.Fatal("expected source2 to still work after source1 reset")
+		t.Fatal("expected source2 to still work after source2 reset")
 	}
 
 	// Should now have 1 source
@@ -102,14 +96,16 @@ func TestBloomManager_Likely(t *testing.T) {
 		t.Fatal("expected cold start to be true initially")
 	}
 
-	// Add entries
-	keys, _ := ParseURL("https://malware.example.com/path/file.exe?ref=bad")
-	bm.Add("src1", keys, []BloomType{BloomDomain, BloomHost, BloomPath, BloomFile, BloomQuery})
+	// Populate entries using PopulateEntry (single-bloom-per-entry)
+	keys1, _ := ParseURL("https://malware.example.com/path/file.exe?ref=bad")
+	bm.PopulateEntry("src1", keys1)
+	keys2, _ := ParseURL("https://malware.example.com/path")
+	bm.PopulateEntry("src1", keys2)
 
 	// Stats should show sources
 	stats := bm.Stats()
-	if stats["domain"] == 0 && stats["host"] == 0 {
-		t.Fatal("expected stats to show sources after add")
+	if stats["domain"] == 0 && stats["host"] == 0 && stats["host_path"] == 0 {
+		t.Fatal("expected stats to show sources after populate")
 	}
 
 	// Cold start should now be false
@@ -117,7 +113,7 @@ func TestBloomManager_Likely(t *testing.T) {
 		t.Fatal("expected cold start to be false after adding entries")
 	}
 
-	// Likely check for matching URL
+	// Likely check for matching URL (file.exe with query → FullURL bloom)
 	result, err := bm.Likely("https://malware.example.com/path/file.exe?ref=bad")
 	if err != nil {
 		t.Fatalf("Likely failed: %v", err)
@@ -134,24 +130,22 @@ func TestBloomManager_Likely(t *testing.T) {
 		t.Fatal("expected MaxDepth > 0")
 	}
 
-	// Check one of the matches has correct source
-	foundDomain := false
+	// Check match is from src1
+	foundSrc1 := false
 	for _, m := range result.Matches {
-		if m.Type == BloomDomain && m.SourceID == "src1" {
-			foundDomain = true
+		if m.SourceID == "src1" {
+			foundSrc1 = true
 		}
 	}
-	if !foundDomain {
-		t.Fatalf("expected match for BloomDomain from src1, got %v", result.Matches)
+	if !foundSrc1 {
+		t.Fatalf("expected match from src1, got %v", result.Matches)
 	}
 
-	// Check non-matching URL — use unlikely domain to avoid false positives
+	// Check non-matching URL
 	result2, err := bm.Likely("https://safeunlikely2026x.com/other")
 	if err != nil {
 		t.Fatalf("Likely failed: %v", err)
 	}
-	// Note: Bloom filters may have ~1% false positives, so this is probabilistic
-	// If it fails, re-run or adjust expectedItemsPerSet
 	if result2.Likely {
 		t.Log("Warning: unexpected false positive on unlikely domain")
 	}
@@ -160,16 +154,18 @@ func TestBloomManager_Likely(t *testing.T) {
 	}
 }
 
-func TestBloomManager_AddAndRebuild(t *testing.T) {
+func TestBloomManager_PopulateAndCheck(t *testing.T) {
 	bm := NewBloomManager(10000)
 
+	// Populate HostPath entry
 	keys1, _ := ParseURL("https://evil.com/path1")
-	bm.Add("src1", keys1, []BloomType{BloomDomain, BloomHostPath})
+	bm.PopulateEntry("src1", keys1)
 
+	// Populate another HostPath entry
 	keys2, _ := ParseURL("https://phish.com/path2")
-	bm.Add("src2", keys2, []BloomType{BloomDomain, BloomHostPath})
+	bm.PopulateEntry("src2", keys2)
 
-	// Both should match
+	// Both should match via parallel Likely
 	r1, _ := bm.Likely("https://evil.com/path1")
 	if !r1.Likely {
 		t.Fatal("expected evil.com to match")
@@ -202,44 +198,162 @@ func TestBloomManager_AddAndRebuild(t *testing.T) {
 func TestBloomManager_EmptyURL(t *testing.T) {
 	bm := NewBloomManager(1000)
 
-	// Empty URL should error
 	_, err := bm.Likely("")
 	if err == nil {
 		t.Fatal("expected error for empty URL")
 	}
 }
 
-func TestBloomManager_MultipleTypes(t *testing.T) {
+func TestBloomManager_PopulateEntry_Targets(t *testing.T) {
 	bm := NewBloomManager(10000)
 
-	// Add entries with ALL bloom types
-	keys, _ := ParseURL("https://user:pass@evil.com/path/file.exe?q=1")
-	bm.Add("src1", keys, []BloomType{
-		BloomDomain, BloomHost, BloomHostPath,
-		BloomPath, BloomFile, BloomQuery, BloomLogin,
-	})
+	// FullURL: file + query → BloomFullURL
+	keys, _ := ParseURL("https://cdn.example.com/malware/shell.php?ref=evil")
+	bm.PopulateEntry("src1", keys)
 
-	result, err := bm.Likely("https://user:pass@evil.com/path/file.exe?q=1")
+	result, err := bm.Likely("https://cdn.example.com/malware/shell.php?ref=evil")
+	if err != nil {
+		t.Fatalf("Likely failed: %v", err)
+	}
+	if !result.Likely {
+		t.Fatal("expected FullURL bloom hit with exact query match")
+	}
+	foundFull := false
+	for _, m := range result.Matches {
+		if m.Type == BloomFullURL {
+			foundFull = true
+		}
+		if m.Type == BloomFile {
+			t.Fatal("unexpected File bloom match — entry should be FullURL only")
+		}
+	}
+	if !foundFull {
+		t.Fatal("expected FullURL match")
+	}
+
+	// Query mismatch — provider responsibility
+	result2, err := bm.Likely("https://cdn.example.com/malware/shell.php?ref=other")
+	if err != nil {
+		t.Fatalf("Likely failed: %v", err)
+	}
+	if result2.Likely {
+		t.Fatal("expected MISS on different query — provider responsibility")
+	}
+
+	// File: file without query → BloomFile
+	keys2, _ := ParseURL("https://files.example.com/virus.exe")
+	bm.PopulateEntry("src2", keys2)
+
+	result3, err := bm.Likely("https://files.example.com/virus.exe")
+	if err != nil {
+		t.Fatalf("Likely failed: %v", err)
+	}
+	if !result3.Likely {
+		t.Fatal("expected File bloom hit")
+	}
+	foundFile := false
+	for _, m := range result3.Matches {
+		if m.Type == BloomFile {
+			foundFile = true
+		}
+	}
+	if !foundFile {
+		t.Fatal("expected File match")
+	}
+
+	// Domain only
+	keys3, _ := ParseURL("https://domain-bloom-test.com")
+	bm.PopulateEntry("src3", keys3)
+
+	result4, err := bm.Likely("https://sub.domain-bloom-test.com/anything")
+	if err != nil {
+		t.Fatalf("Likely failed: %v", err)
+	}
+	if !result4.Likely {
+		t.Fatal("expected Domain bloom hit for subdomain")
+	}
+}
+
+func TestParentPath_Match(t *testing.T) {
+	bm := NewBloomManager(10000)
+
+	keys, _ := ParseURL("https://www.example.com/a/b/c/exploit")
+	bm.PopulateEntry("src1", keys)
+
+	// Exact path match
+	r1, _ := bm.Likely("https://www.example.com/a/b/c/exploit")
+	if !r1.Likely {
+		t.Fatal("expected exact HostPath match")
+	}
+
+	// Parent path match — /a/b/c/exploit is under /a/b
+	// /a/b/c/exploit → HostPath key is "www.example.com/a/b/c/exploit" (no file ext)
+	// Check generates parent paths: /a, /a/b, /a/b/c
+	// Populate entry HostPath key: "www.example.com/a/b/c/exploit" — this is NOT one of the parent paths
+	// The check will generate: [/a, /a/b, /a/b/c] which won't hit "www.example.com/a/b/c/exploit"
+	// Wait — GenerateCheckKeys generates HostPath variants from the CHECK URL's path, not from the populate key.
+	// For check URL "/a/b/c/exploit" → parentPaths gives ["/a", "/a/b", "/a/b/c"]
+	// Populate entry stores "www.example.com/a/b/c/exploit" — no match to any parent path.
+	// The parent path match only works when the populate key IS one of the parent paths
+	// and the check URL is a child. The populate key is the exact HostPath.
+	// So parent path matching goes: populate stores /a, check URL is /a/b/c → hits /a on parent scan.
+	// Not the other way around.
+
+	// Let's test the correct direction: populate a parent, check a child.
+	keys2, _ := ParseURL("https://www.example.com/a")
+	bm.PopulateEntry("src2", keys2)
+
+	r2, _ := bm.Likely("https://www.example.com/a/b/c/exploit")
+	if !r2.Likely {
+		t.Fatal("expected parent HostPath match: /a populated, /a/b/c checked")
+	}
+
+	// Verify the match type
+	foundHP := false
+	for _, m := range r2.Matches {
+		if m.Type == BloomHostPath && m.SourceID == "src2" {
+			foundHP = true
+		}
+	}
+	if !foundHP {
+		t.Fatalf("expected HostPath match from src2, got %v", r2.Matches)
+	}
+}
+
+func TestDifferentSubdomain_NoMatch(t *testing.T) {
+	bm := NewBloomManager(10000)
+
+	keys, _ := ParseURL("https://sub1.example.com/path")
+	bm.PopulateEntry("src1", keys)
+
+	// Different subdomain
+	result, err := bm.Likely("https://sub2.example.com/path")
 	if err != nil {
 		t.Fatalf("Likely failed: %v", err)
 	}
 
-	if !result.Likely {
-		t.Fatal("expected likely=true")
+	// HostPath key is "sub1.example.com/path" — check generates "sub2.example.com/path"
+	// These don't match. But Host key "sub2.example.com" vs populated "sub1.example.com" — different.
+	// Domain check: "example.com" vs "example.com" — MATCH! But domain was not populated.
+	if result.Likely {
+		t.Fatal("expected no match for different subdomain")
 	}
+}
 
-	// Should have matches for multiple types
-	typeSet := make(map[BloomType]bool)
-	for _, m := range result.Matches {
-		typeSet[m.Type] = true
-	}
+func TestQuery_ProviderResponsibility(t *testing.T) {
+	bm := NewBloomManager(10000)
 
-	// At minimum domain and host should match
-	if !typeSet[BloomDomain] {
-		t.Fatalf("expected Domain match, got types: %v", typeSet)
+	// Populate with query → FullURL
+	keys, _ := ParseURL("https://cdn.example.com/shell.php?ref=evil")
+	bm.PopulateEntry("src1", keys)
+
+	// Queryless check should MISS
+	result, err := bm.Likely("https://cdn.example.com/shell.php")
+	if err != nil {
+		t.Fatalf("Likely failed: %v", err)
 	}
-	if !typeSet[BloomHost] {
-		t.Fatalf("expected Host match, got types: %v", typeSet)
+	if result.Likely {
+		t.Fatal("expected MISS on queryless check when populate had query — provider responsibility")
 	}
 }
 
@@ -270,8 +384,8 @@ func TestConfidenceLevel(t *testing.T) {
 func TestDepthWeights(t *testing.T) {
 	// Verify all depth weights are present and positive
 	for _, bt := range []BloomType{
-		BloomDomain, BloomHost, BloomHostPath, BloomPath,
-		BloomQuery, BloomFile, BloomLogin, BloomIP,
+		BloomDomain, BloomHost, BloomHostPath,
+		BloomFile, BloomFullURL, BloomLogin, BloomIP,
 	} {
 		w, ok := DepthWeight[bt]
 		if !ok {
@@ -279,6 +393,104 @@ func TestDepthWeights(t *testing.T) {
 		}
 		if w <= 0 || w > 2 {
 			t.Errorf("depth weight for %q out of expected range: %.2f", bt, w)
+		}
+	}
+}
+
+func TestParseURL_FileDetection(t *testing.T) {
+	tests := []struct {
+		url  string
+		file string
+	}{
+		{"https://example.com/virus.exe", "virus.exe"},
+		{"https://example.com/path/shell.php?ref=evil", "shell.php"},
+		{"https://example.com/login", ""},            // no extension
+		{"https://example.com/exploit", ""},           // no extension
+		{"https://github.com/guneskorkmaz", ""},       // no extension
+		{"https://example.com/file.", ""},             // dot but no extension
+		{"https://example.com/path.tar.gz", "path.tar.gz"}, // double extension
+	}
+
+	for _, tc := range tests {
+		keys, err := ParseURL(tc.url)
+		if err != nil {
+			t.Fatalf("ParseURL(%q) failed: %v", tc.url, err)
+		}
+		if keys.File != tc.file {
+			t.Errorf("ParseURL(%q): file = %q, want %q", tc.url, keys.File, tc.file)
+		}
+	}
+}
+
+func TestGenerateCheckKeys(t *testing.T) {
+	keys, err := ParseURL("https://sub.example.com/a/b/c/file.exe?x=1")
+	if err != nil {
+		t.Fatalf("ParseURL failed: %v", err)
+	}
+
+	checkKeys := keys.GenerateCheckKeys()
+
+	// Expected order: Domain → Host → HostPath parents + full → File → FullURL
+	// Domain: example.com
+	// Host: sub.example.com
+	// HostPath (parentPaths): sub.example.com/a, sub.example.com/a/b, sub.example.com/a/b/c, sub.example.com/a/b/c/file.exe
+	// File: file.exe
+	// FullURL: sub.example.com/a/b/c/file.exe?x=1
+
+	if len(checkKeys) != 8 {
+		t.Fatalf("expected 8 check keys, got %d: %v", len(checkKeys), checkKeys)
+	}
+
+	if checkKeys[0].Type != BloomDomain || checkKeys[0].Key != "example.com" {
+		t.Errorf("key[0] = %v, want Domain:example.com", checkKeys[0])
+	}
+	if checkKeys[1].Type != BloomHost || checkKeys[1].Key != "sub.example.com" {
+		t.Errorf("key[1] = %v, want Host:sub.example.com", checkKeys[1])
+	}
+	if checkKeys[2].Type != BloomHostPath || checkKeys[2].Key != "sub.example.com/a" {
+		t.Errorf("key[2] = %v, want HostPath:sub.example.com/a", checkKeys[2])
+	}
+	if checkKeys[3].Type != BloomHostPath || checkKeys[3].Key != "sub.example.com/a/b" {
+		t.Errorf("key[3] = %v, want HostPath:sub.example.com/a/b", checkKeys[3])
+	}
+	if checkKeys[4].Type != BloomHostPath || checkKeys[4].Key != "sub.example.com/a/b/c" {
+		t.Errorf("key[4] = %v, want HostPath:sub.example.com/a/b/c", checkKeys[4])
+	}
+	if checkKeys[5].Type != BloomHostPath || checkKeys[5].Key != "sub.example.com/a/b/c/file.exe" {
+		t.Errorf("key[5] = %v, want HostPath:sub.example.com/a/b/c/file.exe", checkKeys[5])
+	}
+	if checkKeys[6].Type != BloomFile || checkKeys[6].Key != "file.exe" {
+		t.Errorf("key[6] = %v, want File:file.exe", checkKeys[6])
+	}
+	if checkKeys[7].Type != BloomFullURL || checkKeys[7].Key != "sub.example.com/a/b/c/file.exe?x=1" {
+		t.Errorf("key[7] = %v, want FullURL:sub.example.com/a/b/c/file.exe?x=1", checkKeys[7])
+	}
+}
+
+func TestDetermineBloomTarget(t *testing.T) {
+	tests := []struct {
+		url     string
+		wantBT  BloomType
+		wantKey string
+	}{
+		{"https://cdn.example.com/virus.exe?ref=evil", BloomFullURL, "cdn.example.com/virus.exe?ref=evil"},
+		{"https://cdn.example.com/virus.exe", BloomFile, "virus.exe"},
+		{"https://www.example.com/exploit", BloomHostPath, "www.example.com/exploit"},
+		{"https://sub.example.com", BloomHost, "sub.example.com"},
+		{"https://example.com", BloomDomain, "example.com"}, // bare domain, no subdomain
+	}
+
+	for _, tc := range tests {
+		keys, err := ParseURL(tc.url)
+		if err != nil {
+			t.Fatalf("ParseURL(%q) failed: %v", tc.url, err)
+		}
+		bt, key := determineBloomTarget(keys)
+		if bt != tc.wantBT {
+			t.Errorf("determineBloomTarget(%q): bt = %q, want %q", tc.url, bt, tc.wantBT)
+		}
+		if key != tc.wantKey {
+			t.Errorf("determineBloomTarget(%q): key = %q, want %q", tc.url, key, tc.wantKey)
 		}
 	}
 }

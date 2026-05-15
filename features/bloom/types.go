@@ -10,6 +10,7 @@ const (
 	BloomPath     BloomType = "path"
 	BloomQuery    BloomType = "query"
 	BloomFile     BloomType = "file"
+	BloomFullURL  BloomType = "full_url"
 	BloomLogin    BloomType = "login"
 	BloomIP       BloomType = "ip"
 )
@@ -48,6 +49,7 @@ var DepthWeight = map[BloomType]float64{
 	BloomPath:     0.6,
 	BloomQuery:    0.4,
 	BloomFile:     0.7,
+	BloomFullURL:  1.5,
 	BloomLogin:    0.8,
 	BloomIP:       0.8,
 }

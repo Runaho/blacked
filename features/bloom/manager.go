@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"sync"
 
 	"github.com/rs/zerolog/log"
@@ -31,8 +32,8 @@ func NewBloomManager(expectedItemsPerSet uint) *BloomManager {
 	}
 
 	allTypes := []BloomType{
-		BloomDomain, BloomHost, BloomHostPath, BloomPath,
-		BloomQuery, BloomFile, BloomLogin, BloomIP,
+		BloomDomain, BloomHost, BloomHostPath,
+		BloomFile, BloomFullURL, BloomLogin, BloomIP,
 	}
 
 	for _, t := range allTypes {
@@ -61,86 +62,151 @@ func (bm *BloomManager) Sets() []BloomType {
 	return types
 }
 
-// Add inserts an entry's components into the appropriate bloom filters.
-func (bm *BloomManager) Add(sourceID string, keys *URLKeys, bloomTypes []BloomType) {
+// PopulateEntry writes a source entry into exactly one bloom type.
+// The target is determined by determineBloomTarget — each entry lives in a
+// single bloom type (the most specific one the provider gave us).
+func (bm *BloomManager) PopulateEntry(sourceID string, keys *URLKeys) {
+	bt, key := determineBloomTarget(keys)
+	if bt == "" || key == "" {
+		return
+	}
+
 	bm.mu.RLock()
 	defer bm.mu.RUnlock()
 
-	typed := keys.KeysFor(bloomTypes)
-	for t, key := range typed {
-		if bs, ok := bm.sets[t]; ok {
-			bs.Add(sourceID, key)
-		}
+	if bs, ok := bm.sets[bt]; ok && bs != nil {
+		bs.Add(sourceID, key)
 	}
 }
 
-// Likely checks a URL against all applicable bloom types and returns matches.
-// On cold start (no filters ready), it returns Likely=false and empty matches.
+// determineBloomTarget picks the single bloom type for a provider entry.
+// Decision tree (most specific first):
+//  1. File + Query → FullURL (most specific)
+//  2. File (extension present) → File bloom
+//  3. HostPath (no file extension) → HostPath bloom
+//  4. Host only (subdomain ≠ domain) → Host bloom
+//  5. Bare domain (host == domain) → Domain bloom
+//  6. IP → IP bloom
+func determineBloomTarget(keys *URLKeys) (BloomType, string) {
+	// 1. File + Query → FullURL
+	if keys.File != "" && path.Ext(keys.File) != "" && keys.Query != "" && keys.Host != "" && keys.Path != "" {
+		return BloomFullURL, keys.Host + keys.Path + "?" + keys.Query
+	}
+
+	// 2. File → File bloom
+	if keys.File != "" && path.Ext(keys.File) != "" && keys.Host != "" && keys.Path != "" {
+		return BloomFile, keys.File
+	}
+
+	// 3. HostPath (no file extension)
+	if keys.HostPath != "" {
+		return BloomHostPath, keys.HostPath
+	}
+
+	// 4. Bare domain: host == domain (no subdomain)
+	if keys.Host != "" && keys.Domain != "" && keys.Host == keys.Domain {
+		return BloomDomain, keys.Domain
+	}
+
+	// 5. Host only (subdomain present)
+	if keys.Host != "" {
+		return BloomHost, keys.Host
+	}
+
+	// 6. Domain only (fallback)
+	if keys.Domain != "" {
+		return BloomDomain, keys.Domain
+	}
+
+	// 7. IP
+	if keys.IP != "" {
+		return BloomIP, keys.IP
+	}
+
+	return "", ""
+}
+
+// Likely checks a URL against all applicable bloom types in parallel.
+// Check order: Domain → Host → HostPath → File → FullURL.
+// First hit wins — other goroutines are cancelled via context.
 func (bm *BloomManager) Likely(urlStr string) (*BloomResult, error) {
 	keys, err := ParseURL(urlStr)
 	if err != nil {
 		return nil, fmt.Errorf("parse url: %w", err)
 	}
 
-	checkTypes := []BloomType{
-		BloomDomain, BloomHost, BloomHostPath, BloomPath,
-		BloomQuery, BloomFile, BloomLogin, BloomIP,
-	}
-
-	result := &BloomResult{
-		Likely:  false,
-		Matches: make([]BloomMatch, 0),
+	checkKeys := keys.GenerateCheckKeys()
+	if len(checkKeys) == 0 {
+		return &BloomResult{Likely: false, Matches: nil}, nil
 	}
 
 	bm.mu.RLock()
 	defer bm.mu.RUnlock()
 
-	for _, t := range checkTypes {
-		key := ""
-		switch t {
-		case BloomDomain:
-			key = keys.Domain
-		case BloomHost:
-			key = keys.Host
-		case BloomHostPath:
-			key = keys.HostPath
-		case BloomPath:
-			key = keys.Path
-		case BloomQuery:
-			key = keys.Query
-		case BloomFile:
-			key = keys.File
-		case BloomLogin:
-			key = keys.Login
-		case BloomIP:
-			key = keys.IP
-		}
-		if key == "" {
-			continue
-		}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-		bs, ok := bm.sets[t]
-		if !ok || bs == nil {
-			continue
-		}
+	resultCh := make(chan BloomMatch, 1)
+	var wg sync.WaitGroup
 
-		if bs.Test(key) {
-			result.Likely = true
-			// Determine which sources match via per-source filters
+	for _, ck := range checkKeys {
+		ck := ck
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			// Check context before acquiring any lock
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			bs, ok := bm.sets[ck.Type]
+			if !ok || bs == nil {
+				return
+			}
+
+			if !bs.Test(ck.Key) {
+				return
+			}
+
+			// Hit — send result and cancel others
 			for _, sid := range bs.GetSourceIDs() {
-				if bs.TestSource(sid, key) {
-					result.Matches = append(result.Matches, BloomMatch{
-						Type:     t,
+				if bs.TestSource(sid, ck.Key) {
+					select {
+					case resultCh <- BloomMatch{
+						Type:     ck.Type,
 						SourceID: sid,
-						Key:      key,
-					})
+						Key:      ck.Key,
+					}:
+						cancel() // Signal other goroutines to stop
+					case <-ctx.Done():
+					}
+					return
 				}
 			}
-		}
+		}()
 	}
 
-	if len(result.Matches) > 0 {
-		for _, m := range result.Matches {
+	// Close resultCh when all goroutines finish
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	// Collect results
+	matches := make([]BloomMatch, 0)
+	for m := range resultCh {
+		matches = append(matches, m)
+	}
+
+	if len(matches) > 0 {
+		result := &BloomResult{
+			Likely:  true,
+			Matches: matches,
+		}
+		for _, m := range matches {
 			if w, ok := DepthWeight[m.Type]; ok {
 				scaled := int(w * 100)
 				if scaled > result.MaxDepth {
@@ -148,9 +214,10 @@ func (bm *BloomManager) Likely(urlStr string) (*BloomResult, error) {
 				}
 			}
 		}
+		return result, nil
 	}
 
-	return result, nil
+	return &BloomResult{Likely: false, Matches: nil}, nil
 }
 
 // RebuildSource rebuilds only the bloom filters for a specific source.
@@ -173,21 +240,21 @@ func (bm *BloomManager) RebuildSource(
 		bs.ResetSource(sourceID)
 	}
 
-	// Re-add each entry
+	// Re-add each entry via PopulateEntry (single-bloom logic)
 	for _, e := range entries {
 		keys := entryToKeys(e)
-		typed := keys.KeysFor(bloomTypes)
-		for t, key := range typed {
-			if bs, ok := bm.sets[t]; ok && bs != nil {
-				bs.Add(sourceID, key)
-			}
+		bt, key := determineBloomTarget(keys)
+		if bt == "" || key == "" {
+			continue
+		}
+		if bs, ok := bm.sets[bt]; ok && bs != nil {
+			bs.Add(sourceID, key)
 		}
 	}
 
 	log.Info().
 		Str("source_id", sourceID).
 		Int("entries", len(entries)).
-		Int("bloom_types", len(bloomTypes)).
 		Msg("Rebuilt source bloom filters")
 
 	return nil
