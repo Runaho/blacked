@@ -11,7 +11,10 @@ import (
 )
 
 // NewSchemaDDL contains the CREATE statements for the redesigned tables.
+// NOTE: Drops the legacy entries table first.
 const NewSchemaDDL = `
+DROP TABLE IF EXISTS blacklist_entries;
+
 CREATE TABLE IF NOT EXISTS providers (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL,
@@ -38,20 +41,23 @@ CREATE TABLE IF NOT EXISTS sources (
 
 CREATE TABLE IF NOT EXISTS entries (
     id          TEXT PRIMARY KEY,
-    source_id   TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    process_id  TEXT,
+    scheme      TEXT,
     domain      TEXT,
     host        TEXT,
+    sub_domains TEXT,
     path        TEXT,
-    file        TEXT,
-    query       TEXT,
-    login       TEXT,
+    raw_query   TEXT,
+    source_url  TEXT,
+    source      TEXT NOT NULL,
+    category    TEXT,
+    confidence  REAL DEFAULT 1.0,
     ip          TEXT,
     full_url    TEXT,
-    scheme      TEXT,
-    confidence  REAL DEFAULT 1.0,
-    category    TEXT,
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (source_id, domain, host, path, query, ip)
+    created_at  DATETIME,
+    updated_at  DATETIME,
+    deleted_at  DATETIME,
+    UNIQUE (source_url, source)
 );
 
 CREATE TABLE IF NOT EXISTS source_fetch_log (
@@ -65,12 +71,24 @@ CREATE TABLE IF NOT EXISTS source_fetch_log (
     finished_at DATETIME
 );
 
+CREATE TABLE IF NOT EXISTS provider_processes (
+    id          TEXT PRIMARY KEY,
+    status      TEXT,
+    start_time  DATETIME,
+    end_time    DATETIME,
+    providers_processed TEXT,
+    providers_removed   TEXT,
+    error       TEXT
+);
+
 -- Indexes for entries table
 CREATE INDEX IF NOT EXISTS idx_entries_domain ON entries(domain);
 CREATE INDEX IF NOT EXISTS idx_entries_host ON entries(host);
 CREATE INDEX IF NOT EXISTS idx_entries_ip ON entries(ip);
-CREATE INDEX IF NOT EXISTS idx_entries_source ON entries(source_id);
+CREATE INDEX IF NOT EXISTS idx_entries_source ON entries(source);
+CREATE INDEX IF NOT EXISTS idx_entries_source_url ON entries(source_url);
 CREATE INDEX IF NOT EXISTS idx_entries_full_url ON entries(full_url);
+CREATE INDEX IF NOT EXISTS idx_entries_deleted ON entries(deleted_at);
 
 -- Indexes for sources and logs
 CREATE INDEX IF NOT EXISTS idx_sources_provider ON sources(provider_id);
@@ -151,7 +169,7 @@ func SeedSources(db *sql.DB) error {
 }
 
 // FullMigration runs schema creation and seeding. No legacy migration is needed
-// because the legacy blacklist_entries table has zero data.
+// because the legacy entries table has zero data.
 func FullMigration(db *sql.DB) error {
 	if err := MigrateSchema(db); err != nil {
 		return fmt.Errorf("schema migration failed: %w", err)

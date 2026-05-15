@@ -159,12 +159,40 @@ func syncToCache(ctx context.Context) error {
 
 	// if there is no ttl we can use badger for building bloom
 	if config.GetConfig().Cache.TTL == nil {
-		log.Debug().Msg("Cache will be filled and bloom will filled from badger")
-		err = buildBloomFromCacheProvider(ctx, ch, cacheProvider)
-		if err != nil {
-			log.Error().Err(err).Msg("Error while processing entries")
+		log.Debug().Msg("Cache will be filled and bloom will be built directly from DB channel")
+
+		// Drain channel into Badger while building bloom
+		count := 0
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case entry, ok := <-ch:
+				if !ok {
+					log.Debug().Int("processed_count", count).Msg("Finished streaming entries to cache")
+					break
+				}
+
+				if err := cacheProvider.Set(entry.SourceUrl, entry.IDsRaw); err != nil {
+					log.Error().Err(err).Str("key", entry.SourceUrl).Msg("Failed to set entry in cache")
+					return err
+				}
+				count++
+				if count%50000 == 0 {
+					log.Info().Int("processed_count", count).Msg("Cache sync progress")
+				}
+			}
+		}
+
+		if err := cacheProvider.Commit(); err != nil {
+			log.Error().Err(err).Msg("Failed to commit cache changes")
 			return err
 		}
+		log.Debug().Msg("Cache changes committed")
+
+		// Build bloom from Badger
+		cache.BuildBloomFilterFromCacheProvider(ctx, cacheProvider, count)
+		log.Debug().Msg("Bloom filter built from cache provider")
 		return nil
 	}
 

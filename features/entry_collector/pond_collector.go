@@ -1,6 +1,7 @@
 package entry_collector
 
 import (
+	"blacked/features/bloom"
 	"blacked/features/entries"
 	"blacked/features/entries/repository"
 	"blacked/internal/collector"
@@ -36,6 +37,7 @@ var (
 type PondCollector struct {
 	pool          pond.Pool
 	repo          repository.BlacklistRepository
+	bloomMgr      *bloom.BloomManager
 	batchSize     int
 	buffer        []*entries.Entry
 	bufferMu      sync.Mutex
@@ -69,9 +71,13 @@ func InitPondCollector(
 		// This pool is for non-DB operations (parsing, validation, etc.)
 		pool := pond.NewPool(collectorConfig.Concurrency)
 
+		// Initialize bloom manager for new entries table
+		bloomMgr := bloom.NewBloomManager(1_000_000)
+
 		globalCollector = &PondCollector{
 			pool:           pool,
 			repo:           repository.NewSQLiteRepository(db),
+			bloomMgr:       bloomMgr,
 			batchSize:      collectorConfig.BatchSize,
 			buffer:         make([]*entries.Entry, 0, collectorConfig.BatchSize),
 			providerStats:  make(map[string]*ProviderStats),

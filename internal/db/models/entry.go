@@ -6,7 +6,7 @@ import (
 )
 
 // Entry represents a blacklisted URL record.
-// This is the new schema replacement for the legacy blacklist_entries table.
+// This is the new schema replacement for the legacy entries table.
 type Entry struct {
 	ID         string         `json:"id" db:"id"`
 	SourceID   string         `json:"source_id" db:"source_id"`

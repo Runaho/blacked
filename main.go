@@ -99,6 +99,14 @@ func before(ctx context.Context) cli.BeforeFunc {
 		}
 		log.Debug().Msg("Database connections established (read + write pools)")
 
+		// Run schema migration for new tables (providers, sources, entries, source_fetch_log)
+		log.Trace().Msg("Running schema migration for new tables")
+		if err := db.FullMigration(writeDB); err != nil {
+			log.Error().Err(err).Stack().Msg("Failed to run schema migration")
+			return err
+		}
+		log.Debug().Msg("Schema migration completed (providers, sources, entries, source_fetch_log)")
+
 		log.Trace().Msg("Initializing Cache Provider")
 		if err := cache.InitializeCache(ctx); err != nil {
 			log.Error().Err(err).Stack().Msg("Failed to initialize Cache Provider")

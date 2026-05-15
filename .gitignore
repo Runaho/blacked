@@ -39,3 +39,4 @@ data
 *-journal
 *.txt
 
+/.claude/\n/.claude-flow/\n/claude.json

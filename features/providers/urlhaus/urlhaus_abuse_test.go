@@ -4,6 +4,7 @@ import (
 	"blacked/features/entries/repository"
 	"blacked/internal/config"
 	testutil "blacked/internal/testutil"
+	"blacked/internal/utils"
 	"testing"
 	"time"
 
