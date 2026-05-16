@@ -13,7 +13,16 @@
 
 **High-performance URL blacklist aggregator with multi-bloom filtering and scoring.**
 
-Blacked collects threat intelligence from multiple sources (OISD, URLHaus, OpenPhish, PhishTank), decomposes every URL across 6 bloom dimensions, and answers `is this URL blocked?` in ~0.4ms — with confidence scoring, source attribution, and parallel first-hit-wins bloom checking.
+Blacked collects threat intelligence from multiple sources (OISD, URLHaus, OpenPhish, PhishTank), decomposes every URL across 6 bloom dimensions, and answers `is this URL blocked?` in ~0.4ms.
+
+<table>
+  <tr>
+    <td align="center"><h3>📡 Aggregation</h3><p><sub>Provider → Source pipeline with independent fetch, parse, and schedule per source. 3 active providers feeding 822K+ entries.</sub></p></td>
+    <td align="center"><h3>🧬 Bloom Engine</h3><p><sub>6-layer parallel check at ~0.4ms. One entry → one bloom type. First hit wins, parent-path cascade.</sub></p></td>
+    <td align="center"><h3>📊 Scoring</h3><p><sub>Provider trust × depth weight. Single match uses trust directly. 5 levels: critical → informational.</sub></p></td>
+    <td align="center"><h3>🏗️ Core</h3><p><sub>HTTP-agnostic `internal/query/` package. Testable standalone. Adapter pattern — zero framework lock-in.</sub></p></td>
+  </tr>
+</table>
 
 ---
 
@@ -159,7 +168,7 @@ go run main.go query --url "https://evil.com" --json
 
 ---
 
-## 📡 REST API (V2)
+## 📡 REST API
 
 ### Core Endpoints
 
