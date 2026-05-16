@@ -17,7 +17,9 @@ type QueryHandler struct {
 }
 
 // NewQueryHandler constructs a QueryHandler with the shared BloomManager.
-func NewQueryHandler(mgr *bloom.BloomManager) (*QueryHandler, error) {
+// trustConfig is an optional provider→trust_score map (loaded from scoring.toml).
+// Pass nil to use default trust scores (0.5 per source).
+func NewQueryHandler(mgr *bloom.BloomManager, trustConfig map[string]float64) (*QueryHandler, error) {
 	checker := NewBloomAdapter(mgr)
 
 	database, err := db.GetDB()
@@ -26,7 +28,7 @@ func NewQueryHandler(mgr *bloom.BloomManager) (*QueryHandler, error) {
 	}
 	repo := db.NewEntryRepository(database)
 
-	scorer := query.NewScorer(nil)
+	scorer := query.NewScorer(trustConfig)
 
 	svc := query.NewQueryService(checker, repo, scorer)
 	return &QueryHandler{svc: svc}, nil

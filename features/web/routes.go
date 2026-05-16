@@ -5,6 +5,7 @@ import (
 	"blacked/features/web/handlers/health"
 	"blacked/features/web/handlers/provider"
 	v2 "blacked/features/web/handlers/v2"
+	"blacked/internal/config"
 
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
@@ -27,7 +28,8 @@ func (app *Application) ConfigureRoutes() error {
 		log.Warn().Msg("PondCollector not ready — v2 routes skipped")
 	} else {
 		bloomMgr := collector.GetBloomManager()
-		v2Handler, err := v2.NewQueryHandler(bloomMgr)
+		trustConfig := config.LoadScoringConfig()
+		v2Handler, err := v2.NewQueryHandler(bloomMgr, trustConfig)
 		if err != nil {
 			log.Warn().Err(err).Msg("V2 query handler init failed — skipping v2 routes")
 		} else {

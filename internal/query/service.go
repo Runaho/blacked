@@ -16,6 +16,7 @@ type BloomChecker interface {
 
 // ScorerIface is the minimal interface for scoring. Matches the *Scorer type.
 type ScorerIface interface {
+	Score(matches []Match) (float64, string)
 	ScoreWithResult(sourceIDs []string) (float64, string)
 }
 
@@ -75,15 +76,9 @@ func (qs *QueryService) Hit(ctx context.Context, urlStr string) (*QueryResponse,
 
 	if likely {
 		if qs.scorer != nil {
-			sourceMap := make(map[string]struct{})
-			for _, m := range matches {
-				sourceMap[m.SourceID] = struct{}{}
-			}
-			sourceIDs := make([]string, 0, len(sourceMap))
-			for sid := range sourceMap {
-				sourceIDs = append(sourceIDs, sid)
-			}
-			score, level := qs.scorer.ScoreWithResult(sourceIDs)
+			// Use Score(matches) for full depth-weighted formula:
+			// confidence = Σ(trust_score × depth_weight) / Σ(trust_score)
+			score, level := qs.scorer.Score(matches)
 			resp.Confidence = score
 			resp.Level = level
 		} else {

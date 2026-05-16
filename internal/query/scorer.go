@@ -99,6 +99,7 @@ var depthWeight = map[string]float64{
 	"path":      0.6,
 	"query":     0.4,
 	"file":      0.7,
+	"full_url":  1.5,
 	"login":     0.8,
 	"ip":        0.8,
 }

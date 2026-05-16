@@ -87,6 +87,39 @@ func IsDevMode() bool {
 	return (_config.APP.Environtment == "development")
 }
 
+// LoadScoringConfig reads config/scoring.toml and returns provider trust scores.
+// Returns nil if the file can't be loaded — callers should fall back to defaults.
+func LoadScoringConfig() map[string]float64 {
+	k := koanf.New(".")
+	if err := k.Load(file.Provider("config/scoring.toml"), toml.Parser()); err != nil {
+		log.Warn().Err(err).Msg("scoring.toml not loaded, using default trust scores")
+		return nil
+	}
+
+	raw := k.Get("ProviderTrust")
+	if raw == nil {
+		return nil
+	}
+
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	out := make(map[string]float64, len(m))
+	for key, val := range m {
+		switch v := val.(type) {
+		case float64:
+			out[key] = v
+		case int64:
+			out[key] = float64(v)
+		case int:
+			out[key] = float64(v)
+		}
+	}
+	return out
+}
+
 // Returns the cron schedule for the provider.
 // If the provider is not enabled, it returns an empty string.
 func (c *Config) GetProviderCronSchedule(providerName string) (cronSchedule string, isExist bool) {
