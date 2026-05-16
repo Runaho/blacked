@@ -9,6 +9,7 @@ import (
 
 	"blacked/features/providers"
 	"blacked/features/providers/base"
+	"blacked/internal/utils"
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/rs/zerolog/log"
@@ -137,6 +138,9 @@ func (r *Runner) executeProvider(providerName string) {
 	log.Info().
 		Str("provider", providerName).
 		Msg("Starting scheduled execution of provider")
+
+	// CRON triggered — invalidate cached response so fresh data is fetched
+	utils.RemoveStoredResponse(providerName)
 
 	// Execute the provider with immediate cache updates
 	if err := ExecuteProvider(context.Background(), provider, providers.ProcessOptions{
