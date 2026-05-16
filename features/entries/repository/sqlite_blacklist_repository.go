@@ -457,7 +457,7 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []*entr
 
 		_, err := stmt.ExecContext(ctx,
 			entry.ID, entry.ProcessID, entry.Scheme, entry.Domain, entry.Host, subDomainsStr,
-		entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Confidence,
+		entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Category, entry.Confidence,
 		entry.CreatedAt, entry.UpdatedAt,
 		)
 		if err != nil {

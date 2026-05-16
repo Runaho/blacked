@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS entries (
     raw_query   TEXT,
     source_url  TEXT,
     source      TEXT NOT NULL,
+    category    TEXT,
     confidence  REAL DEFAULT 1.0,
     created_at  INTEGER,
     updated_at  INTEGER,

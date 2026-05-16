@@ -29,6 +29,7 @@ type Entry struct {
 	RawQuery   string   `json:"raw_query"`
 	SourceURL  string   `json:"source_url"`           // Raw URL From the source
 	Source     string   `json:"source"`               // Name of the provider
+	Category   string   `json:"category"`             // Category tag
 	Confidence float64  `json:"confidence,omitempty"` // Optional confidence score
 	CreatedAt  int64    `json:"created_at"`           // Unix timestamp (nanoseconds), zero-alloc
 	UpdatedAt  int64    `json:"updated_at"`           // Unix timestamp (nanoseconds), zero-alloc
