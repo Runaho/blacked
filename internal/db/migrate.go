@@ -11,9 +11,11 @@ import (
 )
 
 // NewSchemaDDL contains the CREATE statements for the redesigned tables.
-// NOTE: Drops the legacy entries table first.
+// NOTE: Drops the legacy entries table first, then re-creates entries from scratch
+// to ensure schema changes (like the ip column) are applied on existing test DBs.
 const NewSchemaDDL = `
 DROP TABLE IF EXISTS blacklist_entries;
+DROP TABLE IF EXISTS entries;
 
 CREATE TABLE IF NOT EXISTS providers (
     id          TEXT PRIMARY KEY,
