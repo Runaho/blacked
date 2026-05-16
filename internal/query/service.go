@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"time"
 )
 
 // BloomChecker is the minimal interface the query service needs from the bloom engine.
@@ -36,10 +35,8 @@ func NewQueryService(bloom BloomChecker, repo EntryRepository, scorer ScorerIfac
 	}
 }
 
-// Likely performs a fast bloom-only check (~0.4ms).
+// Likely performs a fast bloom-only check.
 func (qs *QueryService) Likely(ctx context.Context, urlStr string) (*LikelyResponse, error) {
-	start := time.Now()
-
 	likely, matches, err := qs.bloom.Check(urlStr)
 	if err != nil {
 		return nil, fmt.Errorf("bloom likely: %w", err)
@@ -55,14 +52,11 @@ func (qs *QueryService) Likely(ctx context.Context, urlStr string) (*LikelyRespo
 		resp.MaxDepth = min(len(matches)*10, 100)
 	}
 
-	_ = time.Since(start)
 	return resp, nil
 }
 
-// Hit performs a full check: bloom → DB confirm → score (~5-15ms if positive).
+// Hit performs a full check: bloom → DB confirm → score.
 func (qs *QueryService) Hit(ctx context.Context, urlStr string) (*QueryResponse, error) {
-	start := time.Now()
-
 	likely, matches, err := qs.bloom.Check(urlStr)
 	if err != nil {
 		return nil, fmt.Errorf("bloom hit: %w", err)
@@ -90,7 +84,6 @@ func (qs *QueryService) Hit(ctx context.Context, urlStr string) (*QueryResponse,
 		resp.Level = "informational"
 	}
 
-	resp.TookMs = time.Since(start).Milliseconds()
 	return resp, nil
 }
 

@@ -16,9 +16,8 @@ type QueryResponse struct {
 	URL        string  `json:"url"`
 	Blocked    bool    `json:"blocked"`
 	Confidence float64 `json:"confidence"`
-	Level      string  `json:"level"`     // critical, high, medium, low, informational
+	Level      string  `json:"level"` // critical, high, medium, low, informational
 	Matches    []Match `json:"matches"`
-	TookMs     int64   `json:"took_ms"`
 }
 
 // LikelyResponse is the fast bloom-only result (~0.4ms).

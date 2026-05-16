@@ -60,10 +60,10 @@ func TestScorer_Score_UnknownSourceDefaults(t *testing.T) {
 		{SourceID: "unknown", Type: "domain", Key: "evil.com"},
 	}
 
-	// trust=0.5, weight=0.3 → score = 0.3 (0.5*0.3/0.5) → "low"
+	// Single match with unknown source → trust = 0.5 (default) → "medium"
 	score, level := s.Score(matches)
-	if level != "low" {
-		t.Fatalf("expected low (~0.3), got %.2f/%s", score, level)
+	if level != "medium" {
+		t.Fatalf("expected medium (0.5), got %.2f/%s", score, level)
 	}
 }
 

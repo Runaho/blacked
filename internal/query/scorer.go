@@ -19,21 +19,38 @@ func NewScorer(trustLookup map[string]float64) *Scorer {
 }
 
 // Score calculates confidence from bloom match results.
-// Uses the full formula with depth weights per bloom type.
+// Single match: confidence = trust_score (depth is irrelevant alone).
+// Multiple matches: confidence = Σ(trust_score × depth_weight) / Σ(trust_score)
+// — depth weights are used to weigh matches against each other.
 func (s *Scorer) Score(matches []Match) (float64, string) {
 	if len(matches) == 0 {
 		return 0.0, "informational"
 	}
 
+	// Single match — trust score is the confidence directly.
+	// A domain on a blacklist should reflect the provider's trust, not be penalized.
+	if len(matches) == 1 {
+		trust := 0.5
+		if t, ok := s.trust[matches[0].SourceID]; ok {
+			trust = t
+		}
+		level := confidenceLevel(trust)
+		log.Trace().
+			Float64("score", trust).
+			Str("level", level).
+			Int("matches", 1).
+			Msg("Scorer computed confidence (single match)")
+		return trust, level
+	}
+
+	// Multiple matches — depth-weighted formula
 	var totalWeighted, totalTrust float64
 	for _, m := range matches {
-		// Get trust score for this source (default 0.5)
 		trust := 0.5
 		if t, ok := s.trust[m.SourceID]; ok {
 			trust = t
 		}
 
-		// Get depth weight for this bloom type (default 0.5 if unknown)
 		weight := 0.5
 		if w, ok := depthWeight[m.Type]; ok {
 			weight = w
@@ -54,7 +71,7 @@ func (s *Scorer) Score(matches []Match) (float64, string) {
 		Float64("score", score).
 		Str("level", level).
 		Int("matches", len(matches)).
-		Msg("Scorer computed confidence")
+		Msg("Scorer computed confidence (depth-weighted)")
 	return score, level
 }
 

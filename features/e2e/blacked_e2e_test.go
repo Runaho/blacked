@@ -326,8 +326,7 @@ func TestBlacked_BloomE2E(t *testing.T) {
 		// Confidence should be > 0 (scorer with single source)
 		require.Greater(t, qr.Confidence, 0.0, "expected confidence > 0")
 		require.NotEmpty(t, qr.Level)
-		require.GreaterOrEqual(t, qr.TookMs, int64(0), "expected took_ms >= 0")
-		fmt.Println("  ✓ HitEndpoint: returns blocked=true, confidence, level, took_ms")
+		fmt.Println("  ✓ HitEndpoint: returns blocked=true, confidence, level")
 	})
 
 	// ------------------------------------------------------------------
@@ -423,7 +422,6 @@ func TestBlacked_BloomE2E(t *testing.T) {
 		require.True(t, results[0].Blocked, "evil.com should be blocked=true")
 		require.Greater(t, results[0].Confidence, 0.0)
 		require.NotEmpty(t, results[0].Level)
-		require.GreaterOrEqual(t, results[0].TookMs, int64(0))
 
 		require.False(t, results[1].Blocked, "google.com should be blocked=false")
 		require.Equal(t, 0.0, results[1].Confidence)
