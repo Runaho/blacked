@@ -20,15 +20,13 @@ type LineParserFunc func(line, sourceID, processID string) (*entries.Entry, erro
 
 // FlatListParser parses flat list (one URL per line) sources.
 type FlatListParser struct {
-	Category      string
 	ParserWorkers int
 	BatchSize     int
 }
 
 // NewFlatListParser creates a parser for flat list sources.
-func NewFlatListParser(category string, workers, batchSize int) *FlatListParser {
+func NewFlatListParser(workers, batchSize int) *FlatListParser {
 	return &FlatListParser{
-		Category:      category,
 		ParserWorkers: workers,
 		BatchSize:     batchSize,
 	}
@@ -40,7 +38,7 @@ func (p *FlatListParser) Parse(data io.Reader, collector entry_collector.Collect
 }
 
 func (p *FlatListParser) lineProcessor(line, sourceID, processID string) (*entries.Entry, error) {
-	return ParseURLLine(line, sourceID, processID, p.Category)
+	return ParseURLLine(line, sourceID, processID)
 }
 
 // JSONParserFunc parses JSON data into entries.
@@ -61,15 +59,14 @@ func (j *jsonParserAdapter) Parse(data io.Reader, collector entry_collector.Coll
 
 // ParseURLLine is a shared utility that creates an Entry from a raw URL string.
 // Returns nil, nil for lines that should be skipped.
-func ParseURLLine(line, sourceID, processID, category string) (*entries.Entry, error) {
+func ParseURLLine(line, sourceID, processID string) (*entries.Entry, error) {
 	if line == "" || line[0] == '#' {
 		return nil, nil
 	}
 
 	entry := entries.NewEntry().
 		WithSource(sourceID).
-		WithProcessID(processID).
-		WithCategory(category)
+		WithProcessID(processID)
 
 	if err := entry.SetURL(line); err != nil {
 		log.Debug().Err(err).Str("url", line).Str("source", sourceID).Msg("Skipping invalid URL")

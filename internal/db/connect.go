@@ -25,7 +25,7 @@ func initDB(db *sql.DB) error {
 	if err := FullMigration(db); err != nil {
 		return err
 	}
-	log.Trace().Msg("Database schema initialized (providers, sources, entries, source_fetch_log).")
+	log.Trace().Msg("Database schema initialized (providers, sources, entries, provider_processes).")
 	return nil
 }
 

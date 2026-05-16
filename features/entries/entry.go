@@ -29,7 +29,6 @@ type Entry struct {
 	RawQuery   string   `json:"raw_query"`
 	SourceURL  string   `json:"source_url"`           // Raw URL From the source
 	Source     string   `json:"source"`               // Name of the provider
-	Category   string   `json:"category,omitempty"`   // Optional category
 	Confidence float64  `json:"confidence,omitempty"` // Optional confidence score
 	CreatedAt  int64    `json:"created_at"`           // Unix timestamp (nanoseconds), zero-alloc
 	UpdatedAt  int64    `json:"updated_at"`           // Unix timestamp (nanoseconds), zero-alloc
@@ -109,13 +108,6 @@ func (b *Entry) WithSource(source string) *Entry {
 // WithProcessID sets the process ID and returns the entry for chaining
 func (b *Entry) WithProcessID(processID string) *Entry {
 	b.ProcessID = processID
-	b.UpdatedAt = time.Now().UnixNano()
-	return b
-}
-
-// WithCategory sets the category and returns the entry for chaining
-func (b *Entry) WithCategory(category string) *Entry {
-	b.Category = category
 	b.UpdatedAt = time.Now().UnixNano()
 	return b
 }

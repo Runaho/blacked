@@ -28,8 +28,7 @@ func NewOpenPhishFeedProvider(settings *config.CollectorConfig, collyClient *col
 
 			entry := entries.NewEntry().
 				WithSource(providerName).
-				WithProcessID(processID).
-				WithCategory("phishing")
+				WithProcessID(processID)
 
 			if err := entry.SetURL(line); err != nil {
 				log.Error().Err(err).Msgf("error setting URL: %s", line)

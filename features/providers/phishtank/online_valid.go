@@ -48,8 +48,7 @@ func NewPhishTankProvider(settings *config.CollectorConfig, collyClient *colly.C
 			// Create a new entry
 			entry := entries.NewEntry().
 				WithSource(providerName).
-				WithProcessID(processID).
-				WithCategory("phishing")
+				WithProcessID(processID)
 
 			// SetURL may fail, so handle it separately
 			if err := entry.SetURL(phishEntry.URL); err != nil {

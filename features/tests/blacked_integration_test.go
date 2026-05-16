@@ -149,10 +149,10 @@ func insertEntry(t testing.TB, db *sql.DB, id, sourceID, urlStr string) int64 {
 
 	res, err := db.Exec(`
 		INSERT OR IGNORE INTO entries
-		(id, source, domain, host, path, raw_query, source_url, scheme, confidence, category)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(id, source, domain, host, path, raw_query, source_url, scheme, confidence)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, id, sourceID,
-		keys.Domain, keys.Host, keys.Path, "", urlStr, "https", 0.8, "test")
+		keys.Domain, keys.Host, keys.Path, "", urlStr, "https", 0.8)
 	require.NoError(t, err)
 
 	rowID, _ := res.LastInsertId()

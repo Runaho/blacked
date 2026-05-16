@@ -15,7 +15,7 @@ func TestMigrateSchema(t *testing.T) {
 	err = MigrateSchema(db)
 	require.NoError(t, err)
 
-	tables := []string{"providers", "sources", "entries", "source_fetch_log"}
+	tables := []string{"providers", "sources", "entries", "provider_processes"}
 	for _, tbl := range tables {
 		var name string
 		err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, tbl).Scan(&name)
@@ -27,11 +27,9 @@ func TestMigrateSchema(t *testing.T) {
 	indexes := []string{
 		"idx_entries_domain",
 		"idx_entries_host",
-		"idx_entries_ip",
 		"idx_entries_source",
-		"idx_entries_full_url",
+		"idx_entries_source_url",
 		"idx_sources_provider",
-		"idx_fetch_log_source",
 	}
 	for _, idx := range indexes {
 		var name string

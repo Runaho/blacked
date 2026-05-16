@@ -10,12 +10,12 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// NewSchemaDDL contains the CREATE statements for the redesigned tables.
-// NOTE: Drops the legacy entries table first, then re-creates entries from scratch
-// to ensure schema changes (like the ip column) are applied on existing test DBs.
+// NewSchemaDDL contains the CREATE statements for the cleaned schema.
+// NOTE: Drops the legacy entries table first.
 const NewSchemaDDL = `
 DROP TABLE IF EXISTS blacklist_entries;
 DROP TABLE IF EXISTS entries;
+DROP TABLE IF EXISTS source_fetch_log;
 
 CREATE TABLE IF NOT EXISTS providers (
     id          TEXT PRIMARY KEY,
@@ -52,25 +52,11 @@ CREATE TABLE IF NOT EXISTS entries (
     raw_query   TEXT,
     source_url  TEXT,
     source      TEXT NOT NULL,
-    category    TEXT,
     confidence  REAL DEFAULT 1.0,
-    ip          TEXT,
-    full_url    TEXT,
     created_at  INTEGER,
     updated_at  INTEGER,
     deleted_at  INTEGER,
     UNIQUE (source_url, source)
-);
-
-CREATE TABLE IF NOT EXISTS source_fetch_log (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    source_id   TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
-    status      TEXT NOT NULL,
-    entry_count INTEGER DEFAULT 0,
-    error       TEXT,
-    duration_ms INTEGER,
-    started_at  DATETIME,
-    finished_at DATETIME
 );
 
 CREATE TABLE IF NOT EXISTS provider_processes (
@@ -86,15 +72,11 @@ CREATE TABLE IF NOT EXISTS provider_processes (
 -- Indexes for entries table
 CREATE INDEX IF NOT EXISTS idx_entries_domain ON entries(domain);
 CREATE INDEX IF NOT EXISTS idx_entries_host ON entries(host);
-CREATE INDEX IF NOT EXISTS idx_entries_ip ON entries(ip);
 CREATE INDEX IF NOT EXISTS idx_entries_source ON entries(source);
 CREATE INDEX IF NOT EXISTS idx_entries_source_url ON entries(source_url);
-CREATE INDEX IF NOT EXISTS idx_entries_full_url ON entries(full_url);
-CREATE INDEX IF NOT EXISTS idx_entries_deleted ON entries(deleted_at);
 
--- Indexes for sources and logs
+-- Indexes for sources
 CREATE INDEX IF NOT EXISTS idx_sources_provider ON sources(provider_id);
-CREATE INDEX IF NOT EXISTS idx_fetch_log_source ON source_fetch_log(source_id);
 `
 
 // MigrateSchema creates the new tables if they don't exist.
@@ -108,7 +90,7 @@ func MigrateSchema(db *sql.DB) error {
 		return fmt.Errorf("failed to execute new schema DDL: %w", err)
 	}
 
-	log.Trace().Msg("New schema tables ensured (providers, sources, entries, source_fetch_log)")
+	log.Trace().Msg("New schema tables ensured (providers, sources, entries, provider_processes)")
 	return nil
 }
 
@@ -143,15 +125,16 @@ func SeedProviders(db *sql.DB) error {
 // SeedSources inserts the default source seed data, ignoring conflicts.
 func SeedSources(db *sql.DB) error {
 	stmt, err := db.Prepare(`
-		INSERT INTO sources (id, provider_id, name, source_url, type, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO sources (id, provider_id, name, source_url, type, update_interval, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
-			provider_id  = EXCLUDED.provider_id,
-			name         = EXCLUDED.name,
-			source_url   = EXCLUDED.source_url,
-			type         = EXCLUDED.type,
-			enabled      = EXCLUDED.enabled,
-			updated_at   = EXCLUDED.updated_at
+			provider_id     = EXCLUDED.provider_id,
+			name            = EXCLUDED.name,
+			source_url      = EXCLUDED.source_url,
+			type            = EXCLUDED.type,
+			update_interval = EXCLUDED.update_interval,
+			enabled         = EXCLUDED.enabled,
+			updated_at      = EXCLUDED.updated_at
 	`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare seed sources: %w", err)
@@ -160,7 +143,13 @@ func SeedSources(db *sql.DB) error {
 
 	now := time.Now().UTC()
 	for _, s := range models.SourceSeed {
-		_, err := stmt.Exec(s.ID, s.ProviderID, s.Name, s.SourceURL, string(s.Type), 1, now, now)
+		var interval interface{}
+		if s.UpdateInterval.Valid {
+			interval = s.UpdateInterval.Int64
+		} else {
+			interval = nil
+		}
+		_, err := stmt.Exec(s.ID, s.ProviderID, s.Name, s.SourceURL, string(s.Type), interval, 1, now, now)
 		if err != nil {
 			log.Warn().Err(err).Str("source", s.ID).Msg("Failed to seed source")
 		}
@@ -170,8 +159,7 @@ func SeedSources(db *sql.DB) error {
 	return nil
 }
 
-// FullMigration runs schema creation and seeding. No legacy migration is needed
-// because the legacy entries table has zero data.
+// FullMigration runs schema creation and seeding.
 func FullMigration(db *sql.DB) error {
 	if err := MigrateSchema(db); err != nil {
 		return fmt.Errorf("schema migration failed: %w", err)

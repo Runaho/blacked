@@ -88,8 +88,7 @@ func parsePhishTankLine(line, sourceID, processID string) (*entries.Entry, error
 
 	entry := entries.NewEntry().
 		WithSource(sourceID).
-		WithProcessID(processID).
-		WithCategory("phishing")
+		WithProcessID(processID)
 
 	if err := entry.SetURL(rec.URL); err != nil {
 		log.Debug().Err(err).Str("url", rec.URL).Str("source", sourceID).Msg("Skipping invalid URL")

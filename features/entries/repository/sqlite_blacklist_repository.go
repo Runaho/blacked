@@ -129,7 +129,7 @@ func (r *SQLiteRepository) GetAllEntries(ctx context.Context) ([]entries.Entry, 
 		var deletedAt sql.NullInt64 // Use sql.NullInt64 for nullable DATETIME in DB
 		err := rows.Scan(
 			&entry.ID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
-			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
+			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source,
 			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
 		)
 		if err != nil {
@@ -163,7 +163,7 @@ func (r *SQLiteRepository) GetEntryByID(ctx context.Context, id string) (*entrie
 
 	err := row.Scan(
 		&entry.ID, &entry.ProcessID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
-		&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
+		&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source,
 		&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
 	)
 
@@ -227,7 +227,7 @@ func (r *SQLiteRepository) GetEntriesByIDs(ctx context.Context, ids []string) ([
 
 		err := rows.Scan(
 			&entry.ID, &entry.ProcessID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
-			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
+			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source,
 			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
 		)
 		if err != nil {
@@ -274,7 +274,7 @@ func (r *SQLiteRepository) GetEntriesBySource(ctx context.Context, source string
 		var deletedAt sql.NullInt64 
 		err := rows.Scan(
 			&entry.ID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
-			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
+			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source,
 			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
 		)
 		if err != nil {
@@ -324,7 +324,7 @@ func (r *SQLiteRepository) GetEntriesByCategory(ctx context.Context, category st
 		var deletedAt sql.NullInt64 
 		err := rows.Scan(
 			&entry.ID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
-			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
+			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source,
 			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
 		)
 		if err != nil {
@@ -368,8 +368,8 @@ func (r *SQLiteRepository) SaveEntry(ctx context.Context, entry entries.Entry) e
 
 	_, err = tx.ExecContext(ctx, `
 			INSERT INTO entries (
-				id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, category, confidence, created_at, updated_at, deleted_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL) -- Insert with NULL deleted_at for new entries
+				id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, confidence, created_at, updated_at, deleted_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL) -- Insert with NULL deleted_at for new entries
 			ON CONFLICT (source_url, source) DO UPDATE SET -- UPSERT logic on conflict of 'source_url' and 'source'
 				process_id = EXCLUDED.process_id,
 				scheme = EXCLUDED.scheme,
@@ -378,14 +378,13 @@ func (r *SQLiteRepository) SaveEntry(ctx context.Context, entry entries.Entry) e
 				sub_domains = EXCLUDED.sub_domains,
 				path = EXCLUDED.path,
 				raw_query = EXCLUDED.raw_query,
-				category = EXCLUDED.category,
 				confidence = EXCLUDED.confidence,
 				updated_at = EXCLUDED.updated_at, -- Update 'updated_at' on update
 				deleted_at = NULL                  -- Ensure entry is NOT deleted upon update (reset soft delete)
 			WHERE EXCLUDED.updated_at > entries.updated_at -- Optional: Update only if new data is "newer" (based on UpdatedAt)
 		`,
 		entry.ID, entry.ProcessID, entry.Scheme, entry.Domain, entry.Host, strings.Join(entry.SubDomains, ","),
-		entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Category, entry.Confidence,
+		entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Confidence,
 		entry.CreatedAt, entry.UpdatedAt,
 	)
 
@@ -458,8 +457,8 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []*entr
 
 		_, err := stmt.ExecContext(ctx,
 			entry.ID, entry.ProcessID, entry.Scheme, entry.Domain, entry.Host, subDomainsStr,
-			entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Category, entry.Confidence,
-			entry.CreatedAt, entry.UpdatedAt,
+		entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Confidence,
+		entry.CreatedAt, entry.UpdatedAt,
 		)
 		if err != nil {
 			log.Error().Err(err).Str("entry_id", entry.ID).Str("source_url", entry.SourceURL).Msg("Error executing batch statement for entry")

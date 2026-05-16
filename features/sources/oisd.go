@@ -29,7 +29,7 @@ func NewOISDBigSource(settings *config.CollectorConfig, collyClient *colly.Colle
 	}
 
 	s.Fetcher = NewCollyFetcher(collyClient)
-	s.Parser = NewFlatListParser(category, settings.ParserWorkers, settings.ParserBatchSize)
+	s.Parser = NewFlatListParser(settings.ParserWorkers, settings.ParserBatchSize)
 
 	return s
 }
@@ -57,7 +57,7 @@ func NewOISDNSFWSource(settings *config.CollectorConfig, collyClient *colly.Coll
 	}
 
 	s.Fetcher = NewCollyFetcher(collyClient)
-	s.Parser = NewFlatListParser(category, settings.ParserWorkers, settings.ParserBatchSize)
+	s.Parser = NewFlatListParser(settings.ParserWorkers, settings.ParserBatchSize)
 
 	return s
 }
