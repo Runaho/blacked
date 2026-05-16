@@ -2,6 +2,15 @@
 
 <img src="https://github.com/user-attachments/assets/a54c8d22-77ba-4a05-9d86-aca811d1c1f9" alt="Blacked Logo" height="150px" />
 
+<div align="center">
+  <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go 1.26+"/>
+  <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License: MIT"/>
+  <img src="https://img.shields.io/badge/API-REST-green?style=for-the-badge" alt="API: REST"/>
+  <img src="https://img.shields.io/badge/Version-0.3.0-4ADE80?style=for-the-badge" alt="Version 0.3.0"/>
+</div>
+
+<br>
+
 **High-performance URL blacklist aggregator with multi-bloom filtering and scoring.**
 
 Blacked collects threat intelligence from multiple sources (OISD, URLHaus, OpenPhish, PhishTank), decomposes every URL across 6 bloom dimensions, and answers `is this URL blocked?` in ~0.4ms — with confidence scoring, source attribution, and parallel first-hit-wins bloom checking.
@@ -119,6 +128,9 @@ ParseURL → GenerateKeys()
 git clone https://github.com/runaho/blacked.git
 cd blacked
 
+# Download dependencies
+go mod download
+
 # Configure
 cp .env.toml.example .env.toml
 # Edit to suit your environment
@@ -163,16 +175,15 @@ go run main.go query --url "https://evil.com" --json
 **Hit (200)** — URL is blocked:
 ```json
 {
+  "url": "https://cdn.evil.com/malware/exploit.php",
   "blocked": true,
   "confidence": 0.85,
   "level": "high",
   "matches": [{
-    "type": "file",
-    "key": "exploit.php",
-    "source_id": "oisd",
-    "source_name": "OISD Big"
-  }],
-  "took_ms": 0.42
+    "type": "full_url",
+    "key": "cdn.evil.com/malware/exploit.php",
+    "source_id": "URLHAUS"
+  }]
 }
 ```
 
@@ -180,14 +191,6 @@ go run main.go query --url "https://evil.com" --json
 ```
 No Content
 ```
-
-### Legacy Endpoints (still active)
-
-| Endpoint | Description |
-|:---------|:------------|
-| `GET /entry?url=` | Quick check |
-| `POST /entry/search` | Advanced search |
-| `POST /provider/process` | Trigger provider processing |
 
 ---
 
@@ -241,6 +244,7 @@ func parseMyFormat(r io.Reader, entryChan chan<- *entries.Entry) error {
         entry := &entries.Entry{
             SourceURL: line,
             Source:    "my-source",
+            Category:  "malware",
         }
         entryChan <- entry
     }
@@ -328,7 +332,11 @@ If source blacklisted cdn.x.com/a/b → HIT via parent path
 
 ## 📊 Scoring
 
-```go
+**Single match**: confidence = provider trust score directly. A domain from a trusted source should reflect that trust — not be penalized for being "shallow."
+
+**Multiple matches** (2+ bloom layers hit): depth weights are used to weigh matches against each other:
+
+```
 confidence = Σ(trust_score × depth_weight) / Σ(trust_score)
 ```
 
@@ -340,7 +348,7 @@ confidence = Σ(trust_score × depth_weight) / Σ(trust_score)
 | Low | ≥ 0.25 |
 | Informational | < 0.25 |
 
-Depth weights: Domain 0.3 · Host 0.5 · HostPath 1.0 · File 0.7 · FullURL 1.0 · IP 0.8
+Depth weights: Domain 0.3 · Host 0.5 · HostPath 1.0 · File 0.7 · FullURL 1.5 · IP 0.8
 
 ---
 
