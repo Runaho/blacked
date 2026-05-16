@@ -1,5 +1,7 @@
 # Blacked 🖤
 
+<img src="https://github.com/user-attachments/assets/a54c8d22-77ba-4a05-9d86-aca811d1c1f9" alt="Blacked Logo" height="150px" />
+
 **High-performance URL blacklist aggregator with multi-bloom filtering and scoring.**
 
 Blacked collects threat intelligence from multiple sources (OISD, URLHaus, OpenPhish, PhishTank), decomposes every URL across 6 bloom dimensions, and answers `is this URL blocked?` in ~0.4ms — with confidence scoring, source attribution, and parallel first-hit-wins bloom checking.
