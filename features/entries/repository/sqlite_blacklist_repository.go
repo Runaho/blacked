@@ -126,11 +126,11 @@ func (r *SQLiteRepository) GetAllEntries(ctx context.Context) ([]entries.Entry, 
 	for rows.Next() {
 		var entry entries.Entry
 		var subDomainsStr string
-		var deletedAt sql.NullTime // Use sql.NullTime for nullable DATETIME in DB
+		var deletedAt sql.NullInt64 // Use sql.NullInt64 for nullable DATETIME in DB
 		err := rows.Scan(
 			&entry.ID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
 			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
-			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, // Scan deletedAt
+			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
 		)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to scan row from SQLite")
@@ -141,7 +141,7 @@ func (r *SQLiteRepository) GetAllEntries(ctx context.Context) ([]entries.Entry, 
 			entry.SubDomains = nil
 		}
 		if deletedAt.Valid { // Handle potential NULL value from DB
-			entry.DeletedAt = &deletedAt.Time // Assign time.Time pointer
+			entry.DeletedAt = &deletedAt.Int64
 		} else {
 			entry.DeletedAt = nil // Ensure it's nil if not set in DB
 		}
@@ -159,12 +159,12 @@ func (r *SQLiteRepository) GetEntryByID(ctx context.Context, id string) (*entrie
 	row := r.db.QueryRowContext(ctx, "SELECT * FROM entries WHERE id = ?", id) // No WHERE deleted_at IS NULL here if you want to retrieve deleted entries too
 	var entry entries.Entry
 	var subDomainsStr string
-	var deletedAt sql.NullTime // For nullable DATETIME
+	var deletedAt sql.NullInt64 
 
 	err := row.Scan(
 		&entry.ID, &entry.ProcessID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
 		&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
-		&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, // Scan deletedAt
+		&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
 	)
 
 	if err != nil {
@@ -184,7 +184,7 @@ func (r *SQLiteRepository) GetEntryByID(ctx context.Context, id string) (*entrie
 		entry.SubDomains = nil
 	}
 	if deletedAt.Valid {
-		entry.DeletedAt = &deletedAt.Time
+		entry.DeletedAt = &deletedAt.Int64
 	} else {
 		entry.DeletedAt = nil
 	}
@@ -223,12 +223,12 @@ func (r *SQLiteRepository) GetEntriesByIDs(ctx context.Context, ids []string) ([
 	for rows.Next() {
 		var entry entries.Entry
 		var subDomainsStr string
-		var deletedAt sql.NullTime // For nullable DATETIME
+		var deletedAt sql.NullInt64 
 
 		err := rows.Scan(
 			&entry.ID, &entry.ProcessID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
 			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
-			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, // Scan deletedAt
+			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
 		)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to scan row from SQLite")
@@ -240,7 +240,7 @@ func (r *SQLiteRepository) GetEntriesByIDs(ctx context.Context, ids []string) ([
 			entry.SubDomains = nil
 		}
 		if deletedAt.Valid {
-			entry.DeletedAt = &deletedAt.Time
+			entry.DeletedAt = &deletedAt.Int64
 		} else {
 			entry.DeletedAt = nil
 		}
@@ -271,11 +271,11 @@ func (r *SQLiteRepository) GetEntriesBySource(ctx context.Context, source string
 	for rows.Next() {
 		var entry entries.Entry
 		var subDomainsStr string
-		var deletedAt sql.NullTime // For nullable DATETIME
+		var deletedAt sql.NullInt64 
 		err := rows.Scan(
 			&entry.ID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
 			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
-			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, // Scan deletedAt
+			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
 		)
 		if err != nil {
 			log.Err(err).
@@ -289,7 +289,7 @@ func (r *SQLiteRepository) GetEntriesBySource(ctx context.Context, source string
 			entry.SubDomains = nil
 		}
 		if deletedAt.Valid {
-			entry.DeletedAt = &deletedAt.Time
+			entry.DeletedAt = &deletedAt.Int64
 		} else {
 			entry.DeletedAt = nil
 		}
@@ -321,11 +321,11 @@ func (r *SQLiteRepository) GetEntriesByCategory(ctx context.Context, category st
 	for rows.Next() {
 		var entry entries.Entry
 		var subDomainsStr string
-		var deletedAt sql.NullTime // For nullable DATETIME
+		var deletedAt sql.NullInt64 
 		err := rows.Scan(
 			&entry.ID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
 			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
-			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, // Scan deletedAt
+			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
 		)
 		if err != nil {
 			log.Err(err).
@@ -339,7 +339,7 @@ func (r *SQLiteRepository) GetEntriesByCategory(ctx context.Context, category st
 			entry.SubDomains = nil
 		}
 		if deletedAt.Valid {
-			entry.DeletedAt = &deletedAt.Time
+			entry.DeletedAt = &deletedAt.Int64
 		} else {
 			entry.DeletedAt = nil
 		}

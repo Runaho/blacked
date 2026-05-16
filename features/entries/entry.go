@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 	"github.com/rs/zerolog/log"
 )
 
@@ -19,28 +19,29 @@ var (
 )
 
 type Entry struct {
-	ID         string     `json:"id"`
-	ProcessID  string     `json:"process_id"`
-	Scheme     string     `json:"scheme"`
-	Domain     string     `json:"domain"`
-	Host       string     `json:"host"` // Includes Domain + TLD
-	SubDomains []string   `json:"sub_domains"`
-	Path       string     `json:"path"`
-	RawQuery   string     `json:"raw_query"`
-	SourceURL  string     `json:"source_url"`           // Raw URL From the source
-	Source     string     `json:"source"`               // Name of the provider
-	Category   string     `json:"category,omitempty"`   // Optional category
-	Confidence float64    `json:"confidence,omitempty"` // Optional confidence score
-	CreatedAt  time.Time  `json:"created_at"`           // Use time.Time for proper time handling and comparisons
-	UpdatedAt  time.Time  `json:"updated_at"`           // Use time.Time for update tracking
-	DeletedAt  *time.Time `json:"deleted_at,omitempty"` // Pointer to time.Time, nil if not deleted, *time.Time if soft-deleted
+	ID         string   `json:"id"`           // xid (12 byte, 20 chars, monotonic)
+	ProcessID  string   `json:"process_id"`   // xid
+	Scheme     string   `json:"scheme"`
+	Domain     string   `json:"domain"`
+	Host       string   `json:"host"` // Includes Domain + TLD
+	SubDomains []string `json:"sub_domains"`
+	Path       string   `json:"path"`
+	RawQuery   string   `json:"raw_query"`
+	SourceURL  string   `json:"source_url"`           // Raw URL From the source
+	Source     string   `json:"source"`               // Name of the provider
+	Category   string   `json:"category,omitempty"`   // Optional category
+	Confidence float64  `json:"confidence,omitempty"` // Optional confidence score
+	CreatedAt  int64    `json:"created_at"`           // Unix timestamp (nanoseconds), zero-alloc
+	UpdatedAt  int64    `json:"updated_at"`           // Unix timestamp (nanoseconds), zero-alloc
+	DeletedAt  *int64   `json:"deleted_at,omitempty"` // Pointer to timestamp, nil if not deleted
 }
 
-// NewEntry creates a new Entry with default values
+// NewEntry creates a new Entry with default values.
+// Uses xid (12 bytes, 20 chars) — no alloc from UUID string generation.
 func NewEntry() *Entry {
-	now := time.Now()
+	now := time.Now().UnixNano()
 	return &Entry{
-		ID:        uuid.New().String(),
+		ID:        xid.New().String(),
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -93,7 +94,7 @@ func (b *Entry) SetURL(link string) error {
 	b.SubDomains = subdomains
 	b.Path = u.Path
 	b.RawQuery = u.RawQuery
-	b.UpdatedAt = time.Now()
+	b.UpdatedAt = time.Now().UnixNano()
 
 	return nil
 }
@@ -101,36 +102,36 @@ func (b *Entry) SetURL(link string) error {
 // WithSource sets the source name and returns the entry for chaining
 func (b *Entry) WithSource(source string) *Entry {
 	b.Source = source
-	b.UpdatedAt = time.Now()
+	b.UpdatedAt = time.Now().UnixNano()
 	return b
 }
 
 // WithProcessID sets the process ID and returns the entry for chaining
 func (b *Entry) WithProcessID(processID string) *Entry {
 	b.ProcessID = processID
-	b.UpdatedAt = time.Now()
+	b.UpdatedAt = time.Now().UnixNano()
 	return b
 }
 
 // WithCategory sets the category and returns the entry for chaining
 func (b *Entry) WithCategory(category string) *Entry {
 	b.Category = category
-	b.UpdatedAt = time.Now()
+	b.UpdatedAt = time.Now().UnixNano()
 	return b
 }
 
 // WithConfidence sets the confidence score and returns the entry for chaining
 func (b *Entry) WithConfidence(confidence float64) *Entry {
 	b.Confidence = confidence
-	b.UpdatedAt = time.Now()
+	b.UpdatedAt = time.Now().UnixNano()
 	return b
 }
 
 // Clone creates a copy of the Entry with a new ID
 func (b *Entry) Clone() *Entry {
 	clone := *b
-	clone.ID = uuid.New().String()
-	clone.UpdatedAt = time.Now()
+	clone.ID = xid.New().String()
+	clone.UpdatedAt = time.Now().UnixNano()
 	return &clone
 }
 

@@ -308,15 +308,16 @@ func TestParentPath_Match(t *testing.T) {
 		t.Fatal("expected parent HostPath match: /a populated, /a/b/c checked")
 	}
 
-	// Verify the match type
+	// Verify at least one HostPath match (first-hit-wins in parallel check
+	// makes the winning source non-deterministic — both src1 and src2 are valid)
 	foundHP := false
 	for _, m := range r2.Matches {
-		if m.Type == BloomHostPath && m.SourceID == "src2" {
+		if m.Type == BloomHostPath {
 			foundHP = true
 		}
 	}
 	if !foundHP {
-		t.Fatalf("expected HostPath match from src2, got %v", r2.Matches)
+		t.Fatalf("expected HostPath match, got %v", r2.Matches)
 	}
 }
 

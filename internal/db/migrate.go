@@ -54,9 +54,9 @@ CREATE TABLE IF NOT EXISTS entries (
     confidence  REAL DEFAULT 1.0,
     ip          TEXT,
     full_url    TEXT,
-    created_at  DATETIME,
-    updated_at  DATETIME,
-    deleted_at  DATETIME,
+    created_at  INTEGER,
+    updated_at  INTEGER,
+    deleted_at  INTEGER,
     UNIQUE (source_url, source)
 );
 
