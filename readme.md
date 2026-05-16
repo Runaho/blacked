@@ -381,5 +381,5 @@ MIT — see [LICENSE](LICENSE).
 ---
 
 <div align="center">
-  <sub>built with 🖤</sub>
+  <sub>Built with ❤️ for better cybersecurity</sub>
 </div>
