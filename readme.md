@@ -373,23 +373,6 @@ internal/
 
 ---
 
-## 🗺️ Branch Strategy
-
-```
-main                    — stable source of truth
-feat/blacked-mvp        — MVP accumulation branch
-
-Phase branches (branch FROM feat/blacked-mvp, merge back):
-  feat/blacked-mvp/phase1-schema-redesign
-  feat/blacked-mvp/phase2-provider-source
-  feat/blacked-mvp/phase3-multi-bloom
-  feat/blacked-mvp/phase4-query-core
-  feat/blacked-mvp/phase5-scoring
-```
-
-All new development branches **from `main`**. `fixes` and `road-map-improvements` branches are **not trusted** for new work.
-
----
 
 ## 📜 License
 
