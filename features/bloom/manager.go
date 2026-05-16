@@ -81,13 +81,17 @@ func (bm *BloomManager) PopulateEntry(sourceID string, keys *URLKeys) {
 
 // determineBloomTarget picks the single bloom type for a provider entry.
 // Decision tree (most specific first):
-//  1. File + Query → FullURL (most specific)
-//  2. File (extension present) → File bloom
-//  3. HostPath (no file extension) → HostPath bloom
-//  4. Host only (subdomain ≠ domain) → Host bloom
-//  5. Bare domain (host == domain) → Domain bloom
-//  6. IP → IP bloom
+//  1. IP address → IP bloom (IP is absolute, path irrelevant)
+//  2. File + Query → FullURL (most specific)
+//  3. File (extension present) → File bloom
+//  4. HostPath (no file extension) → HostPath bloom
+//  5. Host only (subdomain ≠ domain) → Host bloom
+//  6. Bare domain (host == domain) → Domain bloom
 func determineBloomTarget(keys *URLKeys) (BloomType, string) {
+	// 0. IP → IP bloom (takes priority — IP is absolute identification)
+	if keys.IP != "" {
+		return BloomIP, keys.IP
+	}
 	// 1. File + Query → FullURL
 	if keys.File != "" && path.Ext(keys.File) != "" && keys.Query != "" && keys.Host != "" && keys.Path != "" {
 		return BloomFullURL, keys.Host + keys.Path + "?" + keys.Query

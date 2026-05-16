@@ -241,62 +241,33 @@ func TestBlacked_BloomE2E(t *testing.T) {
 	// ------------------------------------------------------------------
 	t.Run("IPBloom", func(t *testing.T) {
 		bm := bloom.NewBloomManager(1000)
-		mustPopulate(t, bm, "urlhaus", "http://192.168.1.1:8080/malware") // → determineBloomTarget?
+		// "http://192.168.1.1:8080/malware" → IP="192.168.1.1", determineBloomTarget
+		// now checks IP first (rule 0), so it goes to BloomIP "192.168.1.1"
+		mustPopulate(t, bm, "urlhaus", "http://192.168.1.1:8080/malware")
 		srv := setupMinimalServer(t, bm)
 		defer srv.Close()
 
-		// Let's see what target it gets: ParseURL("192.168.1.1:8080/malware") with no scheme
-		// Actually we pass "http://192.168.1.1:8080/malware"
-		// Hostname = "192.168.1.1", domain = ExtractDomainAndSubDomains("192.168.1.1") → probably returns "192.168.1.1"
-		// Host == Domain? "192.168.1.1" == "192.168.1.1" → yes
-		// HostPath exists → BloomHostPath "192.168.1.1/malware"
-		// IP field also set → but HostPath takes precedence in determineBloomTarget!
+		// Check same IP — should hit IP bloom
+		status, lr, _ := e2eRequest(t, srv, "check", "http://192.168.1.1:8080/other-path")
+		require.Equal(t, 200, status)
+		require.True(t, lr.Likely)
 
-		// For pure IP bloom, populate a bare IP: "http://192.168.1.1" 
-		// Hostname="192.168.1.1", no path, Host==Domain → BloomDomain would win before IP check
-		// Actually host==domain for IP, so determineBloomTarget rule #4: bare domain case
+		hasIP := false
+		for _, m := range lr.Matches {
+			if m.Type == "ip" {
+				hasIP = true
+				require.Equal(t, "192.168.1.1", m.Key)
+				require.Equal(t, "urlhaus", m.SourceID)
+			}
+		}
+		require.True(t, hasIP, "expected IP bloom match")
 
-		// Let me just populate an entry that WILL go to IP bloom:
-		// Populate IP-only: "http://192.168.1.1" → host=="192.168.1.1", domain=="192.168.1.1", ip=="192.168.1.1"
-		// DetermineBloomTarget: rule 4: host!=nil && domain!=nil && host==domain → BloomDomain "192.168.1.1"
-		// So IP-only bare IP goes to Domain bloom, not IP bloom.
+		// Different IP → miss
+		status2, lr2, _ := e2eRequest(t, srv, "check", "http://10.0.0.1/test")
+		require.Equal(t, 204, status2)
+		require.False(t, lr2.Likely)
 
-		// For IP bloom test, we need an entry that goes to IP bloom:
-		// What if we populate "http://192.168.1.1" but then check a different IP "10.0.0.1"?
-		// Domain bloom wouldn't match different IPs.
-		// Actually IP bloom is a separate bloom set. Let me check when an entry gets IP:
-		// determineBloomTarget checks in order, IP is LAST (rule 7). So it only gets IP if
-		// none of Domain/Host/HostPath conditions trigger.
-		// 
-		// For bare IP with no path: host==domain → rule 4 (Domain) fires first.
-		// So IP bloom is never populated for bare IPs!
-		// 
-		// Let's check what happens with "http://192.168.1.1/malware":
-		// HostPath exists → rule 3 (HostPath) fires before IP.
-		//
-		// IP bloom is only reached if the URL has IP but NOT HostPath, AND host≠domain.
-		// But for IP, host always == domain since ExtractDomainAndSubDomains returns the IP.
-		//
-		// So IP bloom is effectively unreachable via PopulateEntry from ParseURL output.
-		// That's a design issue but not one we need to fix in the test — the bloom set exists
-		// and we can still verify it works by directly adding to the set.
-
-		// Directly populate IP bloom set to verify it stores and checks
-		ipSet := bm.GetSet(bloom.BloomIP)
-		require.NotNil(t, ipSet, "IP bloom set should exist")
-		ipSet.Add("urlhaus", "192.168.1.1")
-
-		status, lr, _ := e2eRequest(t, srv, "check", "http://192.168.1.1:8080/malware")
-		// ParseURL gives IP="192.168.1.1", GenerateCheckKeys includes Domain→Host→HostPath→File→FullURL
-		// but NOT IP directly in the chain! Looking at GenerateCheckKeys...
-		// It generates: Domain, Host, HostPath parents, File, FullURL — no explicit IP check.
-		// 
-		// So the IP bloom set can't be hit by GenerateCheckKeys either. It's only there
-		// as a data store. The IP check would need to be added to GenerateCheckKeys.
-		// For now, just verify the bloom set works directly.
-		_ = status
-		_ = lr
-		fmt.Println("  ⚠ IPBloom: IP filter is populated but not in check chain — design note")
+		fmt.Println("  ✓ IPBloom: IP URL → IP bloom match, different IP → miss")
 	})
 
 	// ------------------------------------------------------------------

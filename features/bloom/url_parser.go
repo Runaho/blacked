@@ -168,7 +168,7 @@ func (uk *URLKeys) KeysFor(types []BloomType) map[BloomType]string {
 }
 
 // GenerateCheckKeys builds the ordered check chain for a URL.
-// Order: Domain → Host → HostPath (parents) → File → FullURL.
+// Order: Domain → Host → IP → HostPath (parents) → File → FullURL.
 // Shallowest bloom first; first hit wins in parallel check.
 func (uk *URLKeys) GenerateCheckKeys() []CheckKey {
 	var keys []CheckKey
@@ -183,7 +183,12 @@ func (uk *URLKeys) GenerateCheckKeys() []CheckKey {
 		keys = append(keys, CheckKey{BloomHost, uk.Host})
 	}
 
-	// 3. HostPath variants — shallowest → deepest
+	// 3. IP (exact match — after host, before path)
+	if uk.IP != "" {
+		keys = append(keys, CheckKey{BloomIP, uk.IP})
+	}
+
+	// 4. HostPath variants — shallowest → deepest
 	if uk.Host != "" && uk.Path != "" {
 		for _, p := range parentPaths(uk.Path) {
 			keys = append(keys, CheckKey{BloomHostPath, uk.Host + p})
