@@ -230,7 +230,7 @@ func (p Providers) processProvider(
 	// Fetch data
 	fetchSpan := trace.SpanFromContext(ctx)
 	fetchSpan.AddEvent("fetching data from source")
-	reader, meta, err := utils.GetResponseReader(source, provider.Fetch, name, strProcessID)
+	reader, meta, err := utils.GetResponseReader(source, provider.Fetch, name, strProcessID, 24*time.Hour)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to fetch data")

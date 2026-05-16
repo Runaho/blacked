@@ -37,7 +37,7 @@ type ResponseMetadata struct {
 	Description string `json:"description,omitempty"` // Example of storing a description
 }
 
-func GetResponseReader(sourceURL string, fetchFunc func() (io.Reader, error), providerName string, processID string) (io.Reader, *ResponseMetadata, error) {
+func GetResponseReader(sourceURL string, fetchFunc func() (io.Reader, error), providerName string, processID string, cacheTTL time.Duration) (io.Reader, *ResponseMetadata, error) {
 	cfg := config.GetConfig()
 	storePath := cfg.Collector.StorePath
 	storeResponses := cfg.Collector.StoreResponses
@@ -45,7 +45,7 @@ func GetResponseReader(sourceURL string, fetchFunc func() (io.Reader, error), pr
 	dataFilename, metaFilename := generateFilenames(storePath, providerName)
 
 	if storeResponses {
-		reader, meta, err := getStoredResponse(dataFilename, metaFilename)
+		reader, meta, err := getStoredResponse(dataFilename, metaFilename, cacheTTL)
 		if err == nil {
 			log.Info().Str("file", dataFilename).Str("process_id", meta.ProcessID).Msg("Using stored response")
 			return reader, meta, nil
@@ -75,7 +75,7 @@ func GetResponseReader(sourceURL string, fetchFunc func() (io.Reader, error), pr
 		}
 
 		// Get a fresh reader from the saved file to avoid consuming the original reader
-		i, _, e := getStoredResponse(dataFilename, metaFilename) // Return stored response reader after saving (or attempting to save)
+		i, _, e := getStoredResponse(dataFilename, metaFilename, cacheTTL) // Return stored response reader after saving (or attempting to save)
 		return i, &metadata, e
 	}
 
@@ -83,7 +83,7 @@ func GetResponseReader(sourceURL string, fetchFunc func() (io.Reader, error), pr
 }
 
 // getStoredResponse attempts to open and return a reader for the stored response and metadata.
-func getStoredResponse(dataFilename string, metaFilename string) (io.Reader, *ResponseMetadata, error) {
+func getStoredResponse(dataFilename string, metaFilename string, cacheTTL time.Duration) (io.Reader, *ResponseMetadata, error) {
 	metaFile, err := os.Open(metaFilename)
 	if err != nil {
 		log.Err(err).Str("file", metaFilename).Msg("Metadata file not found")
@@ -96,7 +96,7 @@ func getStoredResponse(dataFilename string, metaFilename string) (io.Reader, *Re
 		return nil, nil, ErrDecodeMetadataFile
 	}
 
-	if time.Since(metadata.CreatedAt) > 24*time.Hour {
+	if cacheTTL > 0 && time.Since(metadata.CreatedAt) > cacheTTL {
 		log.Info().
 			Time("created", metadata.CreatedAt).
 			Str("processID", metadata.ProcessID).

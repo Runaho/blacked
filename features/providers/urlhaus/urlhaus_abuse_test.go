@@ -33,7 +33,7 @@ func TestParse(t *testing.T) {
 
 	log.Info().Str("process_id", strProcessID).Str("source", source).Str("name", name).Time("starts", startedAt).Msg("start processing data")
 	provider.SetProcessID(processID)
-	reader, meta, err := utils.GetResponseReader(source, provider.Fetch, name, strProcessID)
+	reader, meta, err := utils.GetResponseReader(source, provider.Fetch, name, strProcessID, 24*time.Hour)
 	if meta != nil {
 		log.Info().Str("process_id", strProcessID).Str("source", source).Str("name", name).TimeDiff("duration", time.Now(), startedAt).Msg("There is a meta data for the process changing the process id")
 		strProcessID = meta.ProcessID
