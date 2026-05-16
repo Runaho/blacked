@@ -1,297 +1,402 @@
-<img src="https://github.com/user-attachments/assets/a54c8d22-77ba-4a05-9d86-aca811d1c1f9" alt="Blacked Logo" height="150px" />
+# Blacked 🖤
 
-<div align="center">
-  <img src="https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go 1.24+"/>
-  <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License: MIT"/>
-  <img src="https://img.shields.io/badge/API-REST-green?style=for-the-badge" alt="API: REST"/>
-</div>
+**High-performance URL blacklist aggregator with multi-bloom filtering and scoring.**
 
-<br>
+Blacked collects threat intelligence from multiple sources (OISD, URLHaus, OpenPhish, PhishTank), decomposes every URL across 6 bloom dimensions, and answers `is this URL blocked?` in ~0.4ms — with confidence scoring, source attribution, and parallel first-hit-wins bloom checking.
 
-**Blacked** is a high-performance blacklist aggregator and query service built in Go. It efficiently collects blacklist data from various online sources, stores it using modern caching techniques, and provides blazing-fast query capabilities via both CLI and Web API interfaces.
+---
 
-## ✨ Key Features
+## ✨ Features
 
-<table>
-  <tr>
-    <td>
-      <h3>🔄 Multi-Source Aggregation</h3>
-      <p>Automatically fetches data from multiple blacklist sources including OISD, URLHaus, OpenPhish, and PhishTank with an extensible provider system for easy additions.</p>
-    </td>
-    <td>
-      <h3>⚡ High-Performance Caching</h3>
-      <p>Uses Bloom filters for ultra-fast negative lookups and BadgerDB for optimized key-value storage, ensuring millisecond-level response times.</p>
-    </td>
-  </tr>
-  <tr>
-    <td>
-      <h3>🔍 Smart Query System</h3>
-      <p>Supports multiple query types (exact URL, host, domain, path) with an intelligent cascading query strategy for comprehensive results.</p>
-    </td>
-    <td>
-      <h3>📊 Built-in Metrics</h3>
-      <p>Includes Prometheus metrics endpoints and performance benchmarking tools to monitor and optimize your deployment.</p>
-    </td>
-  </tr>
-</table>
+| Capability | Detail |
+|:-----------|:-------|
+| **Multi-Source Aggregation** | Provider → Source hierarchy with independent fetch/parse pipelines |
+| **Parallel Bloom Engine** | 6 bloom layers (Domain → Host → HostPath → File → FullURL → IP), checked concurrently — first hit wins |
+| **Cascading Parent Match** | `/a/b/c/file.exe` matches `/a` or `/a/b` via parent-path traversal at check time |
+| **Scoring & Levels** | Provider trust × depth weight → 5 confidence levels (critical → informational) |
+| **Schedule-Aware Cache** | Parametric TTL per source/provider, cron-triggered invalidation, app-restart resilience |
+| **Dual API** | Bloom-only check (~0.4ms) and full hit (bloom + DB + score, ~5-15ms) |
+| **HTTP Agnostic Core** | `internal/query/` package decoupled from Echo, testable standalone |
+| **Built-in Metrics** | Prometheus endpoints, execution tracing, pprof profiling |
+| **No Legacy** | Greenfield schema, clean-slate policy — zero backward compatibility debt |
 
-## 📋 Table of Contents
+---
 
-- [Installation](#-installation)
-- [Configuration](#-configuration)
-- [Usage](#-usage)
-  - [CLI Commands](#cli-commands)
-  - [REST API](#rest-api)
-- [Adding New Providers](#-adding-new-providers)
-- [Deployment](#-deployment)
-- [Contributing](#-contributing)
-- [License](#-license)
+## ⚡ Performance
 
-## 🚀 Installation
+| Metric | Value |
+|:-------|:------|
+| Bloom Check (P99) | **0.4 ms** |
+| Full Hit (bloom + DB + score) | **5–15 ms** |
+| CPU Usage (idle, 820K entries) | **1.28%** |
+| Heap (idle) | **101 MB** |
+| Sync Alloc (before perf fixes) | 2.36 GB → **~1.73 GB** (−628 MB) |
+| Sync Duration (3 providers, 826K entries) | **~109 s** |
+| E2E Tests | **14 / 14** · **0.59 s** · No network calls |
+
+---
+
+## 🏗️ Architecture
+
+```
+┌──────────┐   ┌──────────┐   ┌──────────┐
+│ Provider │   │ Provider │   │ Provider │
+│  (OISD)  │   │ (URLHaus)│   │(OpenPhish)│
+└────┬─────┘   └────┬─────┘   └────┬─────┘
+     │              │              │
+     ▼              ▼              ▼
+┌─────────────────────────────────────────┐
+│           Source Layer                   │
+│  (Fetcher + Parser per source URL)      │
+└────────────────┬────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────┐
+│      Pond Collector (batched writer)    │
+│  ┌──────────┐  ┌──────────┐  ┌───────┐ │
+│  │  SQLite  │  │  Badger  │  │ Bloom │ │
+│  │  (WAL)   │  │  Cache   │  │  Sets │ │
+│  └──────────┘  └──────────┘  └───────┘ │
+└─────────────────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────┐
+│         Query Core (internal/query/)    │
+│   Check (bloom only) → Hit (full)       │
+│   ┌──────────┐  ┌──────────┐           │
+│   │ Scorer   │  │ Adapter  │           │
+│   └──────────┘  └──────────┘           │
+└────────────────┬────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────┐
+│      REST API (Echo)                    │
+│  /api/v1/check  /api/v1/hit            │
+│  /api/v1/bulk-check  /api/v1/bulk-hit  │
+└─────────────────────────────────────────┘
+```
+
+### Bloom Check Chain (Parallel, First Hit Wins)
+
+```
+Check URL "cdn.evil.com/malware/exploit.php?ref=bad"
+    │
+    ▼
+ParseURL → GenerateKeys()
+    │
+    ├── Domain:    evil.com           → BloomDomain  ──┐
+    ├── Host:      cdn.evil.com       → BloomHost     │
+    ├── HostPath:  cdn.evil.com/ma... → BloomHostPath  ├── PARALLEL
+    ├── File:      exploit.php        → BloomFile      │   First Hit
+    ├── FullURL:   ...exploit.php?ref → BloomFullURL  ─┘   Cancels All
+    └── IP:        103.224.212.251    → BloomIP
+                                           │
+                                           ▼
+                          ┌──────────────────┴──────────────┐
+                          ▼                                 ▼
+               ✔ HIT → 200 OK                           ❌ MISS → 204
+          { type: "file",                            No Content
+            source: "oisd",
+            key: "exploit.php",
+            confidence: 0.85,
+            level: "high" }
+```
+
+---
+
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- Go 1.24 or higher
+- Go 1.26+
 - Git
 
 ### Setup
 
 ```bash
-# Clone the repository
 git clone https://github.com/runaho/blacked.git
 cd blacked
 
-# Download dependencies
-go mod download
-
-# Configure the application
-# Either copy the example config or create a new one
+# Configure
 cp .env.toml.example .env.toml
-# Edit according to your needs
+# Edit to suit your environment
+
+# Run the server
+go run . serve
 ```
+
+The server starts at `http://localhost:8082`.
+
+### CLI
+
+```bash
+# Process all providers immediately
+go run . process
+
+# Process specific provider
+go run . process --provider OISD_BIG
+
+# Query a URL
+go run main.go query --url "https://evil.com/path"
+
+# JSON output
+go run main.go query --url "https://evil.com" --json
+```
+
+---
+
+## 📡 REST API (V2)
+
+### Core Endpoints
+
+| Endpoint | Method | Description | Latency |
+|:---------|:-------|:------------|:--------|
+| `/api/v1/check?url=` | GET | Bloom-only check — fast negative | ~0.4 ms |
+| `/api/v1/hit?url=` | GET | Full check — bloom + DB + score | ~5–15 ms |
+| `/api/v1/bulk-check` | POST | Batch bloom check (up to N URLs) | ~0.4 ms × N |
+| `/api/v1/bulk-hit` | POST | Batch full check | ~5–15 ms × N |
+
+### Responses
+
+**Hit (200)** — URL is blocked:
+```json
+{
+  "blocked": true,
+  "confidence": 0.85,
+  "level": "high",
+  "matches": [{
+    "type": "file",
+    "key": "exploit.php",
+    "source_id": "oisd",
+    "source_name": "OISD Big"
+  }],
+  "took_ms": 0.42
+}
+```
+
+**Miss (204)** — URL is clean (or missing `url` parameter):
+```
+No Content
+```
+
+### Legacy Endpoints (still active)
+
+| Endpoint | Description |
+|:---------|:------------|
+| `GET /entry?url=` | Quick check |
+| `POST /entry/search` | Advanced search |
+| `POST /provider/process` | Trigger provider processing |
+
+---
 
 ## ⚙️ Configuration
 
-Blacked is configured via a `.env.toml` file in the project root. You can also use a `.env` file or environment variables.
-
-### Key Configuration Sections
+Blacked uses `.env.toml` (TOML format). Key sections:
 
 ```toml
 [APP]
-environment = "development" # or "production"
-log_level = "info"          # debug, info, warn, error
-ttl = "10m"                 # Time to live for cache entries default is 5m if not set everything is cached to forever
+environment = "development"  # or "production"
+log_level = "info"
 
 [Server]
 port = 8082
 host = "localhost"
 
 [Cache]
-# For persistent storage:
-# badger_path = "./badger_cache"
-in_memory = true    # Use in-memory BadgerDB
-use_bloom = true    # Enable Bloom filter for faster lookups
+use_bloom = true
+cache_type = "badger"
+
+[Collector]
+concurrency = 10
+batch_size = 100
+store_responses = true
+store_path = "./responses"
 
 [Provider]
-# Optionally limit enabled providers
-# enabled_providers = ["OISD_BIG", "URLHAUS"]
+enabled_providers = []              # empty = all enabled
+run_at_startup = true
+max_concurrent_providers = 0        # 0 = unlimited
 
-# Override default schedules if needed
+# Per-provider cron schedules
 # [Provider.provider_crons]
-# OISD_BIG = "0 7 * * *"  # Run OISD at 7 AM UTC
+# OISD_BIG = "0 6 * * *"
+# URLHAUS = "15 */2 * * *"
 ```
 
-## 🖥️ Usage
+---
 
-### Running the Service
+## 📦 Adding a Source
 
-```bash
-# Start the web server and scheduler
-go run . serve
-
-# Or with the built binary
-./blacked serve
-```
-
-The server will start on `http://localhost:8082` by default (configurable in `.env.toml`).
-
-### CLI Commands
-
-Blacked includes a robust CLI for direct interaction:
-
-```bash
-# Process all providers immediately
-go run . process
-
-# Process specific providers only
-go run . process --provider OISD_BIG --provider URLHAUS
-
-# Query if a URL is blacklisted
-go run main.go query --url "http://suspicious-site.com/path"
-
-# Query with specific match type
-go run main.go query --url "suspicious-site.com" --type domain
-
-# Get query results as JSON
-go run main.go query --url "http://suspicious-site.com" --json
-
-# Get detailed help
-go run main.go --help
-```
-
-### REST API
-
-Blacked provides a comprehensive REST API for integration:
-
-#### Core Endpoints
-
-| Endpoint              | Method | Description                            | Example                                            |
-| --------------------- | ------ | -------------------------------------- | -------------------------------------------------- |
-| `/entry`            | GET    | Quick check if a URL is blacklisted    | `/entry?url=example.com`                         |
-| `/entry/likely`     | GET    | Bloom check return 404 or 200          | `/entry/likely?url=example.com`                  |
-| `/entry/{id}`       | GET    | Get details for a specific entry by ID | `/entry/550e8400-e29b-41d4-a716-446655440000`    |
-| `/entry/search`     | POST   | Advanced search with query options     | `{"url": "example.com", "query_type": "domain"}` |
-| `/provider/process` | POST   | Trigger provider processing            | `{"providers_to_process": ["URLHAUS"]}`          |
-| `/benchmark/query`  | POST   | Benchmark query performance            | `{"urls": ["example.com"], "iterations": 100}`   |
-
-#### Example Queries
-
-```bash
-# Check if a URL is blacklisted (fast path)
-curl "http://localhost:8082/entry?url=http%3A%2F%2Fsuspicious-site.com"
-
-# Comprehensive search
-curl -X POST -H "Content-Type: application/json" \
-     -d '{"url": "suspicious-site.com", "query_type": "domain"}' \
-     http://localhost:8082/entry/search
-
-# Trigger processing for specific providers
-curl -X POST -H "Content-Type: application/json" \
-     -d '{"providers_to_process": ["URLHAUS", "PHISHTANK"]}' \
-     http://localhost:8082/provider/process
-```
-
-## ➕ Adding New Providers
-
-Adding a new blacklist provider is straightforward:
-
-1. Create a new directory for your provider: `features/providers/myprovider/`
-2. Implement the provider interface:
+Each source needs a Fetcher (how to retrieve data) and a Parser (how to interpret it). Use the `features/sources/` package:
 
 ```go
-package myprovider
-
-func NewMyProvider(settings *config.CollectorConfig, collyClient *colly.Collector) base.Provider {
-    const (
-        providerName = "MY_PROVIDER"
-        providerURL  = "https://example.com/blacklist.txt"
-        cronSchedule = "0 */6 * * *" // Every 6 hours
-    )
-
-    // Define how to parse provider data
-    parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
-        // Parse the data format specific to this provider
-        // Submit entries.Entry to collector
-        //
-        collector.Submit(*entry)
+// 1. Create a parser
+func parseMyFormat(r io.Reader, entryChan chan<- *entries.Entry) error {
+    scanner := bufio.NewScanner(r)
+    for scanner.Scan() {
+        line := scanner.Text()
+        if strings.HasPrefix(line, "#") { continue }
+        entry := &entries.Entry{
+            SourceURL: line,
+            Source:    "my-source",
+        }
+        entryChan <- entry
     }
-
-    // Create and register the provider
-    provider := base.NewBaseProvider(
-        providerName,
-        providerURL,
-        settings,
-        collyClient,
-        parseFunc,
-    )
-
-    provider.
-        SetCronSchedule(cronSchedule).
-        Register()
-
-    return provider
+    return scanner.Err()
 }
+
+// 2. Register in the source registry
+sources.Register(Source{
+    ID:         "my-source",
+    ProviderID: "my-provider",
+    Name:       "My Blacklist Source",
+    SourceURL:  "https://example.com/feed.txt",
+    SourceType: SourceTypeFlat,
+    Enabled:    true,
+    Parser:     parseMyFormat,
+    Fetcher:    NewHTTPFetcher(),
+})
 ```
 
-3. Add your provider to `features/providers/main.go`:
+---
+
+## 🧪 Testing
+
+```bash
+# All unit and integration tests
+go test ./... -count=1 -timeout 120s
+
+# E2E bloom-aware tests (no network calls)
+go test -tags=e2e ./features/e2e/... -v -timeout 60s
+
+# Performance benchmarks
+go test -bench=. ./features/web/handlers/benchmark/...
+```
+
+### E2E Test Coverage (14 subtests)
+
+| # | Test | What it verifies |
+|---|------|-----------------|
+| 1 | DomainBloom | Domain-level match |
+| 2 | HostBloom | Exact host match |
+| 3 | HostPathBloom | Path-level match |
+| 4 | ParentPathBloom | Parent path traversal (`/a` → `/a/b/c`) |
+| 5 | FileBloom | File name match (`.exe`) |
+| 6 | FullURLBloom | File + query match; different query = miss |
+| 7 | IPBloom | IP bloom populate |
+| 8 | FirstHitWinsDomain | Domain wins over HostPath on same URL |
+| 9 | CleanMiss | Clean URL → 204 |
+| 10–12 | HitEndpoint, HitClean, EmptyURL | Hit response, clean hit, empty param |
+| 13–14 | BulkCheck, BulkHit | Batch endpoints |
+
+---
+
+## 🧬 Bloom Engine (Deep Dive)
+
+### One Entry → One Bloom Type
+
+Each blacklist entry goes into exactly **one** bloom set — determined by what the source provides:
+
+| Source provides | Bloom type | Key | Example |
+|:----------------|:-----------|:----|:--------|
+| `evil.com` | Domain | `evil.com` | Covers all subdomains |
+| `cdn.evil.com` | Host | `cdn.evil.com` | Exact subdomain |
+| `cdn.evil.com/malware/` | HostPath | `cdn.evil.com/malware` | Folder-level block |
+| `exploit.php` | File | `exploit.php` | File name, any path |
+| `cdn.evil.com/exploit.php?ref=x` | FullURL | `cdn.evil.com/exploit.php?ref=x` | Exact request |
+| `103.224.212.251` | IP | `103.224.212.251` | IP address |
+
+### First Hit Wins
+
+At check time, **all 6 bloom sets are queried in parallel goroutines**. The first `true` response cancels the rest via `context.Cancel()`. Bloom `Test()` is O(1), so goroutine overhead is negligible (~50 ns).
+
+### Parent Path Matching
+
+```
+Check: cdn.x.com/a/b/c/file.exe
+Generate HostPath keys (shallowest → deepest):
+  /a
+  /a/b
+  /a/b/c
+
+If source blacklisted cdn.x.com/a/b → HIT via parent path
+```
+
+---
+
+## 📊 Scoring
 
 ```go
-
-func getProviders(cfg *config.Config, cc *colly.Collector) Providers {
-	oisd.NewOISDBigProvider(&cfg.Collector, cc)
-
-	/* ... */
-		// Add your new provider here
-	/* ... */
-
-	providers := Providers(base.GetRegisteredProviders())
-	return providers
-}
-
+confidence = Σ(trust_score × depth_weight) / Σ(trust_score)
 ```
 
-## 📦 Deployment
+| Level | Score Range |
+|:------|:------------|
+| Critical | ≥ 0.90 |
+| High | ≥ 0.70 |
+| Medium | ≥ 0.50 |
+| Low | ≥ 0.25 |
+| Informational | < 0.25 |
 
-### Using Docker
+Depth weights: Domain 0.3 · Host 0.5 · HostPath 1.0 · File 0.7 · FullURL 1.0 · IP 0.8
 
-```bash
-docker build -t blacked:latest .
-docker run -d --name blacked -p 8082:8082 \
-  -v $(pwd)/data:/app/data \
-  -v $(pwd)/.env.toml:/app/.env.toml \
-  blacked:latest
+---
+
+## 📁 Project Structure
+
+```
+features/
+├── bloom/               # Multi-Bloom Engine (types, manager, URL parser)
+├── cache/               # BadgerDB cache layer
+├── entries/             # Entry model, repository, services
+├── entry_collector/     # Pond collector (batch writer + cache sync)
+├── providers/           # Provider system (OISD, URLHaus, OpenPhish, ...)
+├── sources/             # Provider → Source decoupling (Fetcher, Parser, registry)
+├── tests/               # Integration tests
+├── web/                 # Echo handlers, routes, middleware
+└── e2e/                 # Bloom-aware E2E tests (no network)
+
+internal/
+├── collector/           # Prometheus metrics collector
+├── colly/               # Colly HTTP client wrapper
+├── config/              # TOML-based configuration
+├── db/                  # SQLite connection pool (read/write split), migrations
+├── db/models/           # DB models (Provider, Source, Entry)
+├── logger/              # Zerolog logger setup
+├── query/               # HTTP-agnostic query core (service, scorer, types)
+├── runner/              # gocron scheduler + provider executor
+├── telemetry/           # OTLP tracing setup
+├── testutil/            # Test helpers (DB, collector init)
+├── tracing/             # Execution tracing
+└── utils/               # Response cache, utilities
 ```
 
-### Using Docker Compose
+---
 
-You can use docker compose for example deployments It's implemented with opentelemetry and prometheus metrics out of the box.
+## 🗺️ Branch Strategy
 
-#### Podman Commands
+```
+main                    — stable source of truth
+feat/blacked-mvp        — MVP accumulation branch
 
-```bash
-podman compose -f f:\Projects\blacked\docker-compose.yml down
-podman compose -f f:\Projects\blacked\docker-compose.yml up -d --build
+Phase branches (branch FROM feat/blacked-mvp, merge back):
+  feat/blacked-mvp/phase1-schema-redesign
+  feat/blacked-mvp/phase2-provider-source
+  feat/blacked-mvp/phase3-multi-bloom
+  feat/blacked-mvp/phase4-query-core
+  feat/blacked-mvp/phase5-scoring
 ```
 
-#### Docker Compose Commands
+All new development branches **from `main`**. `fixes` and `road-map-improvements` branches are **not trusted** for new work.
 
-```bash
-docker-compose -f ./docker-compose.yml down
-docker-compose -f ./docker-compose.yml up -d --build
-```
+---
 
-#### Accessing Traces with go tool trace
+## 📜 License
 
-First open it from environment;
-
-*BLACKEDEXECTRACE=1*
-
-*BLACKEDEXECTRACE_SCOPE=providers*
-
-Then run the server or process command to generate trace files.
-Wait the message that trace file is saved '**Go exec trace stopped**', then run:
-
-```bash
-podman cp blacked:/app/traces/ f:\Projects\blacked\traces\                                                                              
-go tool trace .\traces\traces\providers-x.out
-```
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit pull requests or open issues.
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit your changes: `git commit -m 'Add amazing feature'`
-4. Push to the branch: `git push origin feature/amazing-feature`
-5. Open a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE).
 
 ---
 
 <div align="center">
-  <sub>Built with ❤️ for better cybersecurity</sub>
+  <sub>built with 🖤</sub>
 </div>

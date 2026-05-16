@@ -1,3 +1,0 @@
-{
-  "_comment": "Deprecated — E2E now uses inline test cases with bloom layer assertions. See blacked_e2e_test.go for the authoritative test data."
-}

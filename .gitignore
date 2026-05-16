@@ -37,3 +37,6 @@ blacked
 data
 go.work
 go.work.sum
+.swarm/
+.hermes/plans/
+.ai-review/
