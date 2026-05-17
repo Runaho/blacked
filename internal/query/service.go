@@ -71,13 +71,34 @@ func (qs *QueryService) Hit(ctx context.Context, urlStr string) (*QueryResponse,
 	if likely {
 		// Bloom says "yes" — confirm with DB if a repository is available.
 		// When repo is nil (tests), trust the bloom directly.
+		// Route DB confirmation by bloom match type:
+		//   domain → ExistsByDomain (covers all subdomains)
+		//   host   → ExistsByHost
+		//   ip     → ExistsByIP
+		//   other  → ExistsByHost (hostname from URL)
 		confirmed := true
 		if qs.repo != nil {
-			host := hostname(urlStr)
-			if host != "" {
-				exists, err := qs.repo.ExistsByHost(ctx, host)
-				if err != nil || !exists {
-					confirmed = false
+			confirmed = false
+			for _, m := range matches {
+				var exists bool
+				var err error
+				switch m.Type {
+				case "domain":
+					exists, err = qs.repo.ExistsByDomain(ctx, m.Key)
+				case "host":
+					exists, err = qs.repo.ExistsByHost(ctx, m.Key)
+				case "ip":
+					exists, err = qs.repo.ExistsByIP(ctx, m.Key)
+				default:
+					host := hostname(urlStr)
+					if host == "" {
+						continue
+					}
+					exists, err = qs.repo.ExistsByHost(ctx, host)
+				}
+				if err == nil && exists {
+					confirmed = true
+					break
 				}
 			}
 		}

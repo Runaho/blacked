@@ -63,4 +63,11 @@ type EntryRepository interface {
 	// ExistsByHost confirms whether any non-deleted entry exists for a hostname.
 	// Used by Hit to verify bloom positives against the DB.
 	ExistsByHost(ctx context.Context, host string) (bool, error)
+
+	// ExistsByDomain confirms whether any non-deleted entry exists for a domain.
+	// Covers all subdomains — matches on the domain column.
+	ExistsByDomain(ctx context.Context, domain string) (bool, error)
+
+	// ExistsByIP confirms whether any non-deleted entry exists for an IP address.
+	ExistsByIP(ctx context.Context, ip string) (bool, error)
 }

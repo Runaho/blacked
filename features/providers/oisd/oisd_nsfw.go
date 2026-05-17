@@ -15,7 +15,7 @@ import (
 // NewOISDNSFWProvider creates a new OISD NSFW provider
 func NewOISDNSFWProvider(settings *config.CollectorConfig, collyClient *colly.Collector) base.Provider {
 	const (
-		providerName = "OISD_NSFW"
+		providerName = "oisd-nsfw"
 		providerURL  = "https://nsfw.oisd.nl/domainswild"
 		cronSchedule = "22 6 * * *" // Run at 6:22 AM every day
 	)

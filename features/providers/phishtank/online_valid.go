@@ -22,7 +22,7 @@ type PhishTankEntry struct {
 
 func NewPhishTankProvider(settings *config.CollectorConfig, collyClient *colly.Collector) base.Provider {
 	const (
-		providerName = "PHISHTANK"
+		providerName = "phishtank-online-valid"
 		providerURL  = "https://data.phishtank.com/data/online-valid.json"
 		cronSchedule = "45 */6 * * *" // Every 6 hours at 45 minutes past the hour
 	)

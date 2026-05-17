@@ -14,7 +14,7 @@ import (
 
 func NewOpenPhishFeedProvider(settings *config.CollectorConfig, collyClient *colly.Collector) base.Provider {
 	const (
-		providerName = "OPENPHISH"
+		providerName = "openphish-feed"
 		providerURL  = "https://openphish.com/feed.txt"
 		cronSchedule = "30 */4 * * *" // Every 4 hours (30 minutes past the hour
 	)

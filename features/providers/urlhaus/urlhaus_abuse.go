@@ -15,7 +15,7 @@ import (
 // NewURLHausProvider creates a new URLhaus provider
 func NewURLHausProvider(settings *config.CollectorConfig, collyClient *colly.Collector) base.Provider {
 	const (
-		providerName = "URLHAUS"
+		providerName = "urlhaus-online"
 		providerURL  = "https://urlhaus.abuse.ch/downloads/text/"
 		cronSchedule = "15 */2 * * *  " // Every 2 hours (15 minutes past the hour
 	)

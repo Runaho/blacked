@@ -92,12 +92,24 @@ func (bs *BloomSet) GetSourceIDs() []string {
 	return ids
 }
 
-// ResetSource clears a specific source's filter.
+// ResetSource clears a specific source's filter and rebuilds the global
+// filter from the remaining source filters so stale keys are not kept alive.
 func (bs *BloomSet) ResetSource(sourceID string) {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
 
 	delete(bs.SourceFilters, sourceID)
+
+	// Rebuild global filter from remaining source filters.
+	// Bloom filters do not support deletion — the only way to remove keys
+	// is to reconstruct the union of what's left.
+	bs.Filter = bloom.NewWithEstimates(bs.expectedItems, 0.01)
+	for _, sf := range bs.SourceFilters {
+		if sf != nil {
+			bs.Filter.Merge(sf)
+		}
+	}
+
 	log.Debug().Str("bloom_type", string(bs.Type)).Str("source_id", sourceID).Msg("Reset source bloom filter")
 }
 

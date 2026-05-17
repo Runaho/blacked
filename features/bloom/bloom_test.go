@@ -77,6 +77,14 @@ func TestBloomSetBasicOperations(t *testing.T) {
 		t.Fatal("expected source1 not to match after reset")
 	}
 
+	// source1 keys must NOT leak via global filter
+	if bs.Test("malicious.com") {
+		t.Fatal("expected global filter not to match source1 key after reset")
+	}
+	if bs.Test("evil.com") {
+		t.Fatal("expected global filter not to match source1 second key after reset")
+	}
+
 	// source2 should still work
 	if !bs.TestSource("source2", "phishing.com") {
 		t.Fatal("expected source2 to still work after source2 reset")

@@ -15,7 +15,7 @@ import (
 // NewOISDBigProvider creates a new OISD Big provider
 func NewOISDBigProvider(settings *config.CollectorConfig, collyClient *colly.Collector) base.Provider {
 	const (
-		providerName = "OISD_BIG"
+		providerName = "oisd-big"
 		providerURL  = "https://big.oisd.nl/domainswild2"
 		cronSchedule = "0 6 * * *" // Everyday at 6:00 AM
 	)
