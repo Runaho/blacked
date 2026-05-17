@@ -93,6 +93,18 @@ func (r *entryRepository) SearchEntries(ctx context.Context, filter query.Search
 	return out, nil
 }
 
+// ExistsByHost confirms whether any non-deleted entry exists for a hostname.
+func (r *entryRepository) ExistsByHost(ctx context.Context, host string) (bool, error) {
+	var exists bool
+	err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM entries WHERE host = ? AND deleted_at IS NULL LIMIT 1)
+	`, host).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("exists by host: %w", err)
+	}
+	return exists, nil
+}
+
 // GetEntryByFullURL looks up an exact source_url match (used by Hit after bloom positive).
 func (r *entryRepository) GetEntryByFullURL(ctx context.Context, fullURL string) (*query.Entry, error) {
 	row := r.db.QueryRowContext(ctx, `

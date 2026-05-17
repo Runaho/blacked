@@ -55,7 +55,7 @@ func (qs *QueryService) Likely(ctx context.Context, urlStr string) (*LikelyRespo
 	return resp, nil
 }
 
-// Hit performs a full check: bloom → scorer.
+// Hit performs a full check: bloom → DB confirmation → scorer.
 func (qs *QueryService) Hit(ctx context.Context, urlStr string) (*QueryResponse, error) {
 	likely, matches, err := qs.bloom.Check(urlStr)
 	if err != nil {
@@ -69,17 +69,37 @@ func (qs *QueryService) Hit(ctx context.Context, urlStr string) (*QueryResponse,
 	}
 
 	if likely {
-		resp.Blocked = true
+		// Bloom says "yes" — confirm with DB if a repository is available.
+		// When repo is nil (tests), trust the bloom directly.
+		confirmed := true
+		if qs.repo != nil {
+			host := hostname(urlStr)
+			if host != "" {
+				exists, err := qs.repo.ExistsByHost(ctx, host)
+				if err != nil || !exists {
+					confirmed = false
+				}
+			}
+		}
 
-		if qs.scorer != nil {
-			// Use Score(matches) for full depth-weighted formula:
-			// confidence = Σ(trust_score × depth_weight) / Σ(trust_score)
-			score, level := qs.scorer.Score(matches)
-			resp.Confidence = score
-			resp.Level = level
+		if confirmed {
+			resp.Blocked = true
+
+			if qs.scorer != nil {
+				// Use Score(matches) for full depth-weighted formula:
+				// confidence = Σ(trust_score × depth_weight) / Σ(trust_score)
+				score, level := qs.scorer.Score(matches)
+				resp.Confidence = score
+				resp.Level = level
+			} else {
+				resp.Confidence = 0.5
+				resp.Level = "medium"
+			}
 		} else {
-			resp.Confidence = 0.5
-			resp.Level = "medium"
+			// Bloom positive, DB negative → false positive. Not blocked.
+			resp.Blocked = false
+			resp.Confidence = 0.0
+			resp.Level = "informational"
 		}
 	} else {
 		resp.Confidence = 0.0
@@ -87,6 +107,15 @@ func (qs *QueryService) Hit(ctx context.Context, urlStr string) (*QueryResponse,
 	}
 
 	return resp, nil
+}
+
+// hostname extracts the hostname from a URL string.
+func hostname(urlStr string) string {
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
 }
 
 // BulkCheck performs fast bloom-only checks for multiple URLs (~0.4ms per URL).

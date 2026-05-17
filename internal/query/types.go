@@ -59,4 +59,8 @@ type Entry struct {
 type EntryRepository interface {
 	// SearchEntries queries the entries table with optional filters.
 	SearchEntries(ctx context.Context, filter SearchFilter) ([]Entry, error)
+
+	// ExistsByHost confirms whether any non-deleted entry exists for a hostname.
+	// Used by Hit to verify bloom positives against the DB.
+	ExistsByHost(ctx context.Context, host string) (bool, error)
 }
