@@ -209,7 +209,7 @@ Blacked uses `.env.toml` (TOML format). Key sections:
 
 ```toml
 [APP]
-environment = "development"  # or "production"
+environtment = "development"  # or "production"
 log_level = "info"
 
 [Server]
@@ -218,59 +218,70 @@ host = "localhost"
 
 [Cache]
 use_bloom = true
-cache_type = "badger"
+badger_path = ""
 
 [Collector]
-concurrency = 10
-batch_size = 100
-store_responses = true
-store_path = "./responses"
+batch_size = 1000
+cron_schedule = "0 0 * * *"
 
-[Provider]
-enabled_providers = []              # empty = all enabled
-run_at_startup = true
-max_concurrent_providers = 0        # 0 = unlimited
+# Each provider is independently configured.
+# enabled = false → provider is skipped entirely.
+[providers.oisd-big]
+enabled = true
+source_url = "https://big.oisd.nl/domainswild2"
+cron = "0 6 * * *"
+category = "blocklist"
+parser_workers = 4
+parser_batch_size = 1000
 
-# Per-provider cron schedules
-# [Provider.provider_crons]
-# OISD_BIG = "0 6 * * *"
-# URLHAUS = "15 */2 * * *"
+[providers.phishtank-online-valid]
+enabled = false
+source_url = "https://data.phishtank.com/data/{api_key}/online-valid.json"
+api_key = ""
+cron = "45 */6 * * *"
+category = "phishing"
 ```
+
+**All provider settings come from `.env.toml` — zero hard-coded URLs, crons, or categories.** API keys are never committed to code; they live in the `api_key` field of the provider block or are injected via environment variables.
 
 ---
 
-## 📦 Adding a Source
+## 📦 Adding a Provider
 
-Each source needs a Fetcher (how to retrieve data) and a Parser (how to interpret it). Use the `features/sources/` package:
+Each provider is a Go package in `features/providers/`. Add a new TOML block in `.env.toml`, then implement a constructor:
 
 ```go
-// 1. Create a parser
-func parseMyFormat(r io.Reader, entryChan chan<- *entries.Entry) error {
-    scanner := bufio.NewScanner(r)
-    for scanner.Scan() {
-        line := scanner.Text()
-        if strings.HasPrefix(line, "#") { continue }
-        entry := &entries.Entry{
-            SourceURL: line,
-            Source:    "my-source",
-            Category:  "malware",
-        }
-        entryChan <- entry
-    }
-    return scanner.Err()
-}
+// features/providers/myprovider/myprovider.go
+func NewMyProvider(cfg *config.Config, collyClient *colly.Collector) base.Provider {
+    opts, ok := cfg.Providers["myprovider"]
+    if !ok || opts == nil { return nil }          // not in .env.toml
+    if opts.Enabled != nil && !*opts.Enabled { return nil }
 
-// 2. Register in the source registry
-sources.Register(Source{
-    ID:         "my-source",
-    ProviderID: "my-provider",
-    Name:       "My Blacklist Source",
-    SourceURL:  "https://example.com/feed.txt",
-    SourceType: SourceTypeFlat,
-    Enabled:    true,
-    Parser:     parseMyFormat,
-    Fetcher:    NewHTTPFetcher(),
-})
+    sourceURL := base.ResolveURL(opts.SourceURL, opts.APIKey)
+    client := base.BuildCollyClientForProvider(collyClient, opts)
+
+    parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
+        return base.ParseLinesParallel(data, collector, "myprovider",
+            opts.ParserWorkers, opts.ParserBatchSize, func(line, processID string) (*entries.Entry, error) {
+                // ... parse logic ...
+            })
+    }
+
+    provider := base.NewBaseProvider("myprovider", sourceURL, opts.Category, client, parseFunc)
+    provider.SetCronSchedule(opts.Cron).Register()
+    return provider
+}
+```
+
+```toml
+# .env.toml
+[providers.myprovider]
+enabled = true
+source_url = "https://example.com/feed.txt"
+cron = "0 */6 * * *"
+category = "malware"
+parser_workers = 4
+parser_batch_size = 1000
 ```
 
 ---
@@ -369,8 +380,7 @@ features/
 ├── cache/               # BadgerDB cache layer
 ├── entries/             # Entry model, repository, services
 ├── entry_collector/     # Pond collector (batch writer + cache sync)
-├── providers/           # Provider system (OISD, URLHaus, OpenPhish, ...)
-├── sources/             # Provider → Source decoupling (Fetcher, Parser, registry)
+├── providers/           # Provider system (OISD, URLHaus, OpenPhish, PhishTank)
 ├── tests/               # Integration tests
 ├── web/                 # Echo handlers, routes, middleware
 └── e2e/                 # Bloom-aware E2E tests (no network)
