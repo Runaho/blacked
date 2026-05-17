@@ -19,8 +19,14 @@ feeds.db
 # Cache & response data
 *.dat
 *.txt
-/responses/
-responses/*.json
+**/responses/
+**/responses/*.json
+
+# Test data & exports (generated, not source)
+docs/
+features/tests/testdata/
+package-lock.json
+package.json
 
 # Config (contains secrets/keys)
 .env

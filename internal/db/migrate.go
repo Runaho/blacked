@@ -11,12 +11,9 @@ import (
 )
 
 // NewSchemaDDL contains the CREATE statements for the cleaned schema.
-// NOTE: Drops the legacy entries table first.
+// WARNING: Only run this on fresh databases or dev environments.
+// For production, use incremental migrations that preserve existing data.
 const NewSchemaDDL = `
-DROP TABLE IF EXISTS blacklist_entries;
-DROP TABLE IF EXISTS entries;
-DROP TABLE IF EXISTS source_fetch_log;
-
 CREATE TABLE IF NOT EXISTS providers (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL,

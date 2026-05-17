@@ -87,8 +87,9 @@ func IsDevMode() bool {
 	return (_config.APP.Environtment == "development")
 }
 
-// LoadScoringConfig reads config/scoring.toml and returns provider trust scores.
+// LoadScoringConfig reads config/scoring.toml and returns provider/source trust scores.
 // Returns nil if the file can't be loaded — callers should fall back to defaults.
+// SourceTrust scores override ProviderTrust scores when available.
 func LoadScoringConfig() map[string]float64 {
 	k := koanf.New(".")
 	if err := k.Load(file.Provider("config/scoring.toml"), toml.Parser()); err != nil {
@@ -96,27 +97,40 @@ func LoadScoringConfig() map[string]float64 {
 		return nil
 	}
 
-	raw := k.Get("ProviderTrust")
-	if raw == nil {
-		return nil
-	}
+	out := make(map[string]float64)
 
-	m, ok := raw.(map[string]any)
-	if !ok {
-		return nil
-	}
-
-	out := make(map[string]float64, len(m))
-	for key, val := range m {
-		switch v := val.(type) {
-		case float64:
-			out[key] = v
-		case int64:
-			out[key] = float64(v)
-		case int:
-			out[key] = float64(v)
+	// Load ProviderTrust (fallback scores)
+	if raw := k.Get("ProviderTrust"); raw != nil {
+		if m, ok := raw.(map[string]any); ok {
+			for key, val := range m {
+				switch v := val.(type) {
+				case float64:
+					out[key] = v
+				case int64:
+					out[key] = float64(v)
+				case int:
+					out[key] = float64(v)
+				}
+			}
 		}
 	}
+
+	// Load SourceTrust (overrides provider defaults)
+	if raw := k.Get("SourceTrust"); raw != nil {
+		if m, ok := raw.(map[string]any); ok {
+			for key, val := range m {
+				switch v := val.(type) {
+				case float64:
+					out[key] = v
+				case int64:
+					out[key] = float64(v)
+				case int:
+					out[key] = float64(v)
+				}
+			}
+		}
+	}
+
 	return out
 }
 

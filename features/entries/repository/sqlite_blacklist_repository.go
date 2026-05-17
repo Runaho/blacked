@@ -128,8 +128,8 @@ func (r *SQLiteRepository) GetAllEntries(ctx context.Context) ([]entries.Entry, 
 		var subDomainsStr string
 		var deletedAt sql.NullInt64 // Use sql.NullInt64 for nullable DATETIME in DB
 		err := rows.Scan(
-			&entry.ID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
-			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source,
+			&entry.ID, &entry.ProcessID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
+			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
 			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
 		)
 		if err != nil {
@@ -163,8 +163,8 @@ func (r *SQLiteRepository) GetEntryByID(ctx context.Context, id string) (*entrie
 
 	err := row.Scan(
 		&entry.ID, &entry.ProcessID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
-		&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source,
-		&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
+		&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
+		&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt,
 	)
 
 	if err != nil {
@@ -227,8 +227,8 @@ func (r *SQLiteRepository) GetEntriesByIDs(ctx context.Context, ids []string) ([
 
 		err := rows.Scan(
 			&entry.ID, &entry.ProcessID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
-			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source,
-			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
+			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
+			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt,
 		)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to scan row from SQLite")
@@ -273,8 +273,8 @@ func (r *SQLiteRepository) GetEntriesBySource(ctx context.Context, source string
 		var subDomainsStr string
 		var deletedAt sql.NullInt64 
 		err := rows.Scan(
-			&entry.ID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
-			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source,
+			&entry.ID, &entry.ProcessID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
+			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
 			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
 		)
 		if err != nil {
@@ -323,8 +323,8 @@ func (r *SQLiteRepository) GetEntriesByCategory(ctx context.Context, category st
 		var subDomainsStr string
 		var deletedAt sql.NullInt64 
 		err := rows.Scan(
-			&entry.ID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
-			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source,
+			&entry.ID, &entry.ProcessID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
+			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
 			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
 		)
 		if err != nil {

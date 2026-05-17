@@ -58,7 +58,7 @@ func (r *entryRepository) SearchEntries(ctx context.Context, filter query.Search
 	offset := max(filter.Offset, 0)
 
 	q := fmt.Sprintf(`
-		SELECT id, source_id, domain, host, path, file, query, login, ip, full_url, scheme, confidence, category
+		SELECT id, source, source_url, domain, host, path, raw_query, scheme, confidence, category
 		FROM entries
 		%s
 		ORDER BY created_at DESC
@@ -76,10 +76,10 @@ func (r *entryRepository) SearchEntries(ctx context.Context, filter query.Search
 	for rows.Next() {
 		var e query.Entry
 		var confidence sql.NullFloat64
+		var sourceURL, rawQuery sql.NullString
 		err := rows.Scan(
-			&e.ID, &e.SourceID,
-			&e.Domain, &e.Host, &e.Path, &e.File, &e.Query, &e.Login, &e.IP,
-			&e.FullURL, &e.Scheme, &confidence, &e.Category,
+			&e.ID, &e.SourceID, &sourceURL,
+			&e.Domain, &e.Host, &e.Path, &rawQuery, &e.Scheme, &confidence, &e.Category,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan entry: %w", err)

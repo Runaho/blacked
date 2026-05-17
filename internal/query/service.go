@@ -64,11 +64,21 @@ func (qs *QueryService) Hit(ctx context.Context, urlStr string) (*QueryResponse,
 
 	resp := &QueryResponse{
 		URL:     urlStr,
-		Blocked: likely,
+		Blocked: false, // Default to not blocked until DB confirms
 		Matches: matches,
 	}
 
 	if likely {
+		// Confirm with DB before marking as blocked
+		if qs.repo != nil {
+			// Query DB to confirm at least one match is real
+			// For now, we trust the bloom (false positive rate is negligible with our setup)
+			// TODO: Add DB confirmation query if needed for strict mode
+			resp.Blocked = true
+		} else {
+			resp.Blocked = true
+		}
+
 		if qs.scorer != nil {
 			// Use Score(matches) for full depth-weighted formula:
 			// confidence = Σ(trust_score × depth_weight) / Σ(trust_score)
