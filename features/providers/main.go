@@ -17,12 +17,18 @@ import (
 )
 
 func getProviders(cfg *config.Config, cc *colly.Collector) Providers {
-	oisd.NewOISDBigProvider(&cfg.Collector, cc)
-	oisd.NewOISDNSFWProvider(&cfg.Collector, cc)
-	urlhaus.NewURLHausProvider(&cfg.Collector, cc)
-
-	// They need to be updated
-	openphish.NewOpenPhishFeedProvider(&cfg.Collector, cc)
+	if p := oisd.NewOISDBigProvider(cfg, cc); p != nil {
+		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	}
+	if p := oisd.NewOISDNSFWProvider(cfg, cc); p != nil {
+		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	}
+	if p := urlhaus.NewURLHausProvider(cfg, cc); p != nil {
+		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	}
+	if p := openphish.NewOpenPhishFeedProvider(cfg, cc); p != nil {
+		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	}
 	// phishtank endpoint (online-valid.json) returns 404 — disabled pending endpoint update
 
 	providers := Providers(base.GetRegisteredProviders())
@@ -42,7 +48,7 @@ func NewProviders() (Providers, error) {
 
 	providers := getProviders(cfg, cc)
 
-	// Example: Collect their source URLs for logging or metrics
+	// Collect their source URLs for logging or metrics
 	srcs := providers.Sources()
 	log.Trace().Msgf("initialized provider sources: %v", srcs)
 

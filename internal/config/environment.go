@@ -7,8 +7,6 @@ import (
 
 	"github.com/knadh/koanf/v2"
 
-	"slices"
-
 	"github.com/creasty/defaults"
 	"github.com/knadh/koanf/parsers/dotenv"
 	"github.com/knadh/koanf/parsers/toml"
@@ -73,6 +71,16 @@ func InitConfig() error {
 			return
 		}
 
+		// Default any nil Enabled to true (backward-compat behavior: empty = all enabled)
+		if _config.Providers != nil {
+			for _, opts := range _config.Providers {
+				if opts != nil && opts.Enabled == nil {
+					enabled := true
+					opts.Enabled = &enabled
+				}
+			}
+		}
+
 		zerolog.SetGlobalLevel(_config.APP.LogLevel)
 	})
 
@@ -134,27 +142,16 @@ func LoadScoringConfig() map[string]float64 {
 	return out
 }
 
-// Returns the cron schedule for the provider.
-// If the provider is not enabled, it returns an empty string.
-func (c *Config) GetProviderCronSchedule(providerName string) (cronSchedule string, isExist bool) {
-	if c.Provider.CronSchedules == nil {
-		return "", false
-	}
-
-	if schedule, exists := c.Provider.CronSchedules[providerName]; exists {
-		return schedule, true
-	}
-
-	return "", false
-}
-
-// IsProviderEnabled checks if the provider is enabled in the configuration.
-// If the provider is not enabled, it returns false.
-// If the list is not defined, it returns true.
-func (c *ProviderConfig) IsProviderEnabled(providerName string) bool {
-	if c.EnabledProviders == nil {
+func (c *Config) ProviderEnabled(name string) bool {
+	if c.Providers == nil {
 		return true
 	}
-
-	return slices.Contains(c.EnabledProviders, providerName)
+	opts, ok := c.Providers[name]
+	if !ok || opts == nil {
+		return true
+	}
+	if opts.Enabled == nil {
+		return true
+	}
+	return *opts.Enabled
 }

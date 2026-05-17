@@ -79,7 +79,7 @@ func TestParse(t *testing.T) {
 
 	repository := repository.NewSQLiteRepository(db)
 
-	provider := NewOISDBigProvider(&config.GetConfig().Collector, cc)
+	provider := NewOISDBigProvider(config.GetConfig(), cc)
 	provider.SetRepository(repository)
 
 	processID := uuid.New()

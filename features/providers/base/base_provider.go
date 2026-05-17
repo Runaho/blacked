@@ -1,14 +1,18 @@
 package base
 
 import (
+	"bytes"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
 	"blacked/features/entries/repository"
 	"blacked/features/entry_collector"
 	"blacked/internal/config"
-
-	"bytes"
-	"errors"
-	"io"
-	"time"
 
 	"github.com/gocolly/colly/v2"
 	"github.com/google/uuid"
@@ -50,7 +54,7 @@ type Provider interface {
 type BaseProvider struct {
 	Name          string
 	SourceURL     string
-	Settings      *config.CollectorConfig
+	Category      string
 	ProcessID     *uuid.UUID
 	CollyClient   *colly.Collector
 	CronSchedule  string
@@ -60,12 +64,12 @@ type BaseProvider struct {
 }
 
 // NewBaseProvider creates a new BaseProvider
-func NewBaseProvider(name, sourceURL string, settings *config.CollectorConfig, collyClient *colly.Collector, parseFunc func(io.Reader, entry_collector.Collector) error) *BaseProvider {
+func NewBaseProvider(name, sourceURL, category string, collyClient *colly.Collector, parseFunc func(io.Reader, entry_collector.Collector) error) *BaseProvider {
 	p := &BaseProvider{
-		Name:          name,
-		SourceURL:     sourceURL,
-		Settings:      settings,
-		CollyClient:   collyClient,
+		Name:        name,
+		SourceURL:   sourceURL,
+		Category:    category,
+		CollyClient: collyClient,
 		ParseFunction: parseFunc,
 	}
 
@@ -85,6 +89,11 @@ func (b *BaseProvider) GetName() string {
 // Source returns the source URL
 func (b *BaseProvider) Source() string {
 	return b.SourceURL
+}
+
+// Category returns the default category for this provider
+func (b *BaseProvider) GetCategory() string {
+	return b.Category
 }
 
 // SetRepository sets the repository
@@ -189,4 +198,104 @@ func (b *BaseProvider) Parse(data io.Reader) error {
 	}
 
 	return nil
+}
+
+// BuildCollyClientForProvider clones the global colly client and applies per-provider overrides.
+func BuildCollyClientForProvider(client *colly.Collector, opts *config.ProviderOptions) *colly.Collector {
+	if client == nil {
+		return nil
+	}
+	if opts == nil {
+		return client.Clone()
+	}
+
+	c := client.Clone()
+
+	if opts.UserAgent != "" {
+		c.UserAgent = opts.UserAgent
+	}
+	if opts.Timeout != nil {
+		c.SetRequestTimeout(*opts.Timeout)
+	}
+	if opts.MaxRedirects > 0 {
+		// colly doesn't expose a way to change MaxDepth after creation;
+		// we rely on the clone inheriting the original; warn if mismatch.
+		log.Debug().
+			Str("provider", opts.SourceURL).
+			Int("max_redirects", opts.MaxRedirects).
+			Msg("max_redirects override requested but colly doesn't support post-creation change; using cloned defaults")
+	}
+
+	return c
+}
+
+// ResolveURL replaces the {api_key} placeholder if an API key is configured.
+func ResolveURL(sourceURL, apiKey string) string {
+	if apiKey == "" {
+		return sourceURL
+	}
+	return strings.ReplaceAll(sourceURL, "{api_key}", apiKey)
+}
+
+// HTTPFetcher provides a colly-independent fetcher that uses net/http directly.
+// Useful when colly's overhead isn't needed (plain text feeds).
+type HTTPFetcher struct {
+	client    *http.Client
+	userAgent string
+}
+
+// NewHTTPFetcher creates an HTTPFetcher with optional overrides.
+func NewHTTPFetcher(timeout time.Duration, userAgent string, maxRedirects int) *HTTPFetcher {
+	if timeout <= 0 {
+		timeout = 2 * time.Minute
+	}
+	if userAgent == "" {
+		userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+	}
+	if maxRedirects <= 0 {
+		maxRedirects = 5
+	}
+
+	return &HTTPFetcher{
+		client: &http.Client{
+			Timeout: timeout,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= maxRedirects {
+					return http.ErrUseLastResponse
+				}
+				return nil
+			},
+		},
+		userAgent: userAgent,
+	}
+}
+
+// Fetch performs a GET request and returns the response body.
+func (f *HTTPFetcher) Fetch(u string) (io.ReadCloser, error) {
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", f.userAgent)
+
+	resp, err := f.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		resp.Body.Close()
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
+	}
+
+	return resp.Body, nil
+}
+
+// IsProviderURL checks if a string looks like a valid HTTP/HTTPS URL.
+func IsProviderURL(s string) bool {
+	if s == "" || s == "{api_key}" {
+		return false
+	}
+	u, err := url.Parse(s)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
