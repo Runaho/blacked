@@ -9,12 +9,11 @@ import (
 // NewOISDBigSource creates the OISD Big blocklist source.
 func NewOISDBigSource(settings *config.CollectorConfig, collyClient *colly.Collector) *Source {
 	const (
-		providerID   = "oisd"
-		sourceID     = "oisd-big"
-		sourceName   = "OISD Big"
-		sourceURL    = "https://big.oisd.nl/domainswild"
-		cronSchedule = "15 4 * * *"
-		category     = "blocklist"
+		providerID = "oisd"
+		sourceID   = "oisd-big"
+		sourceName = "OISD Big"
+		sourceURL  = "https://big.oisd.nl/domainswild"
+		category   = "blocklist"
 	)
 
 	s := &Source{
@@ -29,7 +28,7 @@ func NewOISDBigSource(settings *config.CollectorConfig, collyClient *colly.Colle
 	}
 
 	s.Fetcher = NewCollyFetcher(collyClient)
-	s.Parser = NewFlatListParser(settings.ParserWorkers, settings.ParserBatchSize)
+	s.Parser = NewFlatListParser(settings.ParserWorkers, settings.ParserBatchSize, category)
 
 	return s
 }
@@ -37,12 +36,11 @@ func NewOISDBigSource(settings *config.CollectorConfig, collyClient *colly.Colle
 // NewOISDNSFWSource creates the OISD NSFW blocklist source.
 func NewOISDNSFWSource(settings *config.CollectorConfig, collyClient *colly.Collector) *Source {
 	const (
-		providerID   = "oisd"
-		sourceID     = "oisd-nsfw"
-		sourceName   = "OISD NSFW"
-		sourceURL    = "https://nsfw.oisd.nl/domainswild"
-		cronSchedule = "22 6 * * *"
-		category     = "nsfw"
+		providerID = "oisd"
+		sourceID   = "oisd-nsfw"
+		sourceName = "OISD NSFW"
+		sourceURL  = "https://nsfw.oisd.nl/domainswild"
+		category   = "nsfw"
 	)
 
 	s := &Source{
@@ -57,7 +55,7 @@ func NewOISDNSFWSource(settings *config.CollectorConfig, collyClient *colly.Coll
 	}
 
 	s.Fetcher = NewCollyFetcher(collyClient)
-	s.Parser = NewFlatListParser(settings.ParserWorkers, settings.ParserBatchSize)
+	s.Parser = NewFlatListParser(settings.ParserWorkers, settings.ParserBatchSize, category)
 
 	return s
 }

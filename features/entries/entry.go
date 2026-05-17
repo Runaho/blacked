@@ -120,6 +120,13 @@ func (b *Entry) WithConfidence(confidence float64) *Entry {
 	return b
 }
 
+// WithCategory sets the category tag and returns the entry for chaining
+func (b *Entry) WithCategory(category string) *Entry {
+	b.Category = category
+	b.UpdatedAt = time.Now().UnixNano()
+	return b
+}
+
 // Clone creates a copy of the Entry with a new ID
 func (b *Entry) Clone() *Entry {
 	clone := *b

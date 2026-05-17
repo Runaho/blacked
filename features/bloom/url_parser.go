@@ -2,6 +2,7 @@ package bloom
 
 import (
 	"errors"
+	"net"
 	"net/url"
 	"path"
 	"strings"
@@ -93,23 +94,7 @@ func ParseURL(raw string) (*URLKeys, error) {
 	}
 
 	if trimmed := strings.TrimSpace(host); trimmed != "" {
-		isIP := true
-		if strings.Contains(trimmed, ":") {
-			if !strings.HasPrefix(trimmed, "[") {
-				isIP = false
-			}
-		} else if strings.Count(trimmed, ".") == 3 {
-			parts := strings.SplitSeq(trimmed, ".")
-			for p := range parts {
-				if p == "" || p == "." {
-					isIP = false
-					break
-				}
-			}
-		} else {
-			isIP = false
-		}
-		if isIP {
+		if net.ParseIP(trimmed) != nil {
 			keys.IP = trimmed
 		}
 	}

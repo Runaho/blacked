@@ -30,7 +30,8 @@ func NewURLHausProvider(settings *config.CollectorConfig, collyClient *colly.Col
 			// Create a new entry
 			entry := entries.NewEntry().
 				WithSource(providerName).
-				WithProcessID(processID)
+				WithProcessID(processID).
+				WithCategory("malware")
 
 			// SetURL may fail, so handle it separately
 			if err := entry.SetURL(line); err != nil {

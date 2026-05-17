@@ -33,7 +33,7 @@ func (r *entryRepository) SearchEntries(ctx context.Context, filter query.Search
 	addFilter("domain", filter.Domain)
 	addFilter("host", filter.Host)
 	addFilter("path", filter.Path)
-	addFilter("source_id", filter.SourceID)
+	addFilter("source", filter.SourceID)
 
 	// Category uses LIKE for partial match
 	if filter.Category != "" {

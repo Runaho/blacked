@@ -1,16 +1,18 @@
 package entry_collector
 
 import (
+	"context"
+	"database/sql"
+	"net"
+	"strings"
+	"sync"
+	"time"
+
 	"blacked/features/bloom"
 	"blacked/features/entries"
 	"blacked/features/entries/repository"
 	"blacked/internal/collector"
 	"blacked/internal/config"
-	"context"
-	"database/sql"
-	"strings"
-	"sync"
-	"time"
 
 	"github.com/alitto/pond/v2"
 	"github.com/rs/zerolog/log"
@@ -447,22 +449,7 @@ func entryToURLKeys(e *entries.Entry) *bloom.URLKeys {
 
 	ip := ""
 	if trimmed := strings.TrimSpace(e.Host); trimmed != "" {
-		isIP := true
-		if strings.Contains(trimmed, ":") {
-			if !strings.HasPrefix(trimmed, "[") {
-				isIP = false
-			}
-		} else if strings.Count(trimmed, ".") == 3 {
-			for _, p := range strings.Split(trimmed, ".") {
-				if p == "" {
-					isIP = false
-					break
-				}
-			}
-		} else {
-			isIP = false
-		}
-		if isIP {
+		if net.ParseIP(trimmed) != nil {
 			ip = trimmed
 		}
 	}

@@ -30,7 +30,8 @@ func NewOISDNSFWProvider(settings *config.CollectorConfig, collyClient *colly.Co
 			// Create a new entry
 			entry := entries.NewEntry().
 				WithSource(providerName).
-				WithProcessID(processID)
+				WithProcessID(processID).
+				WithCategory("nsfw")
 
 			// SetURL may fail, so handle it separately
 			if err := entry.SetURL(line); err != nil {

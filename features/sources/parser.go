@@ -22,13 +22,15 @@ type LineParserFunc func(line, sourceID, processID string) (*entries.Entry, erro
 type FlatListParser struct {
 	ParserWorkers int
 	BatchSize     int
+	Category      string // optional category applied to all entries
 }
 
 // NewFlatListParser creates a parser for flat list sources.
-func NewFlatListParser(workers, batchSize int) *FlatListParser {
+func NewFlatListParser(workers, batchSize int, category string) *FlatListParser {
 	return &FlatListParser{
 		ParserWorkers: workers,
 		BatchSize:     batchSize,
+		Category:      category,
 	}
 }
 
@@ -38,7 +40,14 @@ func (p *FlatListParser) Parse(data io.Reader, collector entry_collector.Collect
 }
 
 func (p *FlatListParser) lineProcessor(line, sourceID, processID string) (*entries.Entry, error) {
-	return ParseURLLine(line, sourceID, processID)
+	entry, err := ParseURLLine(line, sourceID, processID)
+	if err != nil || entry == nil {
+		return entry, err
+	}
+	if p.Category != "" {
+		entry.WithCategory(p.Category)
+	}
+	return entry, nil
 }
 
 // JSONParserFunc parses JSON data into entries.

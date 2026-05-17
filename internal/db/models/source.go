@@ -41,8 +41,8 @@ func (Source) TableName() string {
 var SourceSeed = []Source{
 	{ID: "oisd-big", ProviderID: "oisd", Name: "OISD Big", SourceURL: "https://big.oisd.nl/domainswild2", Type: SourceTypeFlat, Enabled: true, UpdateInterval: sql.NullInt64{Int64: 86400, Valid: true}},       // daily
 	{ID: "oisd-nsfw", ProviderID: "oisd", Name: "OISD NSFW", SourceURL: "https://nsfw.oisd.nl/domainswild2", Type: SourceTypeFlat, Enabled: true, UpdateInterval: sql.NullInt64{Int64: 86400, Valid: true}},   // daily
-	{ID: "urlhaus-urls", ProviderID: "abuse-ch", Name: "URLhaus URLs", SourceURL: "https://urlhaus.abuse.ch/downloads/text/", Type: SourceTypeFlat, Enabled: true, UpdateInterval: sql.NullInt64{Int64: 7200, Valid: true}},    // 2 hours
-	{ID: "openphish-feed", ProviderID: "oisd", Name: "OpenPhish Feed", SourceURL: "https://openphish.com/feed.txt", Type: SourceTypeFlat, Enabled: true, UpdateInterval: sql.NullInt64{Int64: 14400, Valid: true}},     // 4 hours
+	{ID: "urlhaus-online", ProviderID: "abuse-ch", Name: "URLHaus Online", SourceURL: "https://urlhaus.abuse.ch/downloads/text/", Type: SourceTypeFlat, Enabled: true, UpdateInterval: sql.NullInt64{Int64: 7200, Valid: true}},    // 2 hours
+	{ID: "openphish-feed", ProviderID: "openphish", Name: "OpenPhish Feed", SourceURL: "https://openphish.com/feed.txt", Type: SourceTypeFlat, Enabled: true, UpdateInterval: sql.NullInt64{Int64: 14400, Valid: true}},     // 4 hours
 	{ID: "phishtank-online", ProviderID: "phishtank", Name: "PhishTank Online Valid", SourceURL: "http://data.phishtank.com/data/online-valid.csv", Type: SourceTypeCSV, Enabled: true, UpdateInterval: sql.NullInt64{Int64: 14400, Valid: true}}, // 4 hours
 	{ID: "spamhaus-drop", ProviderID: "spamhaus", Name: "Spamhaus DROP", SourceURL: "https://www.spamhaus.org/drop/drop.txt", Type: SourceTypeFlat, Enabled: true, UpdateInterval: sql.NullInt64{Int64: 86400, Valid: true}}, // daily
 }

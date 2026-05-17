@@ -318,13 +318,13 @@ func TestCategoryA_ProviderSyncAndDBWrite(t *testing.T) {
 	})
 
 	t.Run("A_4_Providerlar_Araya_Eklenmiş", func(t *testing.T) {
-		// Seed adds extra providers via models.ProviderSeed
-		// So total providers = 5 (seed) + 5 (test) = 10
+		// Seed adds extra providers via models.ProviderSeed (6)
+		// So total providers = 6 (seed) + 5 (test) = 11
 		var count int
 		err := ts.db.QueryRow("SELECT COUNT(*) FROM providers").Scan(&count)
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, count, 5, "should have at least 5 providers")
-		assert.LessOrEqual(t, count, 10, "should have at most 10 providers (5 seed + 5 test)")
+		assert.LessOrEqual(t, count, 11, "should have at most 11 providers (6 seed + 5 test)")
 	})
 
 	t.Run("A_5_Kaynakların_Kaynakları_Doğru", func(t *testing.T) {

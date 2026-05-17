@@ -28,7 +28,7 @@ func NewOpenPhishSource(settings *config.CollectorConfig, collyClient *colly.Col
 	}
 
 	s.Fetcher = NewCollyFetcher(collyClient)
-	s.Parser = NewFlatListParser(settings.ParserWorkers, settings.ParserBatchSize)
+	s.Parser = NewFlatListParser(settings.ParserWorkers, settings.ParserBatchSize, category)
 
 	return s
 }

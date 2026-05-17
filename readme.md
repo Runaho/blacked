@@ -175,9 +175,9 @@ go run main.go query --url "https://evil.com" --json
 | Endpoint | Method | Description | Latency |
 |:---------|:-------|:------------|:--------|
 | `/api/v1/check?url=` | GET | Bloom-only check — fast negative | ~0.4 ms |
-| `/api/v1/hit?url=` | GET | Full check — bloom + DB + score | ~5–15 ms |
+| `/api/v1/hit?url=` | GET | Bloom check + scorer — confidence + level + matches | ~0.5 ms |
 | `/api/v1/bulk-check` | POST | Batch bloom check (up to N URLs) | ~0.4 ms × N |
-| `/api/v1/bulk-hit` | POST | Batch full check | ~5–15 ms × N |
+| `/api/v1/bulk-hit` | POST | Batch bloom check + scorer | ~0.5 ms × N |
 
 ### Responses
 

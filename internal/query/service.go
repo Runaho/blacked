@@ -55,7 +55,7 @@ func (qs *QueryService) Likely(ctx context.Context, urlStr string) (*LikelyRespo
 	return resp, nil
 }
 
-// Hit performs a full check: bloom → DB confirm → score.
+// Hit performs a full check: bloom → scorer.
 func (qs *QueryService) Hit(ctx context.Context, urlStr string) (*QueryResponse, error) {
 	likely, matches, err := qs.bloom.Check(urlStr)
 	if err != nil {

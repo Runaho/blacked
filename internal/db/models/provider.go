@@ -23,6 +23,7 @@ func (Provider) TableName() string {
 var ProviderSeed = []Provider{
 	{ID: "spamhaus", Name: "Spamhaus", Description: "Spamhaus blocklists", TrustScore: 0.95},
 	{ID: "abuse-ch", Name: "abuse.ch", Description: "URLHaus and MalwareBazaar", TrustScore: 0.90},
+	{ID: "openphish", Name: "OpenPhish", Description: "OpenPhish phishing feed", TrustScore: 0.75},
 	{ID: "alienvault", Name: "AlienVault OTX", Description: "Open Threat Exchange", TrustScore: 0.80},
 	{ID: "phishtank", Name: "PhishTank", Description: "Community phishing verification", TrustScore: 0.70},
 	{ID: "oisd", Name: "OISD", Description: "One Unified Hosts Blocklist", TrustScore: 0.65},
