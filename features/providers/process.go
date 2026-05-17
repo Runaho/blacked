@@ -301,7 +301,7 @@ func (p Providers) processProvider(
 
 	// Cleanup if needed
 	cfg := config.GetConfig()
-	if cfg.APP.Environtment == "development" {
+	if cfg.APP.Environment == "development" {
 		utils.RemoveStoredResponse(name)
 	}
 

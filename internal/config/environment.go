@@ -92,7 +92,7 @@ func IsDevMode() bool {
 		return true
 	}
 
-	return (_config.APP.Environtment == "development")
+	return (_config.APP.Environment == "development")
 }
 
 // LoadScoringConfig reads config/scoring.toml and returns provider/source trust scores.

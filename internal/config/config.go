@@ -31,7 +31,7 @@ type CacheSettings struct {
 }
 
 type APPConfig struct {
-	Environtment string        `koanf:"environtment" default:"development"`
+	Environment string        `koanf:"environment" default:"development"`
 	LogLevel     zerolog.Level `koanf:"log_level" default:"debug"`
 }
 

@@ -209,7 +209,7 @@ Blacked uses `.env.toml` (TOML format). Key sections:
 
 ```toml
 [APP]
-environtment = "development"  # or "production"
+environment = "development"  # or "production"
 log_level = "info"
 
 [Server]
