@@ -131,8 +131,8 @@ func determineBloomTarget(keys *URLKeys) (BloomType, string) {
 }
 
 // Likely checks a URL against all applicable bloom types in parallel.
-// Check order: Domain → Host → HostPath → File → FullURL.
-// First hit wins — other goroutines are cancelled via context.
+// All goroutines complete — results are collected and the highest-priority
+// match is selected deterministically by DepthWeight: Domain > Host > HostPath > File > FullURL.
 func (bm *BloomManager) Likely(urlStr string) (*BloomResult, error) {
 	keys, err := ParseURL(urlStr)
 	if err != nil {
@@ -147,21 +147,13 @@ func (bm *BloomManager) Likely(urlStr string) (*BloomResult, error) {
 	bm.mu.RLock()
 	defer bm.mu.RUnlock()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	resultCh := make(chan BloomMatch, 1)
+	resultCh := make(chan BloomMatch, len(checkKeys))
 	var wg sync.WaitGroup
 
 	for _, ck := range checkKeys {
-		wg.Go(func() {
-
-			// Check context before acquiring any lock
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
+		wg.Add(1)
+		go func(ck CheckKey) {
+			defer wg.Done()
 
 			bs, ok := bm.sets[ck.Type]
 			if !ok || bs == nil {
@@ -172,22 +164,17 @@ func (bm *BloomManager) Likely(urlStr string) (*BloomResult, error) {
 				return
 			}
 
-			// Hit — send result and cancel others
+			// Hit — send all source matches
 			for _, sid := range bs.GetSourceIDs() {
 				if bs.TestSource(sid, ck.Key) {
-					select {
-					case resultCh <- BloomMatch{
+					resultCh <- BloomMatch{
 						Type:     ck.Type,
 						SourceID: sid,
 						Key:      ck.Key,
-					}:
-						cancel() // Signal other goroutines to stop
-					case <-ctx.Done():
 					}
-					return
 				}
 			}
-		})
+		}(ck)
 	}
 
 	// Close resultCh when all goroutines finish
@@ -196,25 +183,30 @@ func (bm *BloomManager) Likely(urlStr string) (*BloomResult, error) {
 		close(resultCh)
 	}()
 
-	// Collect results
+	// Collect all results and pick the highest priority match
 	matches := make([]BloomMatch, 0)
 	for m := range resultCh {
 		matches = append(matches, m)
 	}
 
 	if len(matches) > 0 {
-		result := &BloomResult{
-			Likely:  true,
-			Matches: matches,
-		}
-		for _, m := range matches {
-			if w, ok := DepthWeight[m.Type]; ok {
-				scaled := int(w * 100)
-				if scaled > result.MaxDepth {
-					result.MaxDepth = scaled
-				}
+		// Deterministic priority sort: lowest DepthWeight wins (highest priority)
+		// Domain(0.3) > Host(0.5) > HostPath(1.0) > File(0.7) > FullURL(1.5)
+		best := matches[0]
+		bestW, _ := DepthWeight[best.Type]
+		for _, m := range matches[1:] {
+			w, _ := DepthWeight[m.Type]
+			if w < bestW {
+				best = m
+				bestW = w
 			}
 		}
+
+		result := &BloomResult{
+			Likely: true,
+			Matches: []BloomMatch{best},
+		}
+		result.MaxDepth = int(bestW * 100)
 		return result, nil
 	}
 
