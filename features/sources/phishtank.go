@@ -4,8 +4,8 @@ import (
 	"blacked/features/entries"
 	"blacked/features/entry_collector"
 	"blacked/internal/config"
-	"compress/bzip2"
 	"encoding/json"
+	"fmt"
 	"io"
 
 	"github.com/gocolly/colly/v2"
@@ -61,12 +61,30 @@ type phishTankRecord struct {
 	Online   string `json:"online"`
 }
 
-// Parse processes PhishTank NDJSON (one JSON object per line) OR bz2.
+// Parse processes PhishTank's JSON array format.
+// The endpoint returns a JSON array of objects, not NDJSON.
 func (p *PhishTankJSONParser) Parse(data io.Reader, collector entry_collector.Collector, sourceID, processID string) error {
-	// The endpoint returns JSON (or bz2). We try bz2 first, then plain JSON.
-	// For simplicity, PhishTank's online-valid.json.bz2 is bz2-compressed.
-	bz := bzip2.NewReader(data)
-	return ParseLinesParallel(bz, collector, sourceID, processID, p.workers, p.batchSize, func(line, sid, pid string) (*entries.Entry, error) {
+	// online-valid.json returns a JSON array. Decode directly.
+	var records []phishTankRecord
+	if err := json.NewDecoder(data).Decode(&records); err != nil {
+		return fmt.Errorf("phishTank decode: %w", err)
+	}
+
+	// Process in parallel via line-compatible adapter.
+	// Convert to a pipe that ParseLinesParallel can consume.
+	pr, pw := io.Pipe()
+	go func() {
+		enc := json.NewEncoder(pw)
+		for _, rec := range records {
+			if err := enc.Encode(rec); err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+		}
+		pw.Close()
+	}()
+
+	return ParseLinesParallel(pr, collector, sourceID, processID, p.workers, p.batchSize, func(line, sid, pid string) (*entries.Entry, error) {
 		return parsePhishTankLine(line, sid, pid)
 	})
 }

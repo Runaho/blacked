@@ -368,8 +368,8 @@ func (r *SQLiteRepository) SaveEntry(ctx context.Context, entry entries.Entry) e
 
 	_, err = tx.ExecContext(ctx, `
 			INSERT INTO entries (
-				id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, confidence, created_at, updated_at, deleted_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL) -- Insert with NULL deleted_at for new entries
+				id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, category, confidence, created_at, updated_at, deleted_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL) -- Insert with NULL deleted_at for new entries
 			ON CONFLICT (source_url, source) DO UPDATE SET -- UPSERT logic on conflict of 'source_url' and 'source'
 				process_id = EXCLUDED.process_id,
 				scheme = EXCLUDED.scheme,
@@ -378,13 +378,14 @@ func (r *SQLiteRepository) SaveEntry(ctx context.Context, entry entries.Entry) e
 				sub_domains = EXCLUDED.sub_domains,
 				path = EXCLUDED.path,
 				raw_query = EXCLUDED.raw_query,
+				category = EXCLUDED.category,
 				confidence = EXCLUDED.confidence,
 				updated_at = EXCLUDED.updated_at, -- Update 'updated_at' on update
 				deleted_at = NULL                  -- Ensure entry is NOT deleted upon update (reset soft delete)
 			WHERE EXCLUDED.updated_at > entries.updated_at -- Optional: Update only if new data is "newer" (based on UpdatedAt)
 		`,
 		entry.ID, entry.ProcessID, entry.Scheme, entry.Domain, entry.Host, strings.Join(entry.SubDomains, ","),
-		entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Confidence,
+		entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Category, entry.Confidence,
 		entry.CreatedAt, entry.UpdatedAt,
 	)
 
@@ -481,7 +482,7 @@ func (r *SQLiteRepository) RemoveOlderInsertions(ctx context.Context, providerNa
 	}
 	defer tx.Rollback()
 
-	currentTime := time.Now()
+	currentTime := time.Now().UnixNano()
 	result, err := tx.ExecContext(ctx, `
 		UPDATE entries
 		SET deleted_at = ?
@@ -514,7 +515,7 @@ func (r *SQLiteRepository) ClearAllEntries(ctx context.Context) error {
 	}
 	defer tx.Rollback()
 
-	currentTime := time.Now()
+	currentTime := time.Now().UnixNano()
 	_, err = tx.ExecContext(ctx, "UPDATE entries SET deleted_at = ?", currentTime) // Soft delete all by setting deleted_at
 	if err != nil {
 		log.Err(err).Msg("Failed to soft delete all entries in SQLite")
@@ -536,7 +537,7 @@ func (r *SQLiteRepository) SoftDeleteEntryByID(ctx context.Context, id string) e
 	}
 	defer tx.Rollback()
 
-	currentTime := time.Now()
+	currentTime := time.Now().UnixNano()
 	_, err = tx.ExecContext(ctx, "UPDATE entries SET deleted_at = ? WHERE id = ?", currentTime, id)
 	if err != nil {
 		log.Err(err).

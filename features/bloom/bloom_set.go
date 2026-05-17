@@ -14,6 +14,7 @@ type BloomSet struct {
 	Filter        *bloom.BloomFilter
 	SourceFilters map[string]*bloom.BloomFilter
 	mu            sync.RWMutex
+	expectedItems uint // capacity estimate for per-source filters
 }
 
 // NewBloomSet creates a BloomSet for a given type.
@@ -25,25 +26,30 @@ func NewBloomSet(t BloomType, expectedItems uint) *BloomSet {
 		Type:          t,
 		Filter:        bloom.NewWithEstimates(expectedItems, 0.01),
 		SourceFilters: make(map[string]*bloom.BloomFilter),
+		expectedItems: expectedItems,
 	}
 }
 
 // Add inserts a key into both the global and the per-source filter.
+// sourceID may be empty for aggregate/non-source-specific adds; in that case
+// only the global filter is updated.
 func (bs *BloomSet) Add(sourceID, key string) {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
 
 	if bs.Filter == nil {
-		bs.Filter = bloom.NewWithEstimates(1000, 0.01)
+		bs.Filter = bloom.NewWithEstimates(bs.expectedItems, 0.01)
 	}
 	bs.Filter.AddString(key)
 
-	sf, ok := bs.SourceFilters[sourceID]
-	if !ok || sf == nil {
-		sf = bloom.NewWithEstimates(1000, 0.01)
-		bs.SourceFilters[sourceID] = sf
+	if sourceID != "" {
+		sf, ok := bs.SourceFilters[sourceID]
+		if !ok || sf == nil {
+			sf = bloom.NewWithEstimates(bs.expectedItems, 0.01)
+			bs.SourceFilters[sourceID] = sf
+		}
+		sf.AddString(key)
 	}
-	sf.AddString(key)
 }
 
 // Test checks the global filter for a key.
