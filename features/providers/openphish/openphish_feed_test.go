@@ -21,7 +21,10 @@ func TestParse(t *testing.T) {
 
 	repository := repository.NewSQLiteRepository(db)
 
-	provider := NewOpenPhishFeedProvider(&config.GetConfig().Collector, cc)
+	provider := NewOpenPhishFeedProvider(config.GetConfig(), cc)
+	if provider == nil {
+		t.Skip("openphish-feed provider not configured or disabled")
+	}
 	provider.SetRepository(repository)
 
 	processID := uuid.New()

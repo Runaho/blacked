@@ -3,8 +3,6 @@ package base
 import (
 	"sync"
 
-	"blacked/internal/config"
-
 	"github.com/rs/zerolog/log"
 )
 
@@ -14,26 +12,19 @@ var (
 )
 
 type ProviderRegistery struct {
-	Provider            *BaseProvider
+	Provider            Provider
 	CronSchedule        string
 	IsSchedulingEnabled bool
 }
 
-func RegisterProvider(provider *BaseProvider) {
+// RegisterProvider stores a provider in the registry.
+// Enabled/cron checks are the caller's responsibility — this only registers.
+func RegisterProvider(provider Provider) {
 	name := provider.GetName()
-	config := config.GetConfig()
+
 	log.Trace().Str("provider", name).Msg("Registering provider")
 
-	if !config.Provider.IsProviderEnabled(name) {
-		log.Info().Str("provider", name).Msg("Provider is disabled")
-		return
-	}
-
-	schedule, isExist := config.GetProviderCronSchedule(name)
-	if !isExist {
-		schedule = provider.CronSchedule
-	}
-
+	schedule := provider.GetCronSchedule()
 	isSchedulingEnabled := schedule != ""
 
 	registryMu.Lock()
@@ -44,20 +35,14 @@ func RegisterProvider(provider *BaseProvider) {
 	}
 	registryMu.Unlock()
 
-	if isSchedulingEnabled {
-		provider.SetCronSchedule(schedule)
-	}
-
 	log.Info().
 		Str("provider", name).
 		Str("schedule", schedule).
 		Bool("scheduling_enabled", isSchedulingEnabled).
 		Msg("Provider registered")
-
-	return
 }
 
-func GetProvider(name string) (*BaseProvider, bool) {
+func GetProvider(name string) (Provider, bool) {
 	registryMu.RLock()
 	provider, ok := providerRegistry[name]
 	registryMu.RUnlock()

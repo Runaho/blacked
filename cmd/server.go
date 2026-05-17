@@ -49,14 +49,8 @@ func serve(c *cli.Context) (err error) {
 	server := graceful.WithDefaults(app.Echo.Server)
 	log.Info().Msgf("Starting server on %s", server.Addr)
 
-	if _runner, err := runner.InitializeRunner(*app.GetProviders()); err != nil {
-		log.Fatal().Err(err).Msg("Failed to initialize scheduler runner")
-	} else {
-		if cfg.Provider.RunAtStartup {
-			log.Info().Msg("Scheduling provider jobs to run async at startup")
-			// Run asynchronously so the server can start immediately
-			_runner.RunProviderJobsAsync()
-		}
+	if _, err := runner.InitializeRunner(*app.GetProviders()); err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize runner")
 	}
 
 	defer runner.ShutdownRunner(c.Context)

@@ -21,7 +21,10 @@ func TestParse(t *testing.T) {
 
 	repository := repository.NewSQLiteRepository(db)
 
-	provider := NewURLHausProvider(&config.GetConfig().Collector, cc)
+	provider := NewURLHausProvider(config.GetConfig(), cc)
+	if provider == nil {
+		t.Skip("urlhaus-online provider not configured or disabled")
+	}
 	provider.SetRepository(repository)
 
 	processID := uuid.New()

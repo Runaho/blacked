@@ -12,18 +12,44 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func NewOpenPhishFeedProvider(settings *config.CollectorConfig, collyClient *colly.Collector) base.Provider {
-	const (
-		providerName = "openphish-feed"
-		providerURL  = "https://openphish.com/feed.txt"
-		cronSchedule = "30 */4 * * *" // Every 4 hours (30 minutes past the hour
-	)
+func NewOpenPhishFeedProvider(cfg *config.Config, collyClient *colly.Collector) base.Provider {
+	const providerName = "openphish-feed"
+
+	opts, ok := cfg.Providers[providerName]
+	if !ok || opts == nil {
+		log.Info().Str("provider", providerName).Msg("provider not configured in .env.toml — skipping")
+		return nil
+	}
+	if opts.Enabled != nil && !*opts.Enabled {
+		log.Info().Str("provider", providerName).Msg("provider disabled — skipping")
+		return nil
+	}
+
+	sourceURL := opts.SourceURL
+	if sourceURL == "" {
+		sourceURL = "https://openphish.com/feed.txt"
+	}
+	cron := opts.Cron
+	if cron == "" {
+		cron = "30 */4 * * *"
+	}
+
+	workers := opts.ParserWorkers
+	if workers <= 0 {
+		workers = 4
+	}
+	batchSize := opts.ParserBatchSize
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+
+	client := base.BuildCollyClientForProvider(collyClient, opts)
 
 	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
-		return base.ParseLinesParallel(data, collector, providerName, settings.ParserWorkers, settings.ParserBatchSize, func(line, processID string) (*entries.Entry, error) {
+		return base.ParseLinesParallel(data, collector, providerName, workers, batchSize, func(line, processID string) (*entries.Entry, error) {
 			line = strings.TrimSpace(line)
 			if line == "" || strings.HasPrefix(line, "#") {
-				return nil, nil // Skip empty lines and comments
+				return nil, nil
 			}
 
 			entry := entries.NewEntry().
@@ -33,7 +59,7 @@ func NewOpenPhishFeedProvider(settings *config.CollectorConfig, collyClient *col
 
 			if err := entry.SetURL(line); err != nil {
 				log.Error().Err(err).Msgf("error setting URL: %s", line)
-				return nil, nil // Skip invalid URLs
+				return nil, nil
 			}
 
 			return entry, nil
@@ -42,14 +68,14 @@ func NewOpenPhishFeedProvider(settings *config.CollectorConfig, collyClient *col
 
 	provider := base.NewBaseProvider(
 		providerName,
-		providerURL,
-		settings,
-		collyClient,
+		sourceURL,
+		"phishing",
+		client,
 		parseFunc,
 	)
 
 	provider.
-		SetCronSchedule(cronSchedule).
+		SetCronSchedule(cron).
 		Register()
 
 	return provider

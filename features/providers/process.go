@@ -99,8 +99,8 @@ func (p Providers) Process(ctx context.Context, opts ...ProcessOptions) error {
 	errChan := make(chan error, len(p))
 
 	// Get max concurrent providers from config (0 = unlimited)
-	providerConfig := config.GetConfig().Provider
-	maxConcurrent := providerConfig.MaxConcurrentProviders
+	// NOTE: MaxConcurrentProviders moved to per-provider config; default to all providers concurrently
+	maxConcurrent := len(p)
 	if maxConcurrent <= 0 {
 		maxConcurrent = len(p) // No limit, process all concurrently
 	}

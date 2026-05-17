@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSetURL(t *testing.T) {
@@ -79,7 +80,9 @@ func TestParse(t *testing.T) {
 
 	repository := repository.NewSQLiteRepository(db)
 
-	provider := NewOISDBigProvider(&config.GetConfig().Collector, cc)
+	testutil.EnsureProviderConfig(t, "oisd-big")
+	provider := NewOISDBigProvider(config.GetConfig(), cc)
+	require.NotNil(t, provider, "Expected provider to be created")
 	provider.SetRepository(repository)
 
 	processID := uuid.New()
