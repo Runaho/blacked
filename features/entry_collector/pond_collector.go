@@ -3,6 +3,7 @@ package entry_collector
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net"
 	"strings"
 	"sync"
@@ -20,6 +21,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
+
+// ErrMissingBloomStreamCh is returned when the bloom initialization stream channel is nil.
+var ErrMissingBloomStreamCh = errors.New("bloom stream channel is nil")
 
 const (
 	PeriodicFlushInterval = 5 * time.Second
@@ -96,6 +100,50 @@ func InitPondCollector(
 
 		// Start a goroutine to flush buffer periodically or on context done
 		go globalCollector.periodicFlush()
+
+		// Bootstrap bloom manager from existing DB entries on startup.
+		// Without this, a fresh server has an empty bloom filter and every
+		// URL returns 204 until the provider pipeline runs.  For 630K entries
+		// this takes ~2-3s in background.
+		go func() {
+			log.Info().Msg("Starting bloom bootstrap from existing database entries")
+			start := time.Now()
+
+			// Direct SQL query — faster than StreamEntries which returns EntryStream
+			// (source_url + id only, no domain/host/path fields).
+			rows, err := db.QueryContext(ctx,
+				`SELECT source, domain, host, path, raw_query
+				 FROM entries WHERE deleted_at IS NULL`)
+			if err != nil {
+				log.Error().Err(err).Msg("Bloom bootstrap: query failed")
+				return
+			}
+			defer rows.Close()
+
+			added := 0
+			for rows.Next() {
+				var source, domain, host, path, rawQuery string
+				if err := rows.Scan(&source, &domain, &host, &path, &rawQuery); err != nil {
+					log.Error().Err(err).Msg("Bloom bootstrap: scan failed")
+					continue
+				}
+				e := &entries.Entry{
+					Source:   source,
+					Domain:   domain,
+					Host:     host,
+					Path:     path,
+					RawQuery: rawQuery,
+				}
+				keys := entryToURLKeys(e)
+				globalCollector.bloomMgr.PopulateEntry(e.Source, keys)
+				added++
+			}
+
+			log.Info().
+				Int("entries_loaded", added).
+				Dur("duration", time.Since(start)).
+				Msg("Bloom bootstrap completed — manager ready for queries")
+		}()
 
 		log.Info().
 			Int("concurrency", collectorConfig.Concurrency).
