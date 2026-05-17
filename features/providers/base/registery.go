@@ -1,6 +1,8 @@
 package base
 
 import (
+	"sync"
+
 	"blacked/internal/config"
 
 	"github.com/rs/zerolog/log"
@@ -8,6 +10,7 @@ import (
 
 var (
 	providerRegistry = make(map[string]ProviderRegistery)
+	registryMu       sync.RWMutex
 )
 
 type ProviderRegistery struct {
@@ -33,11 +36,13 @@ func RegisterProvider(provider *BaseProvider) {
 
 	isSchedulingEnabled := schedule != ""
 
+	registryMu.Lock()
 	providerRegistry[name] = ProviderRegistery{
 		Provider:            provider,
 		CronSchedule:        schedule,
 		IsSchedulingEnabled: isSchedulingEnabled,
 	}
+	registryMu.Unlock()
 
 	if isSchedulingEnabled {
 		provider.SetCronSchedule(schedule)
@@ -53,11 +58,16 @@ func RegisterProvider(provider *BaseProvider) {
 }
 
 func GetProvider(name string) (*BaseProvider, bool) {
+	registryMu.RLock()
 	provider, ok := providerRegistry[name]
+	registryMu.RUnlock()
 	return provider.Provider, ok
 }
 
 func GetRegisteredProviders() []Provider {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+
 	var providers []Provider
 	for _, provider := range providerRegistry {
 		providers = append(providers, provider.Provider)
@@ -66,6 +76,9 @@ func GetRegisteredProviders() []Provider {
 }
 
 func GetScheduledProviders() []Provider {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+
 	var providers []Provider
 	for _, provider := range providerRegistry {
 		if provider.IsSchedulingEnabled {
@@ -76,7 +89,9 @@ func GetScheduledProviders() []Provider {
 }
 
 func GetIsSchedulingEnabled(name string) bool {
+	registryMu.RLock()
 	provider, ok := providerRegistry[name]
+	registryMu.RUnlock()
 	if !ok {
 		return false
 	}
@@ -84,7 +99,9 @@ func GetIsSchedulingEnabled(name string) bool {
 }
 
 func GetProviderSchedule(name string) string {
+	registryMu.RLock()
 	provider, ok := providerRegistry[name]
+	registryMu.RUnlock()
 	if !ok {
 		return ""
 	}
