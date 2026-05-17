@@ -14,15 +14,32 @@ import (
 )
 
 func makeTestConfig(t *testing.T) *config.Config {
-	cfg := config.GetConfig()
-	// Ensure providers map is initialized for tests
-	if cfg.Providers == nil {
-		cfg.Providers = map[string]*config.ProviderOptions{}
+	return &config.Config{
+		Providers: map[string]*config.ProviderOptions{
+			"oisd-big": {
+				Enabled:         boolPtr(true),
+				SourceURL:       "https://big.oisd.nl/domainswild2",
+				Cron:            "0 6 * * *",
+				Category:        "blocklist",
+				ParserWorkers:   4,
+				ParserBatchSize: 1000,
+			},
+			"oisd-nsfw": {
+				Enabled:         boolPtr(true),
+				SourceURL:       "https://nsfw.oisd.nl/domainswild",
+				Cron:            "22 6 * * *",
+				Category:        "nsfw",
+				ParserWorkers:   4,
+				ParserBatchSize: 1000,
+			},
+		},
 	}
-	return cfg
 }
 
 func ensureOpts(cfg *config.Config, name string) *config.ProviderOptions {
+	if cfg.Providers == nil {
+		cfg.Providers = map[string]*config.ProviderOptions{}
+	}
 	if cfg.Providers[name] == nil {
 		cfg.Providers[name] = &config.ProviderOptions{
 			Enabled:         boolPtr(true),

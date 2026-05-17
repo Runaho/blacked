@@ -4,6 +4,7 @@ import (
 	"blacked/features/providers/base"
 	"blacked/features/providers/oisd"
 	"blacked/features/providers/openphish"
+	"blacked/features/providers/phishtank"
 	"blacked/features/providers/urlhaus"
 
 	"github.com/gocolly/colly/v2"
@@ -29,7 +30,9 @@ func getProviders(cfg *config.Config, cc *colly.Collector) Providers {
 	if p := openphish.NewOpenPhishFeedProvider(cfg, cc); p != nil {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
-	// phishtank endpoint (online-valid.json) returns 404 — disabled pending endpoint update
+	if p := phishtank.NewPhishTankProvider(cfg, cc); p != nil {
+		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	}
 
 	providers := Providers(base.GetRegisteredProviders())
 	return providers

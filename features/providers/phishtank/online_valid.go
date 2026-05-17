@@ -34,8 +34,18 @@ func NewPhishTankProvider(cfg *config.Config, collyClient *colly.Collector) base
 
 	sourceURL := opts.SourceURL
 	if sourceURL == "" {
-		sourceURL = "https://data.phishtank.com/data/online-valid.json"
+		sourceURL = "https://data.phishtank.com/data/{api_key}/online-valid.json"
 	}
+
+	// Replace {api_key} placeholder if an API key is configured
+	sourceURL = base.ResolveURL(sourceURL, opts.APIKey)
+
+	// If API key is empty, warn and skip (source URL will still contain {api_key} placeholder)
+	if opts.APIKey == "" {
+		log.Warn().Str("provider", providerName).Msg("PhishTank API key not configured — skipping")
+		return nil
+	}
+
 	cron := opts.Cron
 	if cron == "" {
 		cron = "45 */6 * * *"

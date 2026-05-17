@@ -120,9 +120,9 @@ func (b *BaseProvider) SetProcessID(id uuid.UUID) {
 	b.ProcessID = &id
 }
 
-// GetCRONScedule returns the CRON schedule
+// GetCRONScedule returns the provider's own CRON schedule.
 func (b *BaseProvider) GetCronSchedule() string {
-	return GetProviderSchedule(b.Name)
+	return b.CronSchedule
 }
 
 // SetCRONScedule sets the CRON schedule
