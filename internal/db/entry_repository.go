@@ -33,8 +33,6 @@ func (r *entryRepository) SearchEntries(ctx context.Context, filter query.Search
 	addFilter("domain", filter.Domain)
 	addFilter("host", filter.Host)
 	addFilter("path", filter.Path)
-	addFilter("query", filter.Query)
-	addFilter("ip", filter.IP)
 	addFilter("source_id", filter.SourceID)
 
 	// Category uses LIKE for partial match
@@ -95,12 +93,12 @@ func (r *entryRepository) SearchEntries(ctx context.Context, filter query.Search
 	return out, nil
 }
 
-// GetEntryByFullURL looks up an exact full_url match (used by Hit after bloom positive).
+// GetEntryByFullURL looks up an exact source_url match (used by Hit after bloom positive).
 func (r *entryRepository) GetEntryByFullURL(ctx context.Context, fullURL string) (*query.Entry, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, source_id, domain, host, path, file, query, login, ip, full_url, scheme, confidence, category
+		SELECT id, source, domain, host, path, scheme, confidence, category
 		FROM entries
-		WHERE full_url = ?
+		WHERE source_url = ?
 		LIMIT 1
 	`, fullURL)
 
@@ -108,8 +106,7 @@ func (r *entryRepository) GetEntryByFullURL(ctx context.Context, fullURL string)
 	var confidence sql.NullFloat64
 	err := row.Scan(
 		&e.ID, &e.SourceID,
-		&e.Domain, &e.Host, &e.Path, &e.File, &e.Query, &e.Login, &e.IP,
-		&e.FullURL, &e.Scheme, &confidence, &e.Category,
+		&e.Domain, &e.Host, &e.Path, &e.Scheme, &confidence, &e.Category,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil

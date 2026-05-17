@@ -49,11 +49,6 @@ type Entry struct {
 	Domain     string
 	Host       string
 	Path       string
-	File       string
-	Query      string
-	Login      string
-	IP         string
-	FullURL    string
 	Scheme     string
 	Confidence float64
 	Category   string

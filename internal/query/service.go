@@ -64,20 +64,12 @@ func (qs *QueryService) Hit(ctx context.Context, urlStr string) (*QueryResponse,
 
 	resp := &QueryResponse{
 		URL:     urlStr,
-		Blocked: false, // Default to not blocked until DB confirms
+		Blocked: false,
 		Matches: matches,
 	}
 
 	if likely {
-		// Confirm with DB before marking as blocked
-		if qs.repo != nil {
-			// Query DB to confirm at least one match is real
-			// For now, we trust the bloom (false positive rate is negligible with our setup)
-			// TODO: Add DB confirmation query if needed for strict mode
-			resp.Blocked = true
-		} else {
-			resp.Blocked = true
-		}
+		resp.Blocked = true
 
 		if qs.scorer != nil {
 			// Use Score(matches) for full depth-weighted formula:
@@ -153,9 +145,6 @@ func buildURL(e Entry) string {
 		Scheme: e.Scheme,
 		Host:   e.Host,
 		Path:   e.Path,
-	}
-	if e.Query != "" {
-		u.RawQuery = e.Query
 	}
 	return u.String()
 }
