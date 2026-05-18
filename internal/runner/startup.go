@@ -248,6 +248,14 @@ func restoreProviderFromStoredFile(ctx context.Context, provider base.Provider) 
 
 	log.Info().Str("provider", providerName).Str("file", dataFileName).Msg("reading stored response for restore")
 
+	// Set repository so provider.Parse() can write to DB
+	rwDB, err := db.GetWriteDB()
+	if err != nil {
+		return err
+	}
+	repo := repository.NewSQLiteRepository(rwDB)
+	provider.SetRepository(repo)
+
 	if err := provider.Parse(file); err != nil {
 		return err
 	}
