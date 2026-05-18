@@ -17,7 +17,7 @@ Blacked collects threat intelligence from multiple sources (OISD, URLHaus, OpenP
 
 <table>
   <tr>
-    <td align="center"><h3>📡 Aggregation</h3><p><sub>Provider → Source pipeline with independent fetch, parse, and schedule per source. 3 active providers feeding 822K+ entries.</sub></p></td>
+    <td align="center"><h3>📡 Aggregation</h3><p><sub>Provider → Source pipeline with independent fetch, parse, and schedule per source. 3 active providers feeding <strong>938K+ entries</strong>.</sub></p></td>
     <td align="center"><h3>🧬 Bloom Engine</h3><p><sub>6-layer parallel check at ~0.4ms. One entry → one bloom type. First hit wins, parent-path cascade.</sub></p></td>
     <td align="center"><h3>📊 Scoring</h3><p><sub>Provider trust × depth weight. Single match uses trust directly. 5 levels: critical → informational.</sub></p></td>
     <td align="center"><h3>🏗️ Core</h3><p><sub>HTTP-agnostic `internal/query/` package. Testable standalone. Adapter pattern — zero framework lock-in.</sub></p></td>
@@ -39,6 +39,7 @@ Blacked collects threat intelligence from multiple sources (OISD, URLHaus, OpenP
 | **HTTP Agnostic Core** | `internal/query/` package decoupled from Echo, testable standalone |
 | **Built-in Metrics** | Prometheus endpoints, execution tracing, pprof profiling |
 | **No Legacy** | Greenfield schema, clean-slate policy — zero backward compatibility debt |
+| **Host Normalization** | Entry.Host = `url.Hostname()` — port stripped. Bloom keys and DB confirmation use same format, no mismatch |
 
 ---
 
@@ -141,7 +142,7 @@ cd blacked
 go mod download
 
 # Configure
-cp .env.toml.example .env.toml
+cp .env.toml.copy .env.toml
 # Edit to suit your environment
 
 # Run the server
@@ -155,9 +156,6 @@ The server starts at `http://localhost:8082`.
 ```bash
 # Process all providers immediately
 go run . process
-
-# Process specific provider
-go run . process --provider OISD_BIG
 
 # Query a URL
 go run main.go query --url "https://evil.com/path"
@@ -175,9 +173,9 @@ go run main.go query --url "https://evil.com" --json
 | Endpoint | Method | Description | Latency |
 |:---------|:-------|:------------|:--------|
 | `/api/v1/check?url=` | GET | Bloom-only check — fast negative | ~0.4 ms |
-| `/api/v1/hit?url=` | GET | Bloom check + scorer — confidence + level + matches | ~0.5 ms |
+| `/api/v1/hit?url=` | GET | Bloom + DB confirmation + scorer — confidence + level + matches | ~5–15 ms |
 | `/api/v1/bulk-check` | POST | Batch bloom check (up to N URLs) | ~0.4 ms × N |
-| `/api/v1/bulk-hit` | POST | Batch bloom check + scorer | ~0.5 ms × N |
+| `/api/v1/bulk-hit` | POST | Batch bloom + DB + scorer | ~5–15 ms × N |
 
 ### Responses
 
@@ -191,7 +189,7 @@ go run main.go query --url "https://evil.com" --json
   "matches": [{
     "type": "full_url",
     "key": "cdn.evil.com/malware/exploit.php",
-    "source_id": "URLHAUS"
+    "source_id": "urlhaus-online"
   }]
 }
 ```
@@ -253,22 +251,43 @@ Each provider is a Go package in `features/providers/`. Add a new TOML block in 
 ```go
 // features/providers/myprovider/myprovider.go
 func NewMyProvider(cfg *config.Config, collyClient *colly.Collector) base.Provider {
-    opts, ok := cfg.Providers["myprovider"]
-    if !ok || opts == nil { return nil }          // not in .env.toml
+    const providerName = "myprovider"
+
+    opts, ok := cfg.Providers[providerName]
+    if !ok || opts == nil {
+        opts = &config.ProviderOptions{} // defaults kick in
+    }
     if opts.Enabled != nil && !*opts.Enabled { return nil }
 
-    sourceURL := base.ResolveURL(opts.SourceURL, opts.APIKey)
+    sourceURL := opts.SourceURL
+    if sourceURL == "" {
+        sourceURL = "https://example.com/feed.txt" // built-in default
+    }
+    cron := opts.Cron
+    if cron == "" {
+        cron = "0 */6 * * *" // built-in default
+    }
+    category := opts.Category
+    if category == "" {
+        category = "blocklist" // built-in default
+    }
+
+    workers := opts.ParserWorkers
+    if workers <= 0 { workers = 4 }
+    batchSize := opts.ParserBatchSize
+    if batchSize <= 0 { batchSize = 1000 }
+
     client := base.BuildCollyClientForProvider(collyClient, opts)
 
     parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
-        return base.ParseLinesParallel(data, collector, "myprovider",
-            opts.ParserWorkers, opts.ParserBatchSize, func(line, processID string) (*entries.Entry, error) {
+        return base.ParseLinesParallel(data, collector, providerName,
+            workers, batchSize, func(line, processID string) (*entries.Entry, error) {
                 // ... parse logic ...
             })
     }
 
-    provider := base.NewBaseProvider("myprovider", sourceURL, opts.Category, client, parseFunc)
-    provider.SetCronSchedule(opts.Cron).Register()
+    provider := base.NewBaseProvider(providerName, sourceURL, category, client, parseFunc)
+    provider.SetCronSchedule(cron).Register()
     return provider
 }
 ```
