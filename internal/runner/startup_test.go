@@ -35,7 +35,7 @@ func TestParseTTLFromCron(t *testing.T) {
 		{"duration 24h", "24h", 24 * time.Hour},
 		{"cron hourly", "0 * * * *", 1 * time.Hour},
 		{"cron daily", "0 0 * * *", 24 * time.Hour},
-		{"cron weekly", "0 0 * * 0", 6 * time.Hour}, // weekly > 7d → cron.ParseStandard fallback → default 6h
+		{"cron weekly", "0 0 * * 0", 7 * 24 * time.Hour},
 		{"duration with d", "7d", 24 * time.Hour},        // "d" matches "day" substring → 24h
 		{"duration with w", "1w", 7 * 24 * time.Hour},   // "w" matches "week" substring → 7d
 	}

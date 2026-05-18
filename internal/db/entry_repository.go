@@ -162,9 +162,13 @@ func (r *entryRepository) ExistsByBloomType(ctx context.Context, matchType, key 
 		return exists, nil
 	case "full_url":
 		var exists bool
-		// Bloom key is host+path+?query. Confirm with exact source_url match.
+		// Bloom key is host+path+?query (no scheme, no port — same as how entries
+		// are stored now with Host normalized to Hostname()).
+		// Reconstruct from normalized DB columns instead of raw source_url.
 		err := r.db.QueryRowContext(ctx, `
-			SELECT EXISTS(SELECT 1 FROM entries WHERE source_url = ? AND deleted_at IS NULL LIMIT 1)
+			SELECT EXISTS(SELECT 1 FROM entries
+			  WHERE host || COALESCE(path, '') || CASE WHEN raw_query != '' THEN '?' || raw_query ELSE '' END = ?
+			  AND deleted_at IS NULL LIMIT 1)
 		`, key).Scan(&exists)
 		if err != nil {
 			return false, fmt.Errorf("exists by full_url: %w", err)

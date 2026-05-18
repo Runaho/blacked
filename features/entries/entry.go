@@ -78,10 +78,10 @@ func (b *Entry) SetURL(link string) error {
 	}
 
 	b.Scheme = u.Scheme
-	b.Host = u.Host
+	b.Host = u.Hostname() // Normalize: strip port — port is irrelevant for URL blacklist
 
 	// Extract domain + subdomains properly via PSL
-	domain, subdomains, err := utils.ExtractDomainAndSubDomains(u.Host)
+	domain, subdomains, err := utils.ExtractDomainAndSubDomains(b.Host)
 	if err != nil {
 		if mc != nil {
 			mc.IncrementImportErrors(b.Source)

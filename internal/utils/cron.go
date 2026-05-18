@@ -27,7 +27,7 @@ func ParseTTLFromCron(cronSchedule string) time.Duration {
 		first := sched.Next(now)
 		second := sched.Next(first)
 		diff := second.Sub(first)
-		if diff > 0 && diff < 7*24*time.Hour {
+		if diff > 0 && diff <= 7*24*time.Hour {
 			log.Debug().
 				Str("cron", cronSchedule).
 				Dur("ttl", diff).
