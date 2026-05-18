@@ -3,6 +3,7 @@ package threatfox
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -12,6 +13,23 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// ---------- Mock RepositoryProvider ----------
+
+type mockRepo struct {
+	count       int
+	maxCreatedAt int64
+}
+
+func (m *mockRepo) StreamEntriesCountBySource(_ context.Context, _ string) (int, error) {
+	return m.count, nil
+}
+
+func (m *mockRepo) GetMaxCreatedAtBySource(_ context.Context, _ string) (int64, error) {
+	return m.maxCreatedAt, nil
+}
+
+// ---------- Mock Collector ----------
 
 type testCollector struct {
 	entries []*entries.Entry
@@ -25,6 +43,64 @@ func (c *testCollector) StartProviderProcessing(_, _ string)             {}
 func (c *testCollector) FinishProviderProcessing(_, _ string) (int, time.Duration, bool) {
 	return len(c.entries), 0, true
 }
+
+// ---------- Dual-fetch strategy tests ----------
+
+func TestEmptyDB_UsesDump(t *testing.T) {
+	repo := &mockRepo{count: 0}
+	recentURL := "https://example.com/{token}/recent.json"
+	dumpURL := "https://example.com/{token}/full.json.zip"
+
+	result := determineFetchURL(recentURL, dumpURL, "mykey", repo)
+
+	assert.Contains(t, result, "full.json.zip")
+	assert.Contains(t, result, "mykey")
+}
+
+func TestWithEntriesNoGap_UsesRecent(t *testing.T) {
+	// maxCreatedAt = 1 hour ago → within 48h window → no gap
+	repo := &mockRepo{count: 100, maxCreatedAt: time.Now().Add(-1 * time.Hour).UnixNano()}
+	recentURL := "https://example.com/{token}/recent.json"
+	dumpURL := "https://example.com/{token}/full.json.zip"
+
+	result := determineFetchURL(recentURL, dumpURL, "mykey", repo)
+
+	assert.Contains(t, result, "recent.json")
+	assert.Contains(t, result, "mykey")
+}
+
+func TestGapDetected_UsesDump(t *testing.T) {
+	// maxCreatedAt = 72 hours ago → gap > 48h → should use dump
+	repo := &mockRepo{count: 100, maxCreatedAt: time.Now().Add(-72 * time.Hour).UnixNano()}
+	recentURL := "https://example.com/{token}/recent.json"
+	dumpURL := "https://example.com/{token}/full.json.zip"
+
+	result := determineFetchURL(recentURL, dumpURL, "mykey", repo)
+
+	assert.Contains(t, result, "full.json.zip")
+}
+
+func TestEmptyKey_Fallback_RecentIsUsed(t *testing.T) {
+	// Empty API key with non-empty DB → recent is used, template stays as-is
+	repo := &mockRepo{count: 100, maxCreatedAt: time.Now().UnixNano()}
+	recentURL := "https://example.com/{token}/recent.json"
+
+	result := determineFetchURL(recentURL, "no-important", "", repo)
+
+	assert.Contains(t, result, "{token}")
+}
+
+func TestDumpWithEmptyKey_TemplatePreserved(t *testing.T) {
+	repo := &mockRepo{count: 0}
+	dumpURL := "https://example.com/{token}/full.json.zip"
+
+	result := determineFetchURL("recent-url", dumpURL, "", repo)
+
+	assert.Contains(t, result, "{token}")
+	assert.Contains(t, result, "full.json.zip")
+}
+
+// ---------- JSON parsing tests ----------
 
 func TestParseThreatFoxJSON(t *testing.T) {
 	mockJSON, err := json.Marshal(map[string][]threatFoxIOC{
@@ -81,12 +157,16 @@ func TestParseThreatFoxJSON_Malformed(t *testing.T) {
 	require.Error(t, err)
 }
 
+// ---------- Zip detection tests ----------
+
 func TestIsZip(t *testing.T) {
 	assert.True(t, isZip([]byte{0x50, 0x4B, 0x03, 0x04, 0x00, 0x00}))
 	assert.False(t, isZip([]byte{0x7B, 0x22, 0x6B, 0x65, 0x79})) // "{"key…
 	assert.False(t, isZip(nil))
 	assert.False(t, isZip([]byte{0x50, 0x4B})) // too short
 }
+
+// ---------- URL resolution tests ----------
 
 func TestResolveThreatFoxURL(t *testing.T) {
 	result := resolveThreatFoxURL("https://example.com/{token}/path", "abc123")
@@ -95,6 +175,8 @@ func TestResolveThreatFoxURL(t *testing.T) {
 	result2 := resolveThreatFoxURL("", "key")
 	assert.Equal(t, "", result2)
 }
+
+// ---------- IOC to Entry mapping tests ----------
 
 func TestIOCToEntry_ipPort_Invalid(t *testing.T) {
 	entry, err := iocToEntry(&threatFoxIOC{
@@ -121,6 +203,8 @@ func TestIOCToEntry_SkipHash(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Nil(t, entry, "hash should be skipped")
 }
+
+// ---------- Full response parsing tests ----------
 
 func TestParseThreatFoxResponse_PlainJSON(t *testing.T) {
 	data := []byte(`{"1":[{"ioc_value":"evil.com","ioc_type":"domain","threat_type":"malware"}]}`)

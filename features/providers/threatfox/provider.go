@@ -24,6 +24,15 @@ import (
 
 const providerName = "threatfox-online"
 
+// RepositoryProvider abstracts the subset of BlacklistRepository that
+// determineFetchURL needs, making it mockable in unit tests.
+type RepositoryProvider interface {
+	StreamEntriesCountBySource(ctx context.Context, source string) (int, error)
+	GetMaxCreatedAtBySource(ctx context.Context, source string) (int64, error)
+}
+
+// --- IOC types from the ThreatFox API ---
+
 type threatFoxIOC struct {
 	IOCValue         string `json:"ioc_value"`
 	IOCType          string `json:"ioc_type"`
@@ -33,6 +42,8 @@ type threatFoxIOC struct {
 	FirstSeenUTC     string `json:"first_seen_utc,omitempty"`
 	Reporter         string `json:"reporter,omitempty"`
 }
+
+// --- Public constructor ---
 
 func NewThreatFoxProvider(cfg *config.Config, collyClient *colly.Collector) base.Provider {
 	opts, ok := cfg.Providers[providerName]
@@ -61,21 +72,10 @@ func NewThreatFoxProvider(cfg *config.Config, collyClient *colly.Collector) base
 		category = "threat_intel"
 	}
 
-	// Dual fetch: full dump only when DB is empty
 	apiKey := opts.APIKey
-	rwDB, err := db.GetWriteDB()
-	if err == nil {
-		repo := repository.NewSQLiteRepository(rwDB)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		count, _ := repo.StreamEntriesCountBySource(ctx, providerName)
-		cancel()
-		if count == 0 && dumpSourceURL != "" {
-			log.Info().Str("provider", providerName).Msg("no entries found — using full dump for initial load")
-			sourceURL = dumpSourceURL
-		}
-	}
-	fetchURL := resolveThreatFoxURL(sourceURL, apiKey)
 
+	// Determine which URL to fetch.
+	fetchURL := determineFetchURL(sourceURL, dumpSourceURL, apiKey, nil)
 	client := base.BuildCollyClientForProvider(collyClient, opts)
 
 	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
@@ -100,20 +100,87 @@ func NewThreatFoxProvider(cfg *config.Config, collyClient *colly.Collector) base
 	return provider
 }
 
+// determineFetchURL decides which URL to use. It is a separate function
+// so it can be tested in isolation. The first return value is the resolved
+// fetch URL; the second is true when the dump URL was selected.
+func determineFetchURL(recentURL, dumpURL, apiKey string, repo RepositoryProvider) string {
+	// Prefer dump when DB is empty or has a gap.
+	if shouldUseDump(apiKey, providerName, repo) {
+		log.Info().Str("provider", providerName).
+			Msg("no entries or gap detected — using full dump for initial load")
+		return resolveThreatFoxURL(dumpURL, apiKey)
+	}
+
+	log.Info().Str("provider", providerName).
+		Msg("entries found and no gap — using recent feed")
+	return resolveThreatFoxURL(recentURL, apiKey)
+}
+
+// shouldUseDump returns true when the dump should be used: either the DB
+// is empty for this source or a time gap exists between the most recent
+// entry in the DB and now. When repo is nil, it opens one from the DB package.
+func shouldUseDump(apiKey, source string, repo RepositoryProvider) bool {
+	if repo == nil {
+		rwDB, err := db.GetWriteDB()
+		if err != nil {
+			log.Warn().Err(err).Str("provider", source).
+				Msg("cannot connect to DB — falling back to recent feed")
+			return false
+		}
+		repo = repository.NewSQLiteRepository(rwDB)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	count, err := repo.StreamEntriesCountBySource(ctx, source)
+	if err != nil {
+		log.Warn().Err(err).Str("provider", source).
+			Msg("cannot count entries — falling back to recent feed")
+		return false
+	}
+	if count == 0 {
+		return true
+	}
+
+	// GAP detection: if the newest entry is older than 48 hours,
+	// the recent feed won't cover all time, so pull the dump.
+	maxCreatedAt, err := repo.GetMaxCreatedAtBySource(ctx, source)
+	if err != nil || maxCreatedAt == 0 {
+		return false
+	}
+
+	age := time.Since(time.Unix(0, maxCreatedAt))
+	if age > 48*time.Hour {
+		log.Info().Str("provider", source).
+			Dur("age", age).
+			Msg("gap detected — entries older than 48h, using full dump")
+		return true
+	}
+
+	return false
+}
+
+// --- URL resolution ---
+
 func resolveThreatFoxURL(template string, apiKey string) string {
 	if template == "" {
 		return ""
 	}
 	if apiKey == "" {
-		log.Warn().Str("provider", providerName).Msg("API key is empty — feed will likely fail")
+		log.Warn().Str("provider", providerName).
+			Msg("API key is empty — feed will likely fail")
 		return template
 	}
 	return strings.ReplaceAll(template, "{token}", apiKey)
 }
 
+// --- Response parsing ---
+
 func parseThreatFoxResponse(data []byte, collector entry_collector.Collector, source string) error {
 	if isZip(data) {
-		log.Info().Int("bytes", len(data)).Msg("detected zip archive — extracting full.json")
+		log.Info().Int("bytes", len(data)).
+			Msg("detected zip archive — extracting full.json")
 		zipReader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 		if err != nil {
 			return fmt.Errorf("open zip: %w", err)
@@ -136,7 +203,8 @@ func parseThreatFoxResponse(data []byte, collector entry_collector.Collector, so
 		if jsonData == nil {
 			return fmt.Errorf("full.json not found in zip archive")
 		}
-		log.Info().Int("json_bytes", len(jsonData)).Msg("extracted full.json from zip")
+		log.Info().Int("json_bytes", len(jsonData)).
+			Msg("extracted full.json from zip")
 		return parseThreatFoxJSON(jsonData, collector, source)
 	}
 	return parseThreatFoxJSON(data, collector, source)
@@ -178,6 +246,8 @@ func parseThreatFoxJSON(data []byte, collector entry_collector.Collector, source
 	return nil
 }
 
+// --- IOC → Entry mapping ---
+
 func iocToEntry(ioc *threatFoxIOC, source string) (*entries.Entry, error) {
 	entry := entries.NewEntry().
 		WithSource(source).
@@ -187,11 +257,13 @@ func iocToEntry(ioc *threatFoxIOC, source string) (*entries.Entry, error) {
 	case "ip:port":
 		host, _, err := net.SplitHostPort(strings.TrimSpace(ioc.IOCValue))
 		if err != nil {
-			log.Debug().Err(err).Str("value", ioc.IOCValue).Msg("failed to split ip:port")
+			log.Debug().Err(err).Str("value", ioc.IOCValue).
+				Msg("failed to split ip:port")
 			return nil, nil
 		}
 		if net.ParseIP(host) == nil {
-			log.Debug().Str("host", host).Msg("not a valid IP after split")
+			log.Debug().Str("host", host).
+				Msg("not a valid IP after split")
 			return nil, nil
 		}
 		if err := entry.SetURL("//" + host); err != nil {
@@ -209,6 +281,7 @@ func iocToEntry(ioc *threatFoxIOC, source string) (*entries.Entry, error) {
 		}
 
 	default:
+		// skip hashes and unknown types
 		return nil, nil
 	}
 
