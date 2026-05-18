@@ -72,17 +72,17 @@ func NewMetricsCollector(providerNames []string) *MetricsCollector {
 			}, []string{"provider"}),
 
 			entriesSaved: promauto.NewCounterVec(prometheus.CounterOpts{
-				Name: "blacklist_entries_saved_total",
+				Name: "entries_saved_total",
 				Help: "Total number of blacklist entries saved during sync by provider.",
 			}, []string{"provider"}),
 
 			entriesDeleted: promauto.NewCounterVec(prometheus.CounterOpts{
-				Name: "blacklist_entries_deleted_total",
+				Name: "entries_deleted_total",
 				Help: "Total number of blacklist entries deleted during sync by provider.",
 			}, []string{"provider"}),
 
 			entriesProcessed: promauto.NewGaugeVec(prometheus.GaugeOpts{ // Gauge as it is a value at a point in time, could also be Counter if you are counting cumulatively.
-				Name: "blacklist_entries_processed_total",
+				Name: "entries_processed_total",
 				Help: "Total number of entries processed by provider during last sync.",
 			}, []string{"provider"}),
 

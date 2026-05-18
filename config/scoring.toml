@@ -1,0 +1,13 @@
+[ProviderTrust]
+  # Provider-level trust scores (used when source-specific score is not set)
+  "abuse-ch"     = 0.90  # URLHaus, etc.
+  "openphish"    = 0.75
+  "oisd"         = 0.65  # OISD Big, OISD NSFW
+
+[SourceTrust]
+  # Source-specific trust scores override provider defaults
+  # These match the sourceID values in features/sources/*.go
+  "urlhaus-online"   = 0.90
+  "openphish-feed"   = 0.75
+  "oisd-big"         = 0.65
+  "oisd-nsfw"        = 0.65

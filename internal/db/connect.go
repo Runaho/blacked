@@ -19,43 +19,13 @@ const (
 	dbName   = "blacked.db"
 	testDB   = "blacked-test.db"
 	memoryDB = ":memory:"
-	schema   = `
-	CREATE TABLE IF NOT EXISTS blacklist_entries (
-		id TEXT PRIMARY KEY,
-		process_id TEXT,
-		scheme TEXT,
-		domain TEXT,
-		host TEXT,
-		sub_domains TEXT,
-		path TEXT,
-		raw_query TEXT,
-		source_url TEXT,
-		source TEXT,
-		category TEXT,
-		confidence REAL,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME,
-		UNIQUE (source_url, source)
-	);
-	CREATE TABLE IF NOT EXISTS provider_processes (
-		id TEXT PRIMARY KEY,
-		status TEXT,
-		start_time DATETIME,
-		end_time DATETIME,
-		providers_processed TEXT, -- Store as comma-separated string or JSON
-		providers_removed TEXT,   -- Store as comma-separated string or JSON
-		error TEXT
-	);
-	`
 )
 
 func initDB(db *sql.DB) error {
-	_, err := db.Exec(schema)
-	if err != nil {
+	if err := FullMigration(db); err != nil {
 		return err
 	}
-	log.Trace().Msg("Database schema initialized or already exists (including provider_processes table).")
+	log.Trace().Msg("Database schema initialized (providers, sources, entries, provider_processes).")
 	return nil
 }
 

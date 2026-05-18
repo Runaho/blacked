@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,15 +37,15 @@ type ResponseMetadata struct {
 	Description string `json:"description,omitempty"` // Example of storing a description
 }
 
-func GetResponseReader(sourceURL string, fetchFunc func() (io.Reader, error), providerName string, processID string) (io.Reader, *ResponseMetadata, error) {
+func GetResponseReader(sourceURL string, fetchFunc func() (io.Reader, error), providerName string, processID string, cacheTTL time.Duration) (io.Reader, *ResponseMetadata, error) {
 	cfg := config.GetConfig()
 	storePath := cfg.Collector.StorePath
 	storeResponses := cfg.Collector.StoreResponses
 
-	dataFilename, metaFilename := generateFilenames(storePath, providerName)
+	dataFilename, metaFilename := GenerateFilenames(storePath, providerName)
 
 	if storeResponses {
-		reader, meta, err := getStoredResponse(dataFilename, metaFilename)
+		reader, meta, err := getStoredResponse(dataFilename, metaFilename, cacheTTL)
 		if err == nil {
 			log.Info().Str("file", dataFilename).Str("process_id", meta.ProcessID).Msg("Using stored response")
 			return reader, meta, nil
@@ -76,7 +75,7 @@ func GetResponseReader(sourceURL string, fetchFunc func() (io.Reader, error), pr
 		}
 
 		// Get a fresh reader from the saved file to avoid consuming the original reader
-		i, _, e := getStoredResponse(dataFilename, metaFilename) // Return stored response reader after saving (or attempting to save)
+		i, _, e := getStoredResponse(dataFilename, metaFilename, cacheTTL) // Return stored response reader after saving (or attempting to save)
 		return i, &metadata, e
 	}
 
@@ -84,7 +83,7 @@ func GetResponseReader(sourceURL string, fetchFunc func() (io.Reader, error), pr
 }
 
 // getStoredResponse attempts to open and return a reader for the stored response and metadata.
-func getStoredResponse(dataFilename string, metaFilename string) (io.Reader, *ResponseMetadata, error) {
+func getStoredResponse(dataFilename string, metaFilename string, cacheTTL time.Duration) (io.Reader, *ResponseMetadata, error) {
 	metaFile, err := os.Open(metaFilename)
 	if err != nil {
 		log.Err(err).Str("file", metaFilename).Msg("Metadata file not found")
@@ -97,7 +96,7 @@ func getStoredResponse(dataFilename string, metaFilename string) (io.Reader, *Re
 		return nil, nil, ErrDecodeMetadataFile
 	}
 
-	if time.Since(metadata.CreatedAt) > 24*time.Hour {
+	if cacheTTL > 0 && time.Since(metadata.CreatedAt) > cacheTTL {
 		log.Info().
 			Time("created", metadata.CreatedAt).
 			Str("processID", metadata.ProcessID).
@@ -138,7 +137,7 @@ func saveResponseToFile(dataFilename string, metaFilename string, data io.Reader
 		log.Err(err).Interface("metadata", metadata).Msg("Failed to marshal metadata to JSON")
 		return ErrMarshalMetadataJSON
 	}
-	if err := ioutil.WriteFile(metaFilename, metaJSON, 0644); err != nil {
+	if err := os.WriteFile(metaFilename, metaJSON, 0644); err != nil {
 		log.Err(err).Str("file", metaFilename).Msg("Failed to write metadata to file")
 		return ErrWriteMetadataFile
 	}
@@ -147,7 +146,7 @@ func saveResponseToFile(dataFilename string, metaFilename string, data io.Reader
 }
 
 // generateFilenames and RemoveStoredResponse - no changes needed
-func generateFilenames(storePath string, providerName string) (dataFilename string, metaFilename string) {
+func GenerateFilenames(storePath string, providerName string) (dataFilename string, metaFilename string) {
 	baseFilename := filepath.Join(storePath, providerName+"_response") // Base filename without extensions
 	dataFilename = baseFilename + ".dat"
 	metaFilename = baseFilename + ".meta.json"
@@ -163,7 +162,7 @@ func RemoveStoredResponse(providerName string) error {
 	}
 
 	storePath := cfg.Collector.StorePath
-	dataFilename, metaFilename := generateFilenames(storePath, providerName)
+	dataFilename, metaFilename := GenerateFilenames(storePath, providerName)
 
 	if err := os.Remove(dataFilename); err == nil {
 		log.Info().Str("file", dataFilename).Msg("Removed stored response data file")

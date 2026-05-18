@@ -46,7 +46,7 @@ func (r *SQLiteRepository) StreamEntriesCount(ctx context.Context) (int, error) 
 	SELECT
         COUNT(DISTINCT source_url)
     FROM
-        blacklist_entries
+        entries
     WHERE
         deleted_at IS NULL;
 	`
@@ -60,6 +60,25 @@ func (r *SQLiteRepository) StreamEntriesCount(ctx context.Context) (int, error) 
 	return count, nil
 }
 
+func (r *SQLiteRepository) StreamEntriesCountBySource(ctx context.Context, source string) (int, error) {
+	query := `
+	SELECT
+        COUNT(DISTINCT source_url)
+    FROM
+        entries
+    WHERE
+        deleted_at IS NULL AND source = ?;
+	`
+
+	row := r.db.QueryRowContext(ctx, query, source)
+	var count int
+	if err := row.Scan(&count); err != nil {
+		log.Error().Err(err).Str("source", source).Msg("Failed to count entries by source in SQLite")
+		return 0, err
+	}
+	return count, nil
+}
+
 func (r *SQLiteRepository) StreamEntries(ctx context.Context, out chan<- entries.EntryStream) error {
 	defer close(out)
 
@@ -68,13 +87,11 @@ func (r *SQLiteRepository) StreamEntries(ctx context.Context, out chan<- entries
         source_url,
         GROUP_CONCAT(id, ',') as ids
     FROM
-    	blacklist_entries
+    	entries
     WHERE
         deleted_at IS NULL
     GROUP BY
-    	source_url
-    ORDER BY
-        COUNT(*) DESC;
+    	source_url;
     `
 
 	rows, err := r.db.QueryContext(ctx, query)
@@ -117,7 +134,7 @@ func (r *SQLiteRepository) StreamEntries(ctx context.Context, out chan<- entries
 
 // GetAllEntries retrieves all active blacklist entries from SQLite.
 func (r *SQLiteRepository) GetAllEntries(ctx context.Context) ([]entries.Entry, error) {
-	rows, err := r.db.QueryContext(ctx, "SELECT * FROM blacklist_entries WHERE deleted_at IS NULL") // WHERE clause to filter out deleted entries
+	rows, err := r.db.QueryContext(ctx, "SELECT * FROM entries WHERE deleted_at IS NULL") // WHERE clause to filter out deleted entries
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to query all active entries from SQLite")
 		return nil, ErrQueryAllEntries
@@ -128,11 +145,11 @@ func (r *SQLiteRepository) GetAllEntries(ctx context.Context) ([]entries.Entry, 
 	for rows.Next() {
 		var entry entries.Entry
 		var subDomainsStr string
-		var deletedAt sql.NullTime // Use sql.NullTime for nullable DATETIME in DB
+		var deletedAt sql.NullInt64 // Use sql.NullInt64 for nullable DATETIME in DB
 		err := rows.Scan(
-			&entry.ID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
+			&entry.ID, &entry.ProcessID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
 			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
-			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, // Scan deletedAt
+			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
 		)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to scan row from SQLite")
@@ -143,7 +160,7 @@ func (r *SQLiteRepository) GetAllEntries(ctx context.Context) ([]entries.Entry, 
 			entry.SubDomains = nil
 		}
 		if deletedAt.Valid { // Handle potential NULL value from DB
-			entry.DeletedAt = &deletedAt.Time // Assign time.Time pointer
+			entry.DeletedAt = &deletedAt.Int64
 		} else {
 			entry.DeletedAt = nil // Ensure it's nil if not set in DB
 		}
@@ -158,15 +175,15 @@ func (r *SQLiteRepository) GetAllEntries(ctx context.Context) ([]entries.Entry, 
 
 // GetEntryByID retrieves a blacklist entry by its ID from SQLite, even if deleted.
 func (r *SQLiteRepository) GetEntryByID(ctx context.Context, id string) (*entries.Entry, error) {
-	row := r.db.QueryRowContext(ctx, "SELECT * FROM blacklist_entries WHERE id = ?", id) // No WHERE deleted_at IS NULL here if you want to retrieve deleted entries too
+	row := r.db.QueryRowContext(ctx, "SELECT * FROM entries WHERE id = ?", id) // No WHERE deleted_at IS NULL here if you want to retrieve deleted entries too
 	var entry entries.Entry
 	var subDomainsStr string
-	var deletedAt sql.NullTime // For nullable DATETIME
+	var deletedAt sql.NullInt64 
 
 	err := row.Scan(
 		&entry.ID, &entry.ProcessID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
 		&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
-		&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, // Scan deletedAt
+		&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt,
 	)
 
 	if err != nil {
@@ -186,7 +203,7 @@ func (r *SQLiteRepository) GetEntryByID(ctx context.Context, id string) (*entrie
 		entry.SubDomains = nil
 	}
 	if deletedAt.Valid {
-		entry.DeletedAt = &deletedAt.Time
+		entry.DeletedAt = &deletedAt.Int64
 	} else {
 		entry.DeletedAt = nil
 	}
@@ -201,12 +218,12 @@ func (r *SQLiteRepository) GetEntriesByIDs(ctx context.Context, ids []string) ([
 	// Construct the query with a WHERE id IN (...) clause
 	query := `
 		SELECT id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, category, confidence, created_at, updated_at, deleted_at
-		FROM blacklist_entries
+		FROM entries
 		WHERE id IN (` + strings.Join(strings.Split(strings.Repeat("?", len(ids)), ""), ", ") + `)` // Generate placeholders
 	// AND deleted_at IS NULL -- If you only want active entries
 
 	// Convert the slice of IDs to a slice of interfaces for the query
-	args := make([]interface{}, len(ids))
+	args := make([]any, len(ids))
 	for i, id := range ids {
 		args[i] = id
 	}
@@ -225,12 +242,12 @@ func (r *SQLiteRepository) GetEntriesByIDs(ctx context.Context, ids []string) ([
 	for rows.Next() {
 		var entry entries.Entry
 		var subDomainsStr string
-		var deletedAt sql.NullTime // For nullable DATETIME
+		var deletedAt sql.NullInt64 
 
 		err := rows.Scan(
 			&entry.ID, &entry.ProcessID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
 			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
-			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, // Scan deletedAt
+			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt,
 		)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to scan row from SQLite")
@@ -242,7 +259,7 @@ func (r *SQLiteRepository) GetEntriesByIDs(ctx context.Context, ids []string) ([
 			entry.SubDomains = nil
 		}
 		if deletedAt.Valid {
-			entry.DeletedAt = &deletedAt.Time
+			entry.DeletedAt = &deletedAt.Int64
 		} else {
 			entry.DeletedAt = nil
 		}
@@ -259,7 +276,7 @@ func (r *SQLiteRepository) GetEntriesByIDs(ctx context.Context, ids []string) ([
 
 // GetEntriesBySource retrieves all active blacklist entries for a given source from SQLite.
 func (r *SQLiteRepository) GetEntriesBySource(ctx context.Context, source string) ([]entries.Entry, error) {
-	rows, err := r.db.QueryContext(ctx, "SELECT * FROM blacklist_entries WHERE source = ? AND deleted_at IS NULL") // Added WHERE deleted_at IS NULL
+	rows, err := r.db.QueryContext(ctx, "SELECT * FROM entries WHERE source = ? AND deleted_at IS NULL") // Added WHERE deleted_at IS NULL
 	if err != nil {
 		log.Err(err).
 			Str("source", source).
@@ -273,11 +290,11 @@ func (r *SQLiteRepository) GetEntriesBySource(ctx context.Context, source string
 	for rows.Next() {
 		var entry entries.Entry
 		var subDomainsStr string
-		var deletedAt sql.NullTime // For nullable DATETIME
+		var deletedAt sql.NullInt64 
 		err := rows.Scan(
-			&entry.ID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
+			&entry.ID, &entry.ProcessID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
 			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
-			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, // Scan deletedAt
+			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
 		)
 		if err != nil {
 			log.Err(err).
@@ -291,7 +308,7 @@ func (r *SQLiteRepository) GetEntriesBySource(ctx context.Context, source string
 			entry.SubDomains = nil
 		}
 		if deletedAt.Valid {
-			entry.DeletedAt = &deletedAt.Time
+			entry.DeletedAt = &deletedAt.Int64
 		} else {
 			entry.DeletedAt = nil
 		}
@@ -309,7 +326,7 @@ func (r *SQLiteRepository) GetEntriesBySource(ctx context.Context, source string
 
 // GetEntriesByCategory retrieves all active blacklist entries for a given category from SQLite.
 func (r *SQLiteRepository) GetEntriesByCategory(ctx context.Context, category string) ([]entries.Entry, error) {
-	rows, err := r.db.QueryContext(ctx, "SELECT * FROM blacklist_entries WHERE category = ? AND deleted_at IS NULL") // Added WHERE deleted_at IS NULL
+	rows, err := r.db.QueryContext(ctx, "SELECT * FROM entries WHERE category = ? AND deleted_at IS NULL") // Added WHERE deleted_at IS NULL
 	if err != nil {
 		log.Err(err).
 			Str("category", category).
@@ -323,11 +340,11 @@ func (r *SQLiteRepository) GetEntriesByCategory(ctx context.Context, category st
 	for rows.Next() {
 		var entry entries.Entry
 		var subDomainsStr string
-		var deletedAt sql.NullTime // For nullable DATETIME
+		var deletedAt sql.NullInt64 
 		err := rows.Scan(
-			&entry.ID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
+			&entry.ID, &entry.ProcessID, &entry.Scheme, &entry.Domain, &entry.Host, &subDomainsStr,
 			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
-			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, // Scan deletedAt
+			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt, 
 		)
 		if err != nil {
 			log.Err(err).
@@ -341,7 +358,7 @@ func (r *SQLiteRepository) GetEntriesByCategory(ctx context.Context, category st
 			entry.SubDomains = nil
 		}
 		if deletedAt.Valid {
-			entry.DeletedAt = &deletedAt.Time
+			entry.DeletedAt = &deletedAt.Int64
 		} else {
 			entry.DeletedAt = nil
 		}
@@ -369,7 +386,7 @@ func (r *SQLiteRepository) SaveEntry(ctx context.Context, entry entries.Entry) e
 	defer tx.Rollback()
 
 	_, err = tx.ExecContext(ctx, `
-			INSERT INTO blacklist_entries (
+			INSERT INTO entries (
 				id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, category, confidence, created_at, updated_at, deleted_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL) -- Insert with NULL deleted_at for new entries
 			ON CONFLICT (source_url, source) DO UPDATE SET -- UPSERT logic on conflict of 'source_url' and 'source'
@@ -384,7 +401,7 @@ func (r *SQLiteRepository) SaveEntry(ctx context.Context, entry entries.Entry) e
 				confidence = EXCLUDED.confidence,
 				updated_at = EXCLUDED.updated_at, -- Update 'updated_at' on update
 				deleted_at = NULL                  -- Ensure entry is NOT deleted upon update (reset soft delete)
-			WHERE EXCLUDED.updated_at > blacklist_entries.updated_at -- Optional: Update only if new data is "newer" (based on UpdatedAt)
+			WHERE EXCLUDED.updated_at > entries.updated_at -- Optional: Update only if new data is "newer" (based on UpdatedAt)
 		`,
 		entry.ID, entry.ProcessID, entry.Scheme, entry.Domain, entry.Host, strings.Join(entry.SubDomains, ","),
 		entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Category, entry.Confidence,
@@ -424,7 +441,7 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []*entr
 	defer tx.Rollback()
 
 	stmt, err := tx.PrepareContext(ctx, `
-        INSERT INTO blacklist_entries (
+        INSERT INTO entries (
             id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, category, confidence, created_at, updated_at, deleted_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
         ON CONFLICT (source_url, source) DO UPDATE SET
@@ -460,8 +477,8 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []*entr
 
 		_, err := stmt.ExecContext(ctx,
 			entry.ID, entry.ProcessID, entry.Scheme, entry.Domain, entry.Host, subDomainsStr,
-			entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Category, entry.Confidence,
-			entry.CreatedAt, entry.UpdatedAt,
+		entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Category, entry.Confidence,
+		entry.CreatedAt, entry.UpdatedAt,
 		)
 		if err != nil {
 			log.Error().Err(err).Str("entry_id", entry.ID).Str("source_url", entry.SourceURL).Msg("Error executing batch statement for entry")
@@ -484,9 +501,9 @@ func (r *SQLiteRepository) RemoveOlderInsertions(ctx context.Context, providerNa
 	}
 	defer tx.Rollback()
 
-	currentTime := time.Now()
+	currentTime := time.Now().UnixNano()
 	result, err := tx.ExecContext(ctx, `
-		UPDATE blacklist_entries
+		UPDATE entries
 		SET deleted_at = ?
 		WHERE source = ?
 		  AND process_id != ?
@@ -517,8 +534,8 @@ func (r *SQLiteRepository) ClearAllEntries(ctx context.Context) error {
 	}
 	defer tx.Rollback()
 
-	currentTime := time.Now()
-	_, err = tx.ExecContext(ctx, "UPDATE blacklist_entries SET deleted_at = ?", currentTime) // Soft delete all by setting deleted_at
+	currentTime := time.Now().UnixNano()
+	_, err = tx.ExecContext(ctx, "UPDATE entries SET deleted_at = ?", currentTime) // Soft delete all by setting deleted_at
 	if err != nil {
 		log.Err(err).Msg("Failed to soft delete all entries in SQLite")
 		return ErrDelete
@@ -539,8 +556,8 @@ func (r *SQLiteRepository) SoftDeleteEntryByID(ctx context.Context, id string) e
 	}
 	defer tx.Rollback()
 
-	currentTime := time.Now()
-	_, err = tx.ExecContext(ctx, "UPDATE blacklist_entries SET deleted_at = ? WHERE id = ?", currentTime, id)
+	currentTime := time.Now().UnixNano()
+	_, err = tx.ExecContext(ctx, "UPDATE entries SET deleted_at = ? WHERE id = ?", currentTime, id)
 	if err != nil {
 		log.Err(err).
 			Str("entry_id", id).
@@ -619,13 +636,13 @@ func (r *SQLiteRepository) QueryLinkByType(ctx context.Context, link string, que
 
 	switch *queryType {
 	case enums.QueryTypeFull:
-		query = "SELECT id FROM blacklist_entries WHERE source_url = ? AND deleted_at IS NULL"
+		query = "SELECT id FROM entries WHERE source_url = ? AND deleted_at IS NULL"
 	case enums.QueryTypeHost:
-		query = "SELECT id FROM blacklist_entries WHERE host = ? AND deleted_at IS NULL"
+		query = "SELECT id FROM entries WHERE host = ? AND deleted_at IS NULL"
 	case enums.QueryTypeDomain:
-		query = "SELECT id FROM blacklist_entries WHERE domain = ? AND deleted_at IS NULL"
+		query = "SELECT id FROM entries WHERE domain = ? AND deleted_at IS NULL"
 	case enums.QueryTypePath:
-		query = "SELECT id FROM blacklist_entries WHERE path = ? AND deleted_at IS NULL"
+		query = "SELECT id FROM entries WHERE path = ? AND deleted_at IS NULL"
 	default:
 		log.Error().Str("query_type", queryType.String()).Msg("Invalid query type")
 		return nil, ErrInvalidEntryQueryType
@@ -681,7 +698,7 @@ func (r *SQLiteRepository) QueryExactURLMatch(ctx context.Context, normalizedLin
 	defer span.End()
 
 	startTime := time.Now()
-	query := "SELECT id FROM blacklist_entries WHERE source_url = ? AND deleted_at IS NULL"
+	query := "SELECT id FROM entries WHERE source_url = ? AND deleted_at IS NULL"
 	rows, err := r.db.QueryContext(ctx, query, normalizedLink)
 	if err != nil {
 		log.Err(err).Msg("Exact URL match query failed")
@@ -732,7 +749,7 @@ func (r *SQLiteRepository) queryHostMatch(ctx context.Context, host string) []en
 	defer span.End()
 
 	startTime := time.Now()
-	query := "SELECT id FROM blacklist_entries WHERE host = ? AND deleted_at IS NULL"
+	query := "SELECT id FROM entries WHERE host = ? AND deleted_at IS NULL"
 	rows, err := r.db.QueryContext(ctx, query, host)
 	if err != nil {
 		log.Err(err).
@@ -783,7 +800,7 @@ func (r *SQLiteRepository) queryDomainMatch(ctx context.Context, domain string) 
 	defer span.End()
 
 	startTime := time.Now()
-	query := "SELECT id FROM blacklist_entries WHERE domain = ? AND deleted_at IS NULL"
+	query := "SELECT id FROM entries WHERE domain = ? AND deleted_at IS NULL"
 	rows, err := r.db.QueryContext(ctx, query, domain)
 	if err != nil {
 		log.Err(err).
@@ -835,7 +852,7 @@ func (r *SQLiteRepository) queryPathMatch(ctx context.Context, path string) []en
 	defer span.End()
 
 	startTime := time.Now()
-	query := "SELECT id FROM blacklist_entries WHERE path = ? AND deleted_at IS NULL"
+	query := "SELECT id FROM entries WHERE path = ? AND deleted_at IS NULL"
 	rows, err := r.db.QueryContext(ctx, query, path)
 	if err != nil {
 		log.Err(err).

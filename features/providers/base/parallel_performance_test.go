@@ -54,7 +54,7 @@ func generateTestData(numLines int) string {
 	buffer.WriteString("# Test blocklist data\n")
 	buffer.WriteString("# Generated for performance testing\n\n")
 
-	for i := 0; i < numLines; i++ {
+	for i := range numLines {
 		// Add occasional comments
 		if i%100 == 0 {
 			buffer.WriteString(fmt.Sprintf("# Batch %d\n", i/100))
@@ -275,7 +275,7 @@ func TestMemoryUsage(t *testing.T) {
 	// Run multiple iterations to check for memory leaks
 	t.Log("\n=== Memory Usage Test: 100K lines x 10 iterations ===")
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		collector := &PerformanceCollector{}
 		reader := strings.NewReader(data)
 

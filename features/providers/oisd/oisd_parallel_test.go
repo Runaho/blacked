@@ -13,20 +13,56 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func makeTestConfig(t *testing.T) *config.Config {
+	return &config.Config{
+		Providers: map[string]*config.ProviderOptions{
+			"oisd-big": {
+				Enabled:         boolPtr(true),
+				SourceURL:       "https://big.oisd.nl/domainswild2",
+				Cron:            "0 6 * * *",
+				Category:        "blocklist",
+				ParserWorkers:   4,
+				ParserBatchSize: 1000,
+			},
+			"oisd-nsfw": {
+				Enabled:         boolPtr(true),
+				SourceURL:       "https://nsfw.oisd.nl/domainswild",
+				Cron:            "22 6 * * *",
+				Category:        "nsfw",
+				ParserWorkers:   4,
+				ParserBatchSize: 1000,
+			},
+		},
+	}
+}
+
+func ensureOpts(cfg *config.Config, name string) *config.ProviderOptions {
+	if cfg.Providers == nil {
+		cfg.Providers = map[string]*config.ProviderOptions{}
+	}
+	if cfg.Providers[name] == nil {
+		cfg.Providers[name] = &config.ProviderOptions{
+			Enabled:         boolPtr(true),
+			ParserWorkers:   4,
+			ParserBatchSize: 1000,
+		}
+	}
+	return cfg.Providers[name]
+}
+
+func boolPtr(b bool) *bool { return &b }
+
 // TestOISDNSFWProvider_Configuration tests provider configuration
 func TestOISDNSFWProvider_Configuration(t *testing.T) {
-	settings := &config.CollectorConfig{
-		Concurrency:     10,
-		BatchSize:       100,
-		ParserWorkers:   2,
-		ParserBatchSize: 3,
-	}
+	cfg := makeTestConfig(t)
+	opts := ensureOpts(cfg, "oisd-nsfw")
+	opts.ParserWorkers = 2
+	opts.ParserBatchSize = 3
 
 	collyClient := colly.NewCollector()
-	provider := NewOISDNSFWProvider(settings, collyClient)
+	provider := NewOISDNSFWProvider(cfg, collyClient)
 
-	// Test basic provider properties
-	assert.Equal(t, "OISD_NSFW", provider.GetName())
+	assert.Equal(t, "oisd-nsfw", provider.GetName())
 	assert.Equal(t, "https://nsfw.oisd.nl/domainswild", provider.Source())
 	assert.Equal(t, "22 6 * * *", provider.GetCronSchedule())
 	assert.NotNil(t, provider)
@@ -34,17 +70,15 @@ func TestOISDNSFWProvider_Configuration(t *testing.T) {
 
 // TestOISDBigProvider_Configuration tests provider configuration
 func TestOISDBigProvider_Configuration(t *testing.T) {
-	settings := &config.CollectorConfig{
-		Concurrency:     10,
-		BatchSize:       100,
-		ParserWorkers:   4,
-		ParserBatchSize: 2,
-	}
+	cfg := makeTestConfig(t)
+	opts := ensureOpts(cfg, "oisd-big")
+	opts.ParserWorkers = 4
+	opts.ParserBatchSize = 2
 
 	collyClient := colly.NewCollector()
-	provider := NewOISDBigProvider(settings, collyClient)
+	provider := NewOISDBigProvider(cfg, collyClient)
 
-	assert.Equal(t, "OISD_BIG", provider.GetName())
+	assert.Equal(t, "oisd-big", provider.GetName())
 	assert.Equal(t, "https://big.oisd.nl/domainswild2", provider.Source())
 	assert.Equal(t, "0 6 * * *", provider.GetCronSchedule())
 	assert.NotNil(t, provider)
@@ -54,21 +88,26 @@ func TestOISDBigProvider_Configuration(t *testing.T) {
 func BenchmarkOISDNSFW_SmallDataset(b *testing.B) {
 	// Generate 1,000 domains
 	var buffer bytes.Buffer
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		buffer.WriteString("adult-site-")
 		buffer.WriteString(string(rune(i)))
 		buffer.WriteString(".com\n")
 	}
 
-	settings := &config.CollectorConfig{
-		ParserWorkers:   2,
-		ParserBatchSize: 100,
+	cfg := &config.Config{
+		Providers: map[string]*config.ProviderOptions{
+			"oisd-nsfw": {
+				Enabled:         boolPtr(true),
+				ParserWorkers:   2,
+				ParserBatchSize: 100,
+			},
+		},
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		collyClient := colly.NewCollector()
-		_ = NewOISDNSFWProvider(settings, collyClient)
+		_ = NewOISDNSFWProvider(cfg, collyClient)
 	}
 }
 
@@ -76,21 +115,26 @@ func BenchmarkOISDNSFW_SmallDataset(b *testing.B) {
 func BenchmarkOISDBig_LargeDataset(b *testing.B) {
 	// Generate 10,000 domains
 	var buffer bytes.Buffer
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		buffer.WriteString("domain-")
 		buffer.WriteString(string(rune(i)))
 		buffer.WriteString(".com\n")
 	}
 
-	settings := &config.CollectorConfig{
-		ParserWorkers:   4,
-		ParserBatchSize: 1000,
+	cfg := &config.Config{
+		Providers: map[string]*config.ProviderOptions{
+			"oisd-big": {
+				Enabled:         boolPtr(true),
+				ParserWorkers:   4,
+				ParserBatchSize: 1000,
+			},
+		},
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		collyClient := colly.NewCollector()
-		_ = NewOISDBigProvider(settings, collyClient)
+		_ = NewOISDBigProvider(cfg, collyClient)
 	}
 }
 
@@ -111,22 +155,38 @@ func TestParserConfiguration(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			settings := &config.CollectorConfig{
-				ParserWorkers:   tc.workers,
-				ParserBatchSize: tc.batchSize,
+			cfg := &config.Config{
+				Providers: map[string]*config.ProviderOptions{
+					"test": {
+						Enabled:         boolPtr(true),
+						ParserWorkers:   tc.workers,
+						ParserBatchSize: tc.batchSize,
+					},
+				},
 			}
 
-			assert.Equal(t, tc.expectedWorkers, settings.ParserWorkers)
-			assert.Equal(t, tc.expectedBatch, settings.ParserBatchSize)
+			opts := cfg.Providers["test"]
+			assert.Equal(t, tc.expectedWorkers, opts.ParserWorkers)
+			assert.Equal(t, tc.expectedBatch, opts.ParserBatchSize)
 		})
 	}
 }
 
 // TestConcurrentProviderExecution simulates multiple providers running concurrently
 func TestConcurrentProviderExecution(t *testing.T) {
-	settings := &config.CollectorConfig{
-		ParserWorkers:   2,
-		ParserBatchSize: 100,
+	cfg := &config.Config{
+		Providers: map[string]*config.ProviderOptions{
+			"oisd-big": {
+				Enabled:         boolPtr(true),
+				ParserWorkers:   2,
+				ParserBatchSize: 100,
+			},
+			"oisd-nsfw": {
+				Enabled:         boolPtr(true),
+				ParserWorkers:   2,
+				ParserBatchSize: 100,
+			},
+		},
 	}
 
 	collyClient := colly.NewCollector()
@@ -134,16 +194,16 @@ func TestConcurrentProviderExecution(t *testing.T) {
 	var wg sync.WaitGroup
 	providerCount := 3
 
-	for i := 0; i < providerCount; i++ {
+	for i := range providerCount {
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
 
 			if index%2 == 0 {
-				provider := NewOISDBigProvider(settings, collyClient)
+				provider := NewOISDBigProvider(cfg, collyClient)
 				assert.NotNil(t, provider)
 			} else {
-				provider := NewOISDNSFWProvider(settings, collyClient)
+				provider := NewOISDNSFWProvider(cfg, collyClient)
 				assert.NotNil(t, provider)
 			}
 		}(i)
@@ -170,20 +230,25 @@ func TestParserMemoryEfficiency(t *testing.T) {
 		t.Skip("Skipping memory test in short mode")
 	}
 
-	settings := &config.CollectorConfig{
-		ParserWorkers:   4,
-		ParserBatchSize: 1000,
+	cfg := &config.Config{
+		Providers: map[string]*config.ProviderOptions{
+			"oisd-nsfw": {
+				Enabled:         boolPtr(true),
+				ParserWorkers:   4,
+				ParserBatchSize: 1000,
+			},
+		},
 	}
 
 	collyClient := colly.NewCollector()
 
 	// Create and destroy providers multiple times
-	for i := 0; i < 100; i++ {
-		provider := NewOISDNSFWProvider(settings, collyClient)
+	for range 100 {
+		provider := NewOISDNSFWProvider(cfg, collyClient)
 		require.NotNil(t, provider)
 
 		// Verify basic functionality
-		assert.Equal(t, "OISD_NSFW", provider.GetName())
+		assert.Equal(t, "oisd-nsfw", provider.GetName())
 	}
 
 	// If we get here without OOM, memory management is working

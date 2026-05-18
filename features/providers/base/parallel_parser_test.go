@@ -185,7 +185,7 @@ func TestParseLinesParallel_ConcurrentSafety(t *testing.T) {
 
 	// Generate data
 	var buffer bytes.Buffer
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		buffer.WriteString("example.com\n")
 	}
 
@@ -299,7 +299,7 @@ func TestProcessEntriesParallel_WithFiltering(t *testing.T) {
 func BenchmarkParseLinesSequential(b *testing.B) {
 	// Generate test data
 	var buffer bytes.Buffer
-	for i := 0; i < 10000; i++ {
+	for range 10000 {
 		buffer.WriteString("example.com\n")
 	}
 	data := buffer.Bytes()
@@ -313,9 +313,9 @@ func BenchmarkParseLinesSequential(b *testing.B) {
 		scanner := io.Reader(reader)
 		buf := make([]byte, len(data))
 		_, _ = scanner.Read(buf)
-		lines := bytes.Split(buf, []byte("\n"))
+		lines := bytes.SplitSeq(buf, []byte("\n"))
 
-		for _, line := range lines {
+		for line := range lines {
 			if len(line) == 0 {
 				continue
 			}
@@ -329,7 +329,7 @@ func BenchmarkParseLinesSequential(b *testing.B) {
 // BenchmarkParseLinesParallel2Workers benchmarks parallel parsing with 2 workers
 func BenchmarkParseLinesParallel2Workers(b *testing.B) {
 	var buffer bytes.Buffer
-	for i := 0; i < 10000; i++ {
+	for range 10000 {
 		buffer.WriteString("example.com\n")
 	}
 	data := buffer.Bytes()
@@ -351,7 +351,7 @@ func BenchmarkParseLinesParallel2Workers(b *testing.B) {
 // BenchmarkParseLinesParallel4Workers benchmarks parallel parsing with 4 workers
 func BenchmarkParseLinesParallel4Workers(b *testing.B) {
 	var buffer bytes.Buffer
-	for i := 0; i < 10000; i++ {
+	for range 10000 {
 		buffer.WriteString("example.com\n")
 	}
 	data := buffer.Bytes()
@@ -373,7 +373,7 @@ func BenchmarkParseLinesParallel4Workers(b *testing.B) {
 // BenchmarkParseLinesParallel8Workers benchmarks parallel parsing with 8 workers
 func BenchmarkParseLinesParallel8Workers(b *testing.B) {
 	var buffer bytes.Buffer
-	for i := 0; i < 10000; i++ {
+	for range 10000 {
 		buffer.WriteString("example.com\n")
 	}
 	data := buffer.Bytes()

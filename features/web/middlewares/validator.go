@@ -18,7 +18,7 @@ type Validator struct {
 	validator *validator.Validate
 }
 
-func (v *Validator) Validate(i interface{}) error {
+func (v *Validator) Validate(i any) error {
 	err := v.validator.Struct(i)
 	if err == nil {
 		return nil

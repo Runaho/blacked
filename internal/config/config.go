@@ -31,25 +31,30 @@ type CacheSettings struct {
 }
 
 type APPConfig struct {
-	Environtment string        `koanf:"environtment" default:"development"`
+	Environment string        `koanf:"environment" default:"development"`
 	LogLevel     zerolog.Level `koanf:"log_level" default:"debug"`
 }
 
 type CollectorConfig struct {
-	Concurrency     int    `koanf:"concurrency" default:"10"`
-	BatchSize       int    `koanf:"batch_size" default:"100"`
-	CronSchedule    string `koanf:"cron_schedule" default:"0 0 0 * * *"`
-	StoreResponses  bool   `koanf:"store_responses" default:"true"`
-	StorePath       string `koanf:"store_path" default:"./responses"`
-	ParserWorkers   int    `koanf:"parser_workers" default:"4"`       // Number of parallel workers for parsing large files
-	ParserBatchSize int    `koanf:"parser_batch_size" default:"1000"` // Lines per batch for parallel parsing
+	Concurrency    int    `koanf:"concurrency" default:"10"`
+	BatchSize      int    `koanf:"batch_size" default:"100"`
+	CronSchedule   string `koanf:"cron_schedule" default:"0 0 0 * * *"`
+	StoreResponses bool   `koanf:"store_responses" default:"true"`
+	StorePath      string `koanf:"store_path" default:"./responses"`
 }
 
-type ProviderConfig struct {
-	EnabledProviders       []string          `koanf:"enabled_providers"` // List of enabled providers if is empty all providers are enabled
-	CronSchedules          map[string]string `koanf:"provider_crons"`    // Provider-specific cron schedules
-	RunAtStartup           bool              `koanf:"run_at_startup" default:"true"`
-	MaxConcurrentProviders int               `koanf:"max_concurrent_providers" default:"0"` // 0 means no limit, process all providers concurrently
+type ProviderOptions struct {
+	Enabled         *bool          `koanf:"enabled"`
+	SourceURL       string         `koanf:"source_url"`
+	Cron            string         `koanf:"cron"`
+	Category        string         `koanf:"category"`
+	APIKey          string         `koanf:"api_key"`
+	UserAgent       string         `koanf:"user_agent"`
+	Timeout         *time.Duration `koanf:"timeout"`
+	ParserWorkers   int            `koanf:"parser_workers"`
+	ParserBatchSize int            `koanf:"parser_batch_size"`
+	MaxRedirects    int            `koanf:"max_redirects"`
+	MaxSize         int64          `koanf:"max_size"`
 }
 
 type CollyConfig struct {
@@ -66,5 +71,5 @@ type Config struct {
 	Cache     CacheSettings
 	Collector CollectorConfig
 	Colly     CollyConfig
-	Provider  ProviderConfig
+	Providers map[string]*ProviderOptions `koanf:"providers"`
 }

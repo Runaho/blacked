@@ -17,15 +17,24 @@ var (
 	ErrProcessNotFound       = errors.New("process not found")
 )
 
+// ProcessPersistence is the interface for persisting process status to DB.
+// Defined here to avoid import cycle (providers → repository → providers).
+type ProcessPersistence interface {
+	InsertProcess(ctx context.Context, status *ProcessStatus) error
+	UpdateProcessStatus(ctx context.Context, status *ProcessStatus) error
+}
+
 // ProcessManager handles centralized process state management.
 // It ensures only one provider processing job can run at a time,
 // whether triggered by startup, cron scheduler, or API endpoint.
+// When a persistence backend is set, every state change is persisted.
 type ProcessManager struct {
 	mu             sync.RWMutex
 	currentProcess *ProcessStatus
 	isRunning      atomic.Bool
 	history        []*ProcessStatus
 	maxHistory     int
+	persistence    ProcessPersistence // optional DB persistence
 }
 
 var (
@@ -44,8 +53,18 @@ func GetProcessManager() *ProcessManager {
 	return globalProcessManager
 }
 
+// SetPersistence attaches a persistence backend for process records.
+// This should be called once at application startup after DB init.
+func (pm *ProcessManager) SetPersistence(persistence ProcessPersistence) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.persistence = persistence
+	log.Info().Msg("Provider process manager DB persistence enabled")
+}
+
 // TryStartProcess attempts to start a new process.
 // Returns the process ID if successful, or an error if a process is already running.
+// Persists to DB if persistence is configured.
 func (pm *ProcessManager) TryStartProcess(ctx context.Context, source string, providersToProcess, providersToRemove []string) (string, error) {
 	// Fast path: check if already running without lock
 	if pm.isRunning.Load() {
@@ -71,6 +90,13 @@ func (pm *ProcessManager) TryStartProcess(ctx context.Context, source string, pr
 	}
 	pm.isRunning.Store(true)
 
+	// Persist to DB if configured
+	if pm.persistence != nil {
+		if err := pm.persistence.InsertProcess(ctx, pm.currentProcess); err != nil {
+			log.Warn().Err(err).Str("process_id", processID).Msg("Failed to persist process start to DB")
+		}
+	}
+
 	log.Info().
 		Str("process_id", processID).
 		Str("source", source).
@@ -80,7 +106,8 @@ func (pm *ProcessManager) TryStartProcess(ctx context.Context, source string, pr
 	return processID, nil
 }
 
-// FinishProcess marks the current process as completed or failed
+// FinishProcess marks the current process as completed or failed.
+// Persists to DB if persistence is configured.
 func (pm *ProcessManager) FinishProcess(processID string, err error) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -98,6 +125,14 @@ func (pm *ProcessManager) FinishProcess(processID string, err error) {
 		pm.currentProcess.Error = err.Error()
 	} else {
 		pm.currentProcess.Status = "completed"
+	}
+
+	// Persist to DB if configured
+	if pm.persistence != nil {
+		ctx := context.Background()
+		if err := pm.persistence.UpdateProcessStatus(ctx, pm.currentProcess); err != nil {
+			log.Warn().Err(err).Str("process_id", processID).Msg("Failed to persist process status to DB")
+		}
 	}
 
 	// Add to history

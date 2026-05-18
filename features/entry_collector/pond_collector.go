@@ -1,14 +1,19 @@
 package entry_collector
 
 import (
+	"context"
+	"database/sql"
+	"errors"
+	"net"
+	"strings"
+	"sync"
+	"time"
+
+	"blacked/features/bloom"
 	"blacked/features/entries"
 	"blacked/features/entries/repository"
 	"blacked/internal/collector"
 	"blacked/internal/config"
-	"context"
-	"database/sql"
-	"sync"
-	"time"
 
 	"github.com/alitto/pond/v2"
 	"github.com/rs/zerolog/log"
@@ -16,6 +21,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
+
+// ErrMissingBloomStreamCh is returned when the bloom initialization stream channel is nil.
+var ErrMissingBloomStreamCh = errors.New("bloom stream channel is nil")
 
 const (
 	PeriodicFlushInterval = 5 * time.Second
@@ -36,6 +44,7 @@ var (
 type PondCollector struct {
 	pool          pond.Pool
 	repo          repository.BlacklistRepository
+	bloomMgr      *bloom.BloomManager
 	batchSize     int
 	buffer        []*entries.Entry
 	bufferMu      sync.Mutex
@@ -69,9 +78,13 @@ func InitPondCollector(
 		// This pool is for non-DB operations (parsing, validation, etc.)
 		pool := pond.NewPool(collectorConfig.Concurrency)
 
+		// Initialize bloom manager for new entries table
+		bloomMgr := bloom.NewBloomManager(1_000_000)
+
 		globalCollector = &PondCollector{
 			pool:           pool,
 			repo:           repository.NewSQLiteRepository(db),
+			bloomMgr:       bloomMgr,
 			batchSize:      collectorConfig.BatchSize,
 			buffer:         make([]*entries.Entry, 0, collectorConfig.BatchSize),
 			providerStats:  make(map[string]*ProviderStats),
@@ -88,6 +101,50 @@ func InitPondCollector(
 		// Start a goroutine to flush buffer periodically or on context done
 		go globalCollector.periodicFlush()
 
+		// Bootstrap bloom manager from existing DB entries on startup.
+		// Without this, a fresh server has an empty bloom filter and every
+		// URL returns 204 until the provider pipeline runs.  For 630K entries
+		// this takes ~2-3s in background.
+		go func() {
+			log.Info().Msg("Starting bloom bootstrap from existing database entries")
+			start := time.Now()
+
+			// Direct SQL query — faster than StreamEntries which returns EntryStream
+			// (source_url + id only, no domain/host/path fields).
+			rows, err := db.QueryContext(ctx,
+				`SELECT source, domain, host, path, raw_query
+				 FROM entries WHERE deleted_at IS NULL`)
+			if err != nil {
+				log.Error().Err(err).Msg("Bloom bootstrap: query failed")
+				return
+			}
+			defer rows.Close()
+
+			added := 0
+			for rows.Next() {
+				var source, domain, host, path, rawQuery string
+				if err := rows.Scan(&source, &domain, &host, &path, &rawQuery); err != nil {
+					log.Error().Err(err).Msg("Bloom bootstrap: scan failed")
+					continue
+				}
+				e := &entries.Entry{
+					Source:   source,
+					Domain:   domain,
+					Host:     host,
+					Path:     path,
+					RawQuery: rawQuery,
+				}
+				keys := entryToURLKeys(e)
+				globalCollector.bloomMgr.PopulateEntry(e.Source, keys)
+				added++
+			}
+
+			log.Info().
+				Int("entries_loaded", added).
+				Dur("duration", time.Since(start)).
+				Msg("Bloom bootstrap completed — manager ready for queries")
+		}()
+
 		log.Info().
 			Int("concurrency", collectorConfig.Concurrency).
 			Int("batch_size", collectorConfig.BatchSize).
@@ -99,6 +156,11 @@ func InitPondCollector(
 // GetPondCollector returns the global pond collector instance
 func GetPondCollector() *PondCollector {
 	return globalCollector
+}
+
+// GetBloomManager returns the single *bloom.BloomManager shared across the application.
+func (c *PondCollector) GetBloomManager() *bloom.BloomManager {
+	return c.bloomMgr
 }
 
 // StartProviderProcessing initializes tracking for a provider process
@@ -253,6 +315,14 @@ func (c *PondCollector) processBatch(source string, localEntries []*entries.Entr
 	}
 	span.AddEvent("batch saved to database")
 
+	// Populate the shared BloomManager so the API can check against live data
+	if c.bloomMgr != nil {
+		for _, e := range localEntries {
+			keys := entryToURLKeys(e)
+			c.bloomMgr.PopulateEntry(e.Source, keys)
+		}
+	}
+
 	batchSize := len(localEntries)
 
 	c.statsMu.RLock()
@@ -403,4 +473,42 @@ func (c *PondCollector) GetStatsMapSize() int {
 	c.statsMu.RLock()
 	defer c.statsMu.RUnlock()
 	return len(c.providerStats)
+}
+
+// entryToURLKeys converts an entries.Entry into bloom.URLKeys without re-parsing the URL.
+// The entry already has Domain, Host, Path, and RawQuery stored from the original provider parse.
+// This saves ~310MB of ParseURL alloc during provider sync.
+func entryToURLKeys(e *entries.Entry) *bloom.URLKeys {
+	file := ""
+	if e.Path != "" && e.Path != "/" {
+		base := e.Path
+		if idx := strings.LastIndex(e.Path, "/"); idx >= 0 {
+			base = e.Path[idx+1:]
+		}
+		if extIdx := strings.LastIndex(base, "."); extIdx > 0 && extIdx < len(base)-1 {
+			file = base
+		}
+	}
+
+	hp := ""
+	if e.Host != "" && e.Path != "" && e.Path != "/" {
+		hp = e.Host + e.Path
+	}
+
+	ip := ""
+	if trimmed := strings.TrimSpace(e.Host); trimmed != "" {
+		if net.ParseIP(trimmed) != nil {
+			ip = trimmed
+		}
+	}
+
+	return &bloom.URLKeys{
+		Domain:   e.Domain,
+		Host:     e.Host,
+		HostPath: hp,
+		Path:     e.Path,
+		File:     file,
+		Query:    e.RawQuery,
+		IP:       ip,
+	}
 }

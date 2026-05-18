@@ -99,8 +99,8 @@ func (p Providers) Process(ctx context.Context, opts ...ProcessOptions) error {
 	errChan := make(chan error, len(p))
 
 	// Get max concurrent providers from config (0 = unlimited)
-	providerConfig := config.GetConfig().Provider
-	maxConcurrent := providerConfig.MaxConcurrentProviders
+	// NOTE: MaxConcurrentProviders moved to per-provider config; default to all providers concurrently
+	maxConcurrent := len(p)
 	if maxConcurrent <= 0 {
 		maxConcurrent = len(p) // No limit, process all concurrently
 	}
@@ -227,10 +227,13 @@ func (p Providers) processProvider(
 
 	provider.SetProcessID(processID)
 
-	// Fetch data
+	// Fetch data with provider-specific TTL derived from cron schedule
+	cronSchedule := provider.GetCronSchedule()
+	ttl := utils.ParseTTLFromCron(cronSchedule)
+
 	fetchSpan := trace.SpanFromContext(ctx)
 	fetchSpan.AddEvent("fetching data from source")
-	reader, meta, err := utils.GetResponseReader(source, provider.Fetch, name, strProcessID)
+	reader, meta, err := utils.GetResponseReader(source, provider.Fetch, name, strProcessID, ttl)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to fetch data")
@@ -301,7 +304,7 @@ func (p Providers) processProvider(
 
 	// Cleanup if needed
 	cfg := config.GetConfig()
-	if cfg.APP.Environtment == "development" {
+	if cfg.APP.Environment == "development" {
 		utils.RemoveStoredResponse(name)
 	}
 

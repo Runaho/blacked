@@ -10,6 +10,7 @@ import (
 type BlacklistRepository interface {
 	StreamEntries(ctx context.Context, out chan<- entries.EntryStream) error
 	StreamEntriesCount(ctx context.Context) (int, error)
+	StreamEntriesCountBySource(ctx context.Context, source string) (int, error)
 	GetAllEntries(ctx context.Context) ([]entries.Entry, error)
 	GetEntryByID(ctx context.Context, id string) (*entries.Entry, error)
 	GetEntriesBySource(ctx context.Context, source string) ([]entries.Entry, error)

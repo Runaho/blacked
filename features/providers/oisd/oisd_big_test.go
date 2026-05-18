@@ -4,6 +4,7 @@ import (
 	"blacked/features/entries"
 	"blacked/features/entries/repository"
 	"blacked/internal/config"
+	testutil "blacked/internal/testutil"
 	"blacked/internal/utils"
 	"testing"
 	"time"
@@ -11,10 +12,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSetURL(t *testing.T) {
-	_, _, _, _ = utils.Initialize(t)
+	_, _, _, _ = testutil.Initialize(t)
 
 	su := "21.red-80-39-44.staticip.rima-tde.net"
 	e := entries.Entry{}
@@ -72,13 +74,15 @@ func TestSecondURL(t *testing.T) {
 
 // TestParse checks the OisdBigProvider.Parse() method, ensuring it processes lines properly.
 func TestParse(t *testing.T) {
-	_, db, cc, err := utils.Initialize(t)
+	_, db, cc, err := testutil.Initialize(t)
 	defer db.Close()
 	assert.NoError(t, err, "Expected no error initializing providers")
 
 	repository := repository.NewSQLiteRepository(db)
 
-	provider := NewOISDBigProvider(&config.GetConfig().Collector, cc)
+	testutil.EnsureProviderConfig(t, "oisd-big")
+	provider := NewOISDBigProvider(config.GetConfig(), cc)
+	require.NotNil(t, provider, "Expected provider to be created")
 	provider.SetRepository(repository)
 
 	processID := uuid.New()
@@ -90,7 +94,7 @@ func TestParse(t *testing.T) {
 
 	log.Info().Str("process_id", strProcessID).Str("source", source).Str("name", name).Time("starts", startedAt).Msg("start processing data")
 	provider.SetProcessID(processID)
-	reader, meta, err := utils.GetResponseReader(source, provider.Fetch, name, strProcessID)
+	reader, meta, err := utils.GetResponseReader(source, provider.Fetch, name, strProcessID, 24*time.Hour)
 	if meta != nil {
 		log.Info().Str("process_id", strProcessID).Str("source", source).Str("name", name).TimeDiff("duration", time.Now(), startedAt).Msg("There is a meta data for the process changing the process id")
 		strProcessID = meta.ProcessID

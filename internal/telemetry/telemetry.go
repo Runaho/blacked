@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"time"
 
@@ -70,13 +71,47 @@ func InitTelemetry(ctx context.Context, serviceName, serviceVersion string) (fun
 	}, nil
 }
 
-// initTracing initializes the tracing pipeline
+// initTracing initializes the tracing pipeline.
+// If the OTLP endpoint is unreachable, it falls back to a noop tracer
+// to avoid per-second retry loops and log spam.
 func initTracing(ctx context.Context, res *resource.Resource) (func(context.Context) error, error) {
 	// Get OTLP endpoint from environment or use default
 	otlpEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	if otlpEndpoint == "" {
 		otlpEndpoint = "localhost:4317"
 	}
+
+	// Strip protocol prefix for TCP dial
+	dialAddr := otlpEndpoint
+	if len(dialAddr) > 7 && dialAddr[:7] == "http://" {
+		dialAddr = dialAddr[7:]
+	} else if len(dialAddr) > 8 && dialAddr[:8] == "https://" {
+		dialAddr = dialAddr[8:]
+	}
+
+	// Probe the OTLP endpoint before creating the exporter.
+	// If unreachable, use a noop tracer to avoid connection-refused retry loops.
+	conn, err := net.DialTimeout("tcp", dialAddr, 500*time.Millisecond)
+	if err != nil {
+		log.Warn().
+			Str("endpoint", otlpEndpoint).
+			Err(err).
+			Msg("OTLP endpoint unreachable — tracing disabled, set OTEL_EXPORTER_OTLP_ENDPOINT to enable")
+		// Use a noop tracer provider — no retry loops, no log spam
+		noopProvider := sdktrace.NewTracerProvider(
+			sdktrace.WithResource(res),
+			sdktrace.WithSampler(sdktrace.NeverSample()),
+		)
+		otel.SetTracerProvider(noopProvider)
+		otel.SetTextMapPropagator(
+			propagation.NewCompositeTextMapPropagator(
+				propagation.TraceContext{},
+				propagation.Baggage{},
+			),
+		)
+		return noopProvider.Shutdown, nil
+	}
+	conn.Close()
 
 	// Create OTLP trace exporter
 	traceExporter, err := otlptracegrpc.New(ctx,

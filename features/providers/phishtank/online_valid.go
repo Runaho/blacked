@@ -1,4 +1,3 @@
-// phishtank is not implemented yet
 package phishtank
 
 import (
@@ -20,41 +19,67 @@ type PhishTankEntry struct {
 	VerifyDate string `json:"verification_time"`
 }
 
-func NewPhishTankProvider(settings *config.CollectorConfig, collyClient *colly.Collector) base.Provider {
-	const (
-		providerName = "PHISHTANK"
-		providerURL  = "https://data.phishtank.com/data/online-valid.json"
-		cronSchedule = "45 */6 * * *" // Every 6 hours at 45 minutes past the hour
-	)
+func NewPhishTankProvider(cfg *config.Config, collyClient *colly.Collector) base.Provider {
+	const providerName = "phishtank-online-valid"
+
+	opts, ok := cfg.Providers[providerName]
+	if !ok || opts == nil {
+		opts = &config.ProviderOptions{}
+	}
+	if opts.Enabled != nil && !*opts.Enabled {
+		log.Info().Str("provider", providerName).Msg("provider disabled — skipping")
+		return nil
+	}
+
+	sourceURL := opts.SourceURL
+	if sourceURL == "" {
+		sourceURL = "https://data.phishtank.com/data/{api_key}/online-valid.json"
+	}
+
+	// Replace {api_key} placeholder if an API key is configured
+	sourceURL = base.ResolveURL(sourceURL, opts.APIKey)
+
+	// If API key is empty, warn and skip (source URL will still contain {api_key} placeholder)
+	if opts.APIKey == "" {
+		log.Warn().Str("provider", providerName).Msg("PhishTank API key not configured — skipping")
+		return nil
+	}
+
+	cron := opts.Cron
+	if cron == "" {
+		cron = "45 */6 * * *"
+	}
+
+	workers := opts.ParserWorkers
+	if workers <= 0 {
+		workers = 4
+	}
+
+	client := base.BuildCollyClientForProvider(collyClient, opts)
 
 	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
 		var phishEntries []PhishTankEntry
 		id := uuid.New().String()
 
-		// Parse JSON
 		decoder := json.NewDecoder(data)
 		if err := decoder.Decode(&phishEntries); err != nil {
 			log.Error().Err(err).Msg("error decoding PhishTank JSON")
 			return err
 		}
 
-		// Process entries in parallel for large datasets
-		return base.ProcessEntriesParallel(phishEntries, collector, settings.ParserWorkers, func(phishEntry PhishTankEntry, processID string) (*entries.Entry, error) {
-			// Skip unverified entries
+		return base.ProcessEntriesParallel(phishEntries, collector, workers, func(phishEntry PhishTankEntry, processID string) (*entries.Entry, error) {
 			if !phishEntry.Verified {
 				return nil, nil
 			}
 
-			// Create a new entry
 			entry := entries.NewEntry().
 				WithSource(providerName).
 				WithProcessID(processID).
 				WithCategory("phishing")
 
-			// SetURL may fail, so handle it separately
 			if err := entry.SetURL(phishEntry.URL); err != nil {
 				log.Error().Err(err).Msgf("error setting URL: %s", phishEntry.URL)
-				return nil, nil // Skip invalid URLs
+				return nil, nil
 			}
 
 			return entry, nil
@@ -63,14 +88,14 @@ func NewPhishTankProvider(settings *config.CollectorConfig, collyClient *colly.C
 
 	provider := base.NewBaseProvider(
 		providerName,
-		providerURL,
-		settings,
-		collyClient,
+		sourceURL,
+		"phishing",
+		client,
 		parseFunc,
 	)
 
 	provider.
-		SetCronSchedule(cronSchedule).
+		SetCronSchedule(cron).
 		Register()
 
 	return provider

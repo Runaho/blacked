@@ -3,6 +3,7 @@ package urlhaus
 import (
 	"blacked/features/entries/repository"
 	"blacked/internal/config"
+	testutil "blacked/internal/testutil"
 	"blacked/internal/utils"
 	"testing"
 	"time"
@@ -14,13 +15,16 @@ import (
 
 // TestParse checks the URLHausProvider.Parse() method, ensuring it processes lines properly.
 func TestParse(t *testing.T) {
-	_, db, cc, err := utils.Initialize(t)
+	_, db, cc, err := testutil.Initialize(t)
 	defer db.Close()
 	assert.NoError(t, err, "Expected no error initializing providers")
 
 	repository := repository.NewSQLiteRepository(db)
 
-	provider := NewURLHausProvider(&config.GetConfig().Collector, cc)
+	provider := NewURLHausProvider(config.GetConfig(), cc)
+	if provider == nil {
+		t.Skip("urlhaus-online provider not configured or disabled")
+	}
 	provider.SetRepository(repository)
 
 	processID := uuid.New()
@@ -32,7 +36,7 @@ func TestParse(t *testing.T) {
 
 	log.Info().Str("process_id", strProcessID).Str("source", source).Str("name", name).Time("starts", startedAt).Msg("start processing data")
 	provider.SetProcessID(processID)
-	reader, meta, err := utils.GetResponseReader(source, provider.Fetch, name, strProcessID)
+	reader, meta, err := utils.GetResponseReader(source, provider.Fetch, name, strProcessID, 24*time.Hour)
 	if meta != nil {
 		log.Info().Str("process_id", strProcessID).Str("source", source).Str("name", name).TimeDiff("duration", time.Now(), startedAt).Msg("There is a meta data for the process changing the process id")
 		strProcessID = meta.ProcessID

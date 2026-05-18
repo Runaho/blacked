@@ -21,7 +21,7 @@ func MapHealth(e *echo.Echo, cfg config.ServerConfig) {
 
 // StatusCheck returns a simple JSON indicating “ok” status.
 func StatusCheck(c echo.Context) error {
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]any{
 		"status": "ok",
 	})
 }

@@ -59,9 +59,9 @@ func BuildBloomFromChannel(ctx context.Context, keyCount int, ch <-chan entries.
 
 			if log.Trace().Enabled() {
 				log.Trace().Str("key", entry.SourceUrl).Msg("Adding key to bloom filter")
-				if addedKeys%100000 == 0 {
-					logState(startTime, addedKeys, "on going progress : addedKeys%100000 == 0")
-				}
+			}
+			if addedKeys%100000 == 0 {
+				logState(startTime, addedKeys, "progress : addedKeys%100000")
 			}
 		}
 
