@@ -5,6 +5,7 @@ import (
 	"blacked/features/providers/oisd"
 	"blacked/features/providers/openphish"
 	"blacked/features/providers/phishtank"
+	"blacked/features/providers/threatfox"
 	"blacked/features/providers/urlhaus"
 
 	"github.com/gocolly/colly/v2"
@@ -31,6 +32,9 @@ func getProviders(cfg *config.Config, cc *colly.Collector) Providers {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
 	if p := phishtank.NewPhishTankProvider(cfg, cc); p != nil {
+		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	}
+	if p := threatfox.NewThreatFoxProvider(cfg, cc); p != nil {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
 
