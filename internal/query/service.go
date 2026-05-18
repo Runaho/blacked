@@ -89,6 +89,10 @@ func (qs *QueryService) Hit(ctx context.Context, urlStr string) (*QueryResponse,
 					exists, err = qs.repo.ExistsByHost(ctx, m.Key)
 				case "ip":
 					exists, err = qs.repo.ExistsByIP(ctx, m.Key)
+				case "file", "full_url", "host_path":
+					// Bloom keys for these types carry their own identity —
+					// file by filename, host_path by host+path prefix, full_url by host+path+query.
+					exists, err = qs.repo.ExistsByBloomType(ctx, m.Type, m.Key)
 				default:
 					host := hostname(urlStr)
 					if host == "" {

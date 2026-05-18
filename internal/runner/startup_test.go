@@ -2,6 +2,7 @@ package runner
 
 import (
 	"blacked/features/providers/base"
+	"blacked/internal/utils"
 	"context"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ func createTestProvider(name, cronSchedule string) base.Provider {
 }
 
 // ============================================================================
-// parseTTLFromCron tests
+// ParseTTLFromCron tests
 // ============================================================================
 
 func TestParseTTLFromCron(t *testing.T) {
@@ -41,9 +42,9 @@ func TestParseTTLFromCron(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := parseTTLFromCron(tt.input)
+			result := utils.ParseTTLFromCron(tt.input)
 			if result != tt.expected {
-				t.Errorf("parseTTLFromCron(%q) = %v, want %v", tt.input, result, tt.expected)
+				t.Errorf("ParseTTLFromCron(%q) = %v, want %v", tt.input, result, tt.expected)
 			}
 		})
 	}

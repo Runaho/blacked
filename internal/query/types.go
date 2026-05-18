@@ -70,4 +70,9 @@ type EntryRepository interface {
 
 	// ExistsByIP confirms whether any non-deleted entry exists for an IP address.
 	ExistsByIP(ctx context.Context, ip string) (bool, error)
+
+	// ExistsByBloomType routes DB existence checks by bloom match type.
+	// domain → ExistsByDomain, host → ExistsByHost, ip → ExistsByIP.
+	// file → path column suffix, host_path → source_url contains, full_url → source_url exact.
+	ExistsByBloomType(ctx context.Context, matchType, key string) (bool, error)
 }

@@ -60,6 +60,25 @@ func (r *SQLiteRepository) StreamEntriesCount(ctx context.Context) (int, error) 
 	return count, nil
 }
 
+func (r *SQLiteRepository) StreamEntriesCountBySource(ctx context.Context, source string) (int, error) {
+	query := `
+	SELECT
+        COUNT(DISTINCT source_url)
+    FROM
+        entries
+    WHERE
+        deleted_at IS NULL AND source = ?;
+	`
+
+	row := r.db.QueryRowContext(ctx, query, source)
+	var count int
+	if err := row.Scan(&count); err != nil {
+		log.Error().Err(err).Str("source", source).Msg("Failed to count entries by source in SQLite")
+		return 0, err
+	}
+	return count, nil
+}
+
 func (r *SQLiteRepository) StreamEntries(ctx context.Context, out chan<- entries.EntryStream) error {
 	defer close(out)
 

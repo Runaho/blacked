@@ -129,6 +129,49 @@ func (r *entryRepository) ExistsByIP(ctx context.Context, ip string) (bool, erro
 	return exists, nil
 }
 
+// ExistsByBloomType routes DB existence checks by bloom match type.
+// domain → ExistsByDomain, host → ExistsByHost, ip → ExistsByIP.
+// file → path suffix, host_path → source_url contains, full_url → source_url exact.
+func (r *entryRepository) ExistsByBloomType(ctx context.Context, matchType, key string) (bool, error) {
+	switch matchType {
+	case "domain":
+		return r.ExistsByDomain(ctx, key)
+	case "host":
+		return r.ExistsByHost(ctx, key)
+	case "ip":
+		return r.ExistsByIP(ctx, key)
+	case "file":
+		var exists bool
+		err := r.db.QueryRowContext(ctx, `
+			SELECT EXISTS(SELECT 1 FROM entries WHERE path LIKE '%/' || ? AND deleted_at IS NULL LIMIT 1)
+		`, key).Scan(&exists)
+		if err != nil {
+			return false, fmt.Errorf("exists by file: %w", err)
+		}
+		return exists, nil
+	case "host_path":
+		var exists bool
+		err := r.db.QueryRowContext(ctx, `
+			SELECT EXISTS(SELECT 1 FROM entries WHERE source_url LIKE '%' || ? AND deleted_at IS NULL LIMIT 1)
+		`, key).Scan(&exists)
+		if err != nil {
+			return false, fmt.Errorf("exists by host_path: %w", err)
+		}
+		return exists, nil
+	case "full_url":
+		var exists bool
+		err := r.db.QueryRowContext(ctx, `
+			SELECT EXISTS(SELECT 1 FROM entries WHERE source_url LIKE '%' || ? AND deleted_at IS NULL LIMIT 1)
+		`, key).Scan(&exists)
+		if err != nil {
+			return false, fmt.Errorf("exists by full_url: %w", err)
+		}
+		return exists, nil
+	default:
+		return false, fmt.Errorf("unknown bloom match type: %s", matchType)
+	}
+}
+
 // GetEntryByFullURL looks up an exact source_url match (used by Hit after bloom positive).
 func (r *entryRepository) GetEntryByFullURL(ctx context.Context, fullURL string) (*query.Entry, error) {
 	row := r.db.QueryRowContext(ctx, `

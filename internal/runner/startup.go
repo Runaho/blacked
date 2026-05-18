@@ -44,16 +44,23 @@ func EvaluateStartupState(ctx context.Context, providers []base.Provider) ([]Pro
 		return nil, errors.New("no providers specified for startup evaluation")
 	}
 
-	dbPopulated, dbCount, err := evaluateDBState(ctx)
+	rwDB, err := db.GetWriteDB()
 	if err != nil {
-		log.Warn().Err(err).Msg("Failed to evaluate DB state, assuming empty")
-		dbPopulated = false
-		dbCount = 0
+		return nil, err
 	}
+	repo := repository.NewSQLiteRepository(rwDB)
 
 	var decisions []ProviderStartupDecision
 
 	for _, provider := range providers {
+		providerName := provider.GetName()
+		dbCount, err := repo.StreamEntriesCountBySource(ctx, providerName)
+		if err != nil {
+			log.Warn().Err(err).Str("provider", providerName).Msg("Failed to evaluate DB state for provider, assuming empty")
+			dbCount = 0
+		}
+		dbPopulated := dbCount > 0
+
 		decision := evaluateProvider(provider, dbPopulated, dbCount)
 		decisions = append(decisions, decision)
 	}
@@ -114,24 +121,6 @@ func evaluateProvider(provider base.Provider, dbPopulated bool, dbCount int) Pro
 	return decision
 }
 
-// DB evaluation helpers
-func evaluateDBState(ctx context.Context) (bool, int, error) {
-	rwDB, err := db.GetWriteDB()
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to get write DB for startup check")
-		return false, 0, err
-	}
-
-	repo := repository.NewSQLiteRepository(rwDB)
-	count, err := repo.StreamEntriesCount(ctx)
-	if err != nil {
-		return false, 0, err
-	}
-
-	populated := count > 0
-	return populated, count, nil
-}
-
 // checkStoredFileFreshness reads the metadata file and returns age + whether it's fresh.
 func checkStoredFileFreshness(metaFileName string, cronSchedule string) (time.Duration, bool) {
 	metaFile, err := os.Open(metaFileName)
@@ -148,7 +137,7 @@ func checkStoredFileFreshness(metaFileName string, cronSchedule string) (time.Du
 	}
 
 	age := time.Since(metadata.CreatedAt)
-	ttl := parseTTLFromCron(cronSchedule)
+	ttl := utils.ParseTTLFromCron(cronSchedule)
 
 	isFresh := age <= ttl
 	log.Debug().
@@ -160,32 +149,6 @@ func checkStoredFileFreshness(metaFileName string, cronSchedule string) (time.Du
 		Msg("stored file freshness check")
 
 	return age, isFresh
-}
-
-// parseTTLFromCron extracts a sensible TTL from a cron schedule.
-func parseTTLFromCron(cronSchedule string) time.Duration {
-	if d, err := time.ParseDuration(cronSchedule); err == nil {
-		return d
-	}
-
-	if cronSchedule == "" {
-		log.Debug().Msg("no cron schedule configured, using default 6h TTL")
-		return 6 * time.Hour
-	}
-
-	scheduleLower := strings.ToLower(cronSchedule)
-	if strings.Contains(scheduleLower, "hour") || strings.Contains(scheduleLower, "h") {
-		return 1 * time.Hour
-	}
-	if strings.Contains(scheduleLower, "day") || strings.Contains(scheduleLower, "d") {
-		return 24 * time.Hour
-	}
-	if strings.Contains(scheduleLower, "week") || strings.Contains(scheduleLower, "w") {
-		return 7 * 24 * time.Hour
-	}
-
-	log.Debug().Str("cron", cronSchedule).Msg("using default 6h TTL for unknown cron format")
-	return 6 * time.Hour
 }
 
 // ExecuteStartupActions runs the decisions.

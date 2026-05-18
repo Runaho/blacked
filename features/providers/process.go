@@ -227,10 +227,13 @@ func (p Providers) processProvider(
 
 	provider.SetProcessID(processID)
 
-	// Fetch data
+	// Fetch data with provider-specific TTL derived from cron schedule
+	cronSchedule := provider.GetCronSchedule()
+	ttl := utils.ParseTTLFromCron(cronSchedule)
+
 	fetchSpan := trace.SpanFromContext(ctx)
 	fetchSpan.AddEvent("fetching data from source")
-	reader, meta, err := utils.GetResponseReader(source, provider.Fetch, name, strProcessID, 24*time.Hour)
+	reader, meta, err := utils.GetResponseReader(source, provider.Fetch, name, strProcessID, ttl)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to fetch data")
