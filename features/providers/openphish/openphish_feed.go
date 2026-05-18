@@ -17,8 +17,7 @@ func NewOpenPhishFeedProvider(cfg *config.Config, collyClient *colly.Collector) 
 
 	opts, ok := cfg.Providers[providerName]
 	if !ok || opts == nil {
-		log.Info().Str("provider", providerName).Msg("provider not configured in .env.toml — skipping")
-		return nil
+		opts = &config.ProviderOptions{}
 	}
 	if opts.Enabled != nil && !*opts.Enabled {
 		log.Info().Str("provider", providerName).Msg("provider disabled — skipping")

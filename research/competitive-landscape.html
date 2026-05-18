@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blacked — Market Intelligence</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0c0e;
+    --surface: #101214;
+    --surface-hover: #171a1d;
+    --border: #1e2125;
+    --border-light: #2a2e33;
+    --ink: #e4e6ea;
+    --muted: #7a7f87;
+    --accent: #00e599;
+    --accent-dim: #007a4d;
+    --accent-glow: rgba(0, 229, 153, 0.12);
+    --danger: #ff4d4d;
+    --warn: #ffa64d;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --font: "SF Mono", "SFMono-Regular", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+    --font-sans: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Navigation */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    background: rgba(10, 12, 14, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  nav .logo {
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--ink);
+    letter-spacing: -0.3px;
+  }
+
+  nav .logo span { color: var(--accent); }
+
+  nav .tagline {
+    color: var(--muted);
+    font-size: 11px;
+    display: none;
+  }
+
+  @media (min-width: 700px) {
+    nav .tagline { display: block; }
+  }
+
+  nav .links { display: flex; gap: 20px; }
+
+  nav .links a {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 11px;
+    transition: color 0.2s;
+    letter-spacing: 0.2px;
+    text-transform: uppercase;
+  }
+
+  nav .links a:hover { color: var(--ink); }
+
+  main { padding-top: 52px; }
+
+  /* Sections */
+  section {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 64px 32px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  section:last-child { border-bottom: none; }
+
+  /* Hero */
+  .hero {
+    padding: 100px 32px 80px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -40%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .hero .badge {
+    display: inline-block;
+    background: var(--accent-dim);
+    color: var(--accent);
+    font-size: 10px;
+    padding: 4px 12px;
+    border-radius: 100px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(0, 229, 153, 0.2);
+  }
+
+  .hero h1 {
+    font-family: var(--font-sans);
+    font-size: clamp(36px, 5vw, 56px);
+    font-weight: 700;
+    letter-spacing: -1.2px;
+    line-height: 1.1;
+    margin-bottom: 16px;
+    position: relative;
+  }
+
+  .hero h1 span { color: var(--accent); }
+
+  .hero p {
+    color: var(--muted);
+    font-size: clamp(14px, 2vw, 17px);
+    max-width: 540px;
+    margin: 0 auto 32px;
+    line-height: 1.7;
+  }
+
+  .hero .stats {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    flex-wrap: wrap;
+  }
+
+  .hero .stat { text-align: center; }
+
+  .hero .stat .num {
+    font-family: var(--font-sans);
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .hero .stat .label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-top: 4px;
+  }
+
+  /* Section headers */
+  .section-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  .section-title {
+    font-family: var(--font-sans);
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    margin-bottom: 32px;
+  }
+
+  /* Comparison table */
+  .comparison {
+    overflow-x: auto;
+    margin: 0 -32px;
+    padding: 0 32px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 12px;
+    min-width: 600px;
+  }
+
+  thead th {
+    text-align: left;
+    padding: 12px 16px;
+    background: var(--surface);
+    border-bottom: 2px solid var(--accent);
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  thead th:last-child {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  tbody td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+
+  tbody tr:hover { background: var(--surface-hover); }
+
+  .tag {
+    display: inline-block;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 100px;
+    background: var(--surface-hover);
+    border: 1px solid var(--border-light);
+  }
+
+  .tag.green { background: var(--accent-glow); color: var(--accent); border-color: var(--accent-dim); }
+  .tag.red { background: rgba(255, 77, 77, 0.1); color: var(--danger); border-color: rgba(255, 77, 77, 0.3); }
+  .tag.yellow { background: rgba(255, 166, 77, 0.1); color: var(--warn); border-color: rgba(255, 166, 77, 0.3); }
+
+  /* Cards grid */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    transition: border-color 0.2s;
+  }
+
+  .card:hover { border-color: var(--border-light); }
+
+  .card h3 {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .card p {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  .card .meta {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+
+  /* Gap analysis */
+  .gap-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .gap-box {
+    flex: 1;
+    min-width: 200px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+
+  .gap-box .name {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .gap-box .desc {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  .gap-box .role {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--accent);
+    margin-top: 10px;
+  }
+
+  .gap-box.highlight {
+    border-color: var(--accent);
+    background: rgba(0, 229, 153, 0.04);
+  }
+
+  .gap-box.highlight .name { color: var(--accent); }
+
+  /* Persona */
+  .persona {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+
+  .persona h3 {
+    font-family: var(--font-sans);
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .persona .subtitle {
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  .persona .detail {
+    display: grid;
+    grid-template-columns: 100px 1fr;
+    gap: 6px 16px;
+    font-size: 12px;
+  }
+
+  .persona .detail .key { color: var(--muted); }
+
+  /* Strategic section */
+  .roadmap {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+    margin-top: 24px;
+  }
+
+  .phase {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+  }
+
+  .phase .phase-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+
+  .phase ul {
+    list-style: none;
+    margin: 0;
+  }
+
+  .phase li {
+    font-size: 11px;
+    color: var(--muted);
+    padding: 3px 0;
+    padding-left: 12px;
+    position: relative;
+  }
+
+  .phase li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+  }
+
+  /* Positioning matrix */
+  .matrix {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1px;
+    background: var(--border);
+  }
+
+  .matrix > div {
+    background: var(--surface);
+    padding: 16px;
+  }
+
+  .matrix .header {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    font-weight: 500;
+  }
+
+  .matrix .problem { font-size: 11px; color: var(--muted); }
+  .matrix .solution { font-size: 12px; color: var(--ink); }
+
+  .matrix .blacked { background: rgba(0, 229, 153, 0.04); }
+
+  /* Footer */
+  footer {
+    text-align: center;
+    padding: 48px 32px;
+    color: var(--muted);
+    font-size: 11px;
+    border-top: 1px solid var(--border);
+  }
+
+  footer a { color: var(--accent); text-decoration: none; }
+
+  /* Timeline */
+  .timeline {
+    position: relative;
+    padding-left: 24px;
+  }
+
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--border-light);
+  }
+
+  .tl-item {
+    position: relative;
+    margin-bottom: 24px;
+  }
+
+  .tl-item::before {
+    content: '';
+    position: absolute;
+    left: -20px;
+    top: 6px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+  }
+
+  .tl-item h4 {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .tl-item .detail {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  /* TOC */
+  .toc {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 40px;
+  }
+
+  .toc a {
+    font-size: 11px;
+    color: var(--muted);
+    text-decoration: none;
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    transition: all 0.2s;
+  }
+
+  .toc a:hover {
+    color: var(--ink);
+    border-color: var(--border-light);
+    background: var(--surface);
+  }
+
+  /* Responsive */
+  @media (max-width: 700px) {
+    section { padding: 40px 20px; }
+    .hero { padding: 60px 20px 50px; }
+    .hero .stats { gap: 24px; }
+    .comparison { margin: 0 -20px; padding: 0 20px; }
+    .gap-row { flex-direction: column; }
+    .matrix { grid-template-columns: 1fr; }
+  }
+
+  /* Animations */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  section { animation: fadeUp 0.6s ease; }
+
+  /* Print */
+  @media print {
+    nav { display: none; }
+    body { background: white; color: #000; }
+    section { page-break-inside: avoid; }
+    .card, .gap-box, .persona, .phase, .matrix > div { background: #f5f5f5; border-color: #ddd; }
+    .hero::before { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">blac<span>ked</span></div>
+  <div class="tagline">Self-hosted URL blacklist engine · Market Intelligence Report</div>
+  <div class="links">
+    <a href="#landscape">Landscape</a>
+    <a href="#positioning">Positioning</a>
+    <a href="#market">Market</a>
+    <a href="#personas">Personas</a>
+    <a href="#strategy">Strategy</a>
+  </div>
+</nav>
+
+<main>
+
+<!-- Hero -->
+<section class="hero" id="landscape">
+  <div class="badge">Market Intelligence · May 2026</div>
+  <h1>Blacked isn't another<br>blacklist. It's the <span>engine</span>.</h1>
+  <p>Hızlı Bloom filter lookup, multi-layer matching, self-hosted gizlilik. Threat intelligence pazarında doldurulmamış bir boşluğa oturuyor.</p>
+  <div class="stats">
+    <div class="stat">
+      <div class="num">$12–15B</div>
+      <div class="label">Threat Intel Market (2025)</div>
+    </div>
+    <div class="stat">
+      <div class="num">$2–3B</div>
+      <div class="label">URL Blacklist Segment</div>
+    </div>
+    <div class="stat">
+      <div class="num">17–19%</div>
+      <div class="label">CAGR (2025–2030)</div>
+    </div>
+    <div class="stat">
+      <div class="num">&lt;1ms</div>
+      <div class="label">Bloom Lookup Latency</div>
+    </div>
+  </div>
+</section>
+
+<!-- TOC -->
+<section style="border-bottom:1px solid var(--border); padding-bottom: 24px;">
+  <div class="section-label">Contents</div>
+  <div class="toc">
+    <a href="#landscape">Competitive Landscape</a>
+    <a href="#comparison">Head-to-Head</a>
+    <a href="#providers">Provider Ecosystem</a>
+    <a href="#gap">Gap Analysis</a>
+    <a href="#market">Market Size & Trends</a>
+    <a href="#personas">Buyer Personas</a>
+    <a href="#positioning">Positioning</a>
+    <a href="#strategy">Strategic Roadmap</a>
+  </div>
+</section>
+
+<!-- Competitive Landscape -->
+<section>
+  <div class="section-label">01 · Competitive Landscape</div>
+  <h2 class="section-title">Mevcut oyuncular ne yapıyor?</h2>
+  <p style="color:var(--muted); margin-bottom: 32px; font-size: 14px;">
+    Her biri pazardan bir parça alıyor ama hiçbiri Bloom filter + multi-layer + self-hosted kombinasyonunu sunmuyor.
+  </p>
+
+  <div class="grid">
+    <div class="card">
+      <h3>URLScan.io</h3>
+      <p>Headless Chromium sandbox — URL'leri açar, ağ trafiğini + DOM'u + screenshot'ı kaydeder. SaaS, public feed.</p>
+      <div class="meta">
+        <span class="tag">$49/mo Pro</span>
+        <span class="tag red">100 req/min</span>
+        <span class="tag red">No offline</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>VirusTotal</h3>
+      <p>70+ AV motoru + URL/domain reputation. Google bünyesinde. En geniş kapsam ama veri paylaşımı zorunlu.</p>
+      <div class="meta">
+        <span class="tag">Free / $300+</span>
+        <span class="tag red">1 req/dk free</span>
+        <span class="tag red">Public veri</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>AbuseIPDB</h3>
+      <p>IP adresi blacklist'i — topluluk raporlarına dayalı. Sadece IP, URL/domain yok.</p>
+      <div class="meta">
+        <span class="tag">$20/mo Pro</span>
+        <span class="tag yellow">IP only</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>PhishTank</h3>
+      <p>Cisco bünyesinde, topluluk phishing URL veritabanı. En büyük phishing DB'si.</p>
+      <div class="meta">
+        <span class="tag green">Free</span>
+        <span class="tag yellow">Low rate limit</span>
+        <span class="tag yellow">Phishing only</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>AlienVault OTX</h3>
+      <p>En geniş kapsam — IP, domain, hash, CVE. Pulse sistemi ile bağlamsal tehdit istihbaratı.</p>
+      <div class="meta">
+        <span class="tag green">Free (10K/gün)</span>
+        <span class="tag yellow">Variable quality</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>ThreatFox (abuse.ch)</h3>
+      <p>Gerçek malware örneklerinden çıkarılmış IOC'ler. En yüksek veri kalitesi.</p>
+      <div class="meta">
+        <span class="tag green">Free</span>
+        <span class="tag">1000 req/min</span>
+        <span class="tag yellow">Malware only</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Head-to-Head Comparison -->
+<section id="comparison">
+  <div class="section-label">02 · Head-to-Head</div>
+  <h2 class="section-title">Blacked vs. the field</h2>
+  <div class="comparison">
+    <table>
+      <thead>
+        <tr><th>Kriter</th><th>URLScan.io</th><th>VirusTotal</th><th>AbuseIPDB</th><th>Pi-hole</th><th style="color:var(--accent)">Blacked</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Self-hosted</td>
+          <td><span class="tag red">No</span></td>
+          <td><span class="tag red">No</span></td>
+          <td><span class="tag red">No</span></td>
+          <td><span class="tag green">Yes</span></td>
+          <td><span class="tag green">Yes</span></td>
+        </tr>
+        <tr>
+          <td>Veri gizliliği</td>
+          <td><span class="tag red">Public</span></td>
+          <td><span class="tag red">Public</span></td>
+          <td><span class="tag yellow">Partial</span></td>
+          <td><span class="tag green">Full</span></td>
+          <td><span class="tag green">Full</span></td>
+        </tr>
+        <tr>
+          <td>Lookup hızı</td>
+          <td>10–30sn</td>
+          <td>&lt;1sn</td>
+          <td>&lt;1sn</td>
+          <td>&lt;10ms</td>
+          <td><span class="tag green">&lt;1ms</span></td>
+        </tr>
+        <tr>
+          <td>Rate limit</td>
+          <td><span class="tag red">10–100/min</span></td>
+          <td><span class="tag red">1/dk free</span></td>
+          <td><span class="tag yellow">1000/gün</span></td>
+          <td><span class="tag green">∞</span></td>
+          <td><span class="tag green">Sınırsız</span></td>
+        </tr>
+        <tr>
+          <td>Offline</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>✅</td>
+          <td><span class="tag green">✅</span></td>
+        </tr>
+        <tr>
+          <td>Multi-layer match</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td><span class="tag green">✅</span></td>
+        </tr>
+        <tr>
+          <td>Scoring engine</td>
+          <td>❌</td>
+          <td><span class="tag yellow">Partial</span></td>
+          <td><span class="tag yellow">Partial</span></td>
+          <td>❌</td>
+          <td><span class="tag green">✅</span></td>
+        </tr>
+        <tr>
+          <td>Provider agnostic</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td><span class="tag green">✅</span></td>
+          <td><span class="tag green">✅</span></td>
+        </tr>
+        <tr>
+          <td>Lisans</td>
+          <td>Proprietary</td>
+          <td>Proprietary</td>
+          <td>Proprietary</td>
+          <td>GPLv3</td>
+          <td><span class="tag green">MIT</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Provider Ecosystem -->
+<section id="providers">
+  <div class="section-label">03 · Provider Ecosystem</div>
+  <h2 class="section-title">Entegre edilebilir kaynaklar</h2>
+  <p style="color:var(--muted); margin-bottom: 24px; font-size: 14px;">
+    Mevcut 3 provider (OISD_BIG, URLHAUS, OPENPHISH) + roadmap'de eklenmesi planlananlar.
+  </p>
+
+  <div class="grid">
+    <div class="card">
+      <h3>OISD_BIG <span class="tag green" style="margin-left:8px">Active</span></h3>
+      <p>Domain/IP blacklist feed. Ücretsiz, yüksek kalite. Halihazırda entegre.</p>
+    </div>
+    <div class="card">
+      <h3>URLHAUS <span class="tag green" style="margin-left:8px">Active</span></h3>
+      <p>Malware URL feed (abuse.ch). Ücretsiz, yüksek kalite. Halihazırda entegre.</p>
+    </div>
+    <div class="card">
+      <h3>OPENPHISH <span class="tag green" style="margin-left:8px">Active</span></h3>
+      <p>Phishing URL feed. Ücretsiz. Halihazırda entegre.</p>
+    </div>
+    <div class="card">
+      <h3>AlienVault OTX <span class="tag yellow" style="margin-left:8px">Next</span></h3>
+      <p>En geniş kapsam — IP, domain, hash, CVE. Pulse takibi ile bağlamsal TI. 10K/gün ücretsiz.</p>
+    </div>
+    <div class="card">
+      <h3>ThreatFox <span class="tag yellow" style="margin-left:8px">Next</span></h3>
+      <p>Gerçek malware IOC'leri. En yüksek veri kalitesi. Ücretsiz, 1000 req/min.</p>
+    </div>
+    <div class="card">
+      <h3>PhishTank</h3>
+      <p>Cisco bünyesi. En büyük phishing DB. Döküm bazlı periyodik sync önerilir.</p>
+    </div>
+    <div class="card">
+      <h3>AbuseIPDB</h3>
+      <p>IP blacklist. $20-100/ay. API + cache katmanı ile entegrasyon.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Gap Analysis -->
+<section id="gap" style="background:var(--surface)">
+  <div class="section-label">04 · Gap Analysis</div>
+  <h2 class="section-title">Neden yeni bir şeye ihtiyaç var?</h2>
+  <p style="color:var(--muted); margin-bottom: 24px; font-size:14px;">
+    Her araç pazardan bir parça alıyor. Hiçbiri Blacked'in doldurduğu kombinasyonu sunmuyor.
+  </p>
+
+  <div class="gap-row">
+    <div class="gap-box">
+      <div class="name">Pi-hole / AdGuard</div>
+      <div class="desc">DNS sinkhole — domain bazlı bloklama yapar ama URL seviyesi yok, TI üretmez, sadece tüketici.</div>
+      <div class="role">Tüketici</div>
+    </div>
+    <div class="gap-box">
+      <div class="name">MISP / OpenCTI</div>
+      <div class="desc">IoC paylaşım platformları. Ağır kurulum, genel TI odaklı. Hızlı lookup engine değil.</div>
+      <div class="role">Üretici (Ağır)</div>
+    </div>
+    <div class="gap-box highlight">
+      <div class="name">Blacked</div>
+      <div class="desc">Hem tüketici hem üretici — hafif, hızlı, self-hosted. Provider agnostic, Bloom filter + multi-layer.</div>
+      <div class="role">Üretici + Tüketici · Hafif</div>
+    </div>
+  </div>
+
+  <div style="margin-top:24px; font-size:13px; color:var(--muted); line-height:1.7; padding:20px; border:1px solid var(--border); border-radius:var(--radius);">
+    <strong style="color:var(--ink);">Doldurulan boşluk:</strong><br>
+    <span style="color:var(--accent);">Bloom filter + multi-layer matching + scoring engine + self-hosted + MIT license + provider agnostic</span> — bu kombinasyonu sunan başka bir açık kaynak proje yok.
+  </div>
+</section>
+
+<!-- Market Size & Trends -->
+<section id="market">
+  <div class="section-label">05 · Market Size & Trends</div>
+  <h2 class="section-title">Pazar büyüyor, self-hosted yükseliyor</h2>
+
+  <div class="grid" style="margin-bottom:32px;">
+    <div class="card">
+      <h3>$12–15B</h3>
+      <p>Global threat intelligence pazarı (2025). CAGR %17–19, 2030'da $30–38B.</p>
+    </div>
+    <div class="card">
+      <h3>$2–3B</h3>
+      <p>URL scanning/blacklist segmenti. %20+ büyüme. Phishing ve malware hosting arttıkça büyüyor.</p>
+    </div>
+    <div class="card">
+      <h3>%75–80</h3>
+      <p>Bulut/SaaS hakimiyeti — ama GDPR/KVKK baskısıyla self-hosted talep hızla artıyor.</p>
+    </div>
+    <div class="card">
+      <h3>Who pays</h3>
+      <p>MSSP/SOC, email güvenlik firmaları, WAF sağlayıcıları, finans, reklam teknolojileri, marka koruma.</p>
+    </div>
+  </div>
+
+  <div style="font-size:13px; color:var(--muted); background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px;">
+    <strong style="color:var(--ink);">Self-hosted trend'i neden güçleniyor?</strong>
+    <div style="margin-top:8px;">
+      <span class="tag green" style="font-size:12px;">Veri gizliliği</span>
+      <span class="tag green" style="font-size:12px;">GDPR / KVKK</span>
+      <span class="tag green" style="font-size:12px;">Hava-gapped / kritik altyapı</span>
+      <span class="tag green" style="font-size:12px;">Öngörülebilir maliyet</span>
+    </div>
+    <p style="margin-top:12px;">Hassas URL'lerin 3. partiye gitmesi regülasyonla yasaklanıyor. Finans, kamu, sağlık self-hosted talep ediyor.</p>
+  </div>
+</section>
+
+<!-- Buyer Personas -->
+<section id="personas">
+  <div class="section-label">06 · Buyer Personas</div>
+  <h2 class="section-title">Kim alır, kim kullanır?</h2>
+
+  <div class="persona">
+    <h3>SOC / Güvenlik Mühendisi</h3>
+    <div class="subtitle">Birincil hedef</div>
+    <div class="detail">
+      <span class="key">Pain point</span>
+      <span>VT/URLScan.io'ya sorgu başı ödeme, rate limit, verinin dışarı sızması</span>
+      <span class="key">Ne arar</span>
+      <span>Hızlı lookup, self-hosted, SIEM entegrasyonu, öngörülebilir maliyet</span>
+      <span class="key">Ödeme</span>
+      <span>$0 (self-hosted). Enterprise hosted için $500–2000/yıl</span>
+      <span class="key">Karar süreci</span>
+      <span>Teknik doğrulama → internal PoC → deployment</span>
+    </div>
+  </div>
+
+  <div class="persona">
+    <h3>MSSP / MSP</h3>
+    <div class="subtitle">En yüksek gelir potansiyeli</div>
+    <div class="detail">
+      <span class="key">Pain point</span>
+      <span>Her müşteri için ayrı API anahtarı, toplu maliyet patlaması</span>
+      <span class="key">Ne arar</span>
+      <span>Multi-tenant, self-hosted, white-label, SLA desteği</span>
+      <span class="key">Ödeme</span>
+      <span>$2000–10000/yıl (enterprise tier)</span>
+      <span class="key">Karar süreci</span>
+      <span>Teknik ekip → CISO → satın alma</span>
+    </div>
+  </div>
+
+  <div class="persona">
+    <h3>Open Source Geliştirici</h3>
+    <div class="subtitle">Büyüme kaldıracı</div>
+    <div class="detail">
+      <span class="key">Pain point</span>
+      <span>Kendi güvenlik altyapısını kurmak isteyen ama MISP ağır gelen</span>
+      <span class="key">Ne arar</span>
+      <span>MIT lisansı, Go codebase, tek binary, kolay kurulum</span>
+      <span class="key">Değer</span>
+      <span>Topluluk → contributor → brand awareness → enterprise satış</span>
+      <span class="key">Karar süreci</span>
+      <span>GitHub → README → kurulum → kontribüsyon</span>
+    </div>
+  </div>
+</section>
+
+<!-- Positioning -->
+<section id="positioning">
+  <div class="section-label">07 · Positioning</div>
+  <h2 class="section-title">Pazardaki yerin ne?</h2>
+  <p style="color:var(--muted); margin-bottom: 28px; font-size:14px;">
+    Her mevcut çözümün bir kör noktası var. Blacked'in cevabı:
+  </p>
+
+  <div class="matrix">
+    <div class="header">Çözüm</div>
+    <div class="header">Problemi</div>
+    <div class="header blacked">Blacked cevabı</div>
+
+    <div class="problem">VirusTotal</div>
+    <div class="problem">Pahalı, rate limited, veri sızdırıyor, public</div>
+    <div class="blacked">Self-hosted, sınırsız, gizli, MIT</div>
+
+    <div class="problem">URLScan.io</div>
+    <div class="problem">SaaS bağımlı, batch scanning yok, offline çalışmaz</div>
+    <div class="blacked">Offline çalışır, batch API var, kendi sunucunda</div>
+
+    <div class="problem">Pi-hole</div>
+    <div class="problem">Sadece domain, TI kaynağı değil, URL seviyesi yok</div>
+    <div class="blacked">URL+domain+path+full URL, provider agnostic, scoring var</div>
+
+    <div class="problem">MISP / OpenCTI</div>
+    <div class="problem">Ağır, kurulum karmaşık, hızlı lookup engine değil</div>
+    <div class="blacked">Tek Go binary, hafif, &lt;1ms Bloom lookup</div>
+
+    <div class="problem">AbuseIPDB</div>
+    <div class="problem">Sadece IP, URL yok, rate limit var</div>
+    <div class="blacked">Çok katmanlı (domain → host → path → full URL)</div>
+  </div>
+
+  <div style="margin-top:28px; padding:20px; border:1px solid var(--accent-dim); border-radius:var(--radius); background:rgba(0,229,153,0.04);">
+    <div style="font-size:10px; text-transform:uppercase; letter-spacing:1.5px; color:var(--accent); margin-bottom:4px;">Positioning one-liner</div>
+    <div style="font-family:var(--font-sans); font-size:20px; font-weight:600;">
+      Self-hosted URL blacklist engine — hızlı, özel, ölçeklenebilir.
+    </div>
+  </div>
+</section>
+
+<!-- Strategic Roadmap -->
+<section id="strategy">
+  <div class="section-label">08 · Strategic Roadmap</div>
+  <h2 class="section-title">Nasıl büyür?</h2>
+
+  <div class="roadmap">
+    <div class="phase">
+      <div class="phase-label">Short-term</div>
+      <ul>
+        <li>OTX + ThreatFox provider</li>
+        <li>Gelişmiş dökümantasyon</li>
+        <li>Benchmark comparison</li>
+      </ul>
+    </div>
+    <div class="phase">
+      <div class="phase-label">Medium-term</div>
+      <ul>
+        <li>Topluluk feed API</li>
+        <li>SIEM/SOAR connector</li>
+        <li>False-positive yönetimi</li>
+        <li>Landing page + docs</li>
+      </ul>
+    </div>
+    <div class="phase">
+      <div class="phase-label">Long-term</div>
+      <ul>
+        <li>Hosted version (ücretli)</li>
+        <li>Multi-tenant enterprise</li>
+        <li>GitHub community</li>
+        <li>Open-core commercial</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="timeline" style="margin-top:32px;">
+    <div class="tl-item">
+      <h4>Open Source (MIT)</h4>
+      <div class="detail">Temel engine: provider sync + Bloom filter + scoring + CLI + REST API. Topluluk provider'ları (OISD, URLHAUS, OPENPHISH).</div>
+    </div>
+    <div class="tl-item">
+      <h4>Enterprise (Ücretli)</h4>
+      <div class="detail">Premium provider'lar önceden yapılandırılmış. Multi-tenant dashboard. SIEM/SOAR connector'ları. Managed update service + SLA.</div>
+    </div>
+    <div class="tl-item">
+      <h4>Pricing Benchmark</h4>
+      <div class="detail">URLScan.io Pro ($49/mo) → self-hosted = 1 sunucu ~$10/mo. VT Intelligence (~$300/mo) → your own engine. AbuseIPDB Pro ($20/mo) → provider modülü.</div>
+    </div>
+  </div>
+</section>
+
+<!-- Risks -->
+<section style="border-bottom: none;">
+  <div class="section-label">09 · Risk Matrix</div>
+  <h2 class="section-title">Neye dikkat etmeli?</h2>
+
+  <div class="grid">
+    <div class="card">
+      <h3>VT self-hosted açar</h3>
+      <p>Google'ın self-hosted threat intel çözümü çıkarması düşük ihtimal — iş modeli bulut. Yine de takip edilmeli.</p>
+      <div class="meta"><span class="tag yellow">Low · High impact</span></div>
+    </div>
+    <div class="card">
+      <h3>MISP Bloom filter ekler</h3>
+      <p>MISP'in roadmap'ine uygun değil. MISP zaten ağır, hızlı lookup engine eklemesi mimari olarak zor.</p>
+      <div class="meta"><span class="tag green">Low</span></div>
+    </div>
+    <div class="card">
+      <h3>AbuseIPDB self-hosted açar</h3>
+      <p>IP odaklılar, URL scanning'e geçmeleri büyük pivot. İhtimal düşük.</p>
+      <div class="meta"><span class="tag green">Low</span></div>
+    </div>
+    <div class="card">
+      <h3>Provider API kısıtlamaları</h3>
+      <p>OISD/URLHAUS/OPENPHISH rate limit getirebilir. Çözüm: local cache + her provider için fallback plan.</p>
+      <div class="meta"><span class="tag yellow">Medium · Medium impact</span></div>
+    </div>
+    <div class="card">
+      <h3>Topluluk ilgisi az</h3>
+      <p>GitHub stars beklenenden az gelebilir. Çözüm: enterprise geliriyle sürdür, topluluk beklentisini düşük tut.</p>
+      <div class="meta"><span class="tag yellow">Medium · Medium impact</span></div>
+    </div>
+    <div class="card">
+      <h3>Büyük oyuncu kopyalar</h3>
+      <p>Self-hosted Bloom filter engine basit bir fikir. Fark: multi-layer matching + scoring engine + 3 yıllık domain knowledge.</p>
+      <div class="meta"><span class="tag yellow">Medium · Low impact</span></div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <span>Blacked — Market Intelligence Report · May 2026</span><br>
+  <span style="font-size:10px;">Self-hosted URL blacklist engine. MIT licensed. Go-built.</span>
+</footer>
+
+</body>
+</html>

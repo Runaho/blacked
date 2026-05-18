@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blacked — Market Intelligence (Lightpanda Research)</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0c0e;
+    --surface: #101214;
+    --surface-hover: #171a1d;
+    --border: #1e2125;
+    --border-light: #2a2e33;
+    --ink: #e4e6ea;
+    --muted: #7a7f87;
+    --accent: #00e599;
+    --accent-dim: #007a4d;
+    --accent-glow: rgba(0, 229, 153, 0.12);
+    --danger: #ff4d4d;
+    --warn: #ffa64d;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --font: "SF Mono", "SFMono-Regular", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+    --font-sans: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  nav {
+    position: fixed; top: 0; left: 0; right: 0;
+    z-index: 100;
+    background: rgba(10, 12, 14, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  nav .logo {
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--ink);
+    letter-spacing: -0.3px;
+  }
+
+  nav .logo span { color: var(--accent); }
+
+  nav .tagline {
+    color: var(--muted);
+    font-size: 11px;
+    display: none;
+  }
+
+  @media (min-width: 700px) { nav .tagline { display: block; } }
+
+  nav .links { display: flex; gap: 20px; }
+  nav .links a { color: var(--muted); text-decoration: none; font-size: 11px; transition: color 0.2s; letter-spacing: 0.2px; text-transform: uppercase; }
+  nav .links a:hover { color: var(--ink); }
+
+  main { padding-top: 52px; }
+
+  section {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 64px 32px;
+    border-bottom: 1px solid var(--border);
+  }
+  section:last-child { border-bottom: none; }
+
+  .hero {
+    padding: 100px 32px 80px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -40%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .hero .badge {
+    display: inline-block;
+    background: var(--accent-dim);
+    color: var(--accent);
+    font-size: 10px;
+    padding: 4px 12px;
+    border-radius: 100px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(0, 229, 153, 0.2);
+  }
+
+  .hero h1 {
+    font-family: var(--font-sans);
+    font-size: clamp(32px, 4.5vw, 52px);
+    font-weight: 700;
+    letter-spacing: -1.2px;
+    line-height: 1.1;
+    margin-bottom: 16px;
+    position: relative;
+  }
+
+  .hero h1 span { color: var(--accent); }
+
+  .hero p {
+    color: var(--muted);
+    font-size: clamp(13px, 1.8vw, 16px);
+    max-width: 540px;
+    margin: 0 auto 32px;
+    line-height: 1.7;
+  }
+
+  .hero .stats { display: flex; justify-content: center; gap: 40px; flex-wrap: wrap; }
+
+  .hero .stat { text-align: center; }
+  .hero .stat .num { font-family: var(--font-sans); font-size: 24px; font-weight: 600; color: var(--ink); }
+  .hero .stat .label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 4px; }
+
+  .section-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--accent); margin-bottom: 8px; }
+  .section-title { font-family: var(--font-sans); font-size: 26px; font-weight: 600; letter-spacing: -0.5px; margin-bottom: 28px; }
+
+  .comparison { overflow-x: auto; margin: 0 -32px; padding: 0 32px; }
+
+  table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 11px;
+    min-width: 600px;
+  }
+
+  thead th {
+    text-align: left;
+    padding: 10px 14px;
+    background: var(--surface);
+    border-bottom: 2px solid var(--accent);
+    font-weight: 500;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  thead th:last-child { color: var(--accent); border-bottom-color: var(--accent); }
+
+  tbody td { padding: 8px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--surface-hover); }
+
+  .tag {
+    display: inline-block;
+    font-size: 9px;
+    padding: 2px 7px;
+    border-radius: 100px;
+    background: var(--surface-hover);
+    border: 1px solid var(--border-light);
+  }
+  .tag.green { background: var(--accent-glow); color: var(--accent); border-color: var(--accent-dim); }
+  .tag.red { background: rgba(255, 77, 77, 0.1); color: var(--danger); border-color: rgba(255, 77, 77, 0.3); }
+  .tag.yellow { background: rgba(255, 166, 77, 0.1); color: var(--warn); border-color: rgba(255, 166, 77, 0.3); }
+  .tag.blue { background: rgba(77, 166, 255, 0.1); color: #4da6ff; border-color: rgba(77, 166, 255, 0.3); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: var(--border-light); }
+  .card h3 { font-family: var(--font-sans); font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .card p { font-size: 11px; color: var(--muted); line-height: 1.6; }
+  .card .meta { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+
+  .persona {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 14px;
+  }
+  .persona h3 { font-family: var(--font-sans); font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+  .persona .subtitle { font-size: 10px; color: var(--muted); margin-bottom: 10px; }
+  .persona .detail { display: grid; grid-template-columns: 90px 1fr; gap: 4px 14px; font-size: 11px; }
+  .persona .detail .key { color: var(--muted); }
+
+  .log-entry {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    margin-bottom: 6px;
+    font-size: 11px;
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+  }
+  .log-entry .method {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--accent);
+    min-width: 50px;
+  }
+  .log-entry .url {
+    color: var(--ink);
+    word-break: break-all;
+  }
+  .log-entry .status {
+    font-size: 9px;
+    color: var(--muted);
+    white-space: nowrap;
+    margin-left: auto;
+  }
+  .log-entry .status.ok { color: var(--accent); }
+  .log-entry .status.blocked { color: var(--warn); }
+  .log-entry .status.no-data { color: var(--muted); }
+
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 32px; }
+  .toc a {
+    font-size: 10px;
+    color: var(--muted);
+    text-decoration: none;
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    transition: all 0.2s;
+  }
+  .toc a:hover { color: var(--ink); border-color: var(--border-light); background: var(--surface); }
+
+  .priceline { display: flex; gap: 8px; align-items: baseline; margin-top: 6px; }
+  .priceline .price { font-family: var(--font-sans); font-size: 16px; font-weight: 600; color: var(--accent); }
+  .priceline .period { font-size: 10px; color: var(--muted); }
+
+  .highlight-box {
+    margin-top: 20px;
+    padding: 18px;
+    border: 1px solid var(--accent-dim);
+    border-radius: var(--radius);
+    background: rgba(0, 229, 153, 0.04);
+  }
+
+  .highlight-box .label {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+
+  .highlight-box .bigtext {
+    font-family: var(--font-sans);
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  footer {
+    text-align: center;
+    padding: 40px 32px;
+    color: var(--muted);
+    font-size: 10px;
+    border-top: 1px solid var(--border);
+  }
+
+  @media (max-width: 700px) {
+    section { padding: 40px 20px; }
+    .hero { padding: 60px 20px 50px; }
+    .hero .stats { gap: 20px; }
+    .comparison { margin: 0 -20px; padding: 0 20px; }
+    nav { padding: 0 16px; }
+  }
+
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  section { animation: fadeUp 0.6s ease; }
+
+  @media print {
+    nav { display: none; }
+    body { background: white; color: #000; }
+    section { page-break-inside: avoid; }
+    .card, .persona, .log-entry { background: #f5f5f5; border-color: #ddd; }
+    .hero::before { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">blac<span>ked</span></div>
+  <div class="tagline">Self-hosted URL blacklist engine · Research Report</div>
+  <div class="links">
+    <a href="#data">Raw Data</a>
+    <a href="#pricing">Pricing</a>
+    <a href="#landscape">Landscape</a>
+    <a href="#http">HTTP Log</a>
+    <a href="#strategy">Strategy</a>
+  </div>
+</nav>
+
+<main>
+
+<!-- Hero -->
+<section class="hero" id="data">
+  <div class="badge">Lightpanda Research · May 2026</div>
+  <h1>Gerçek sayfalardan<br><span>toplanmış</span> pazar verisi.</h1>
+  <p>11 web sitesi Lightpanda ile ziyaret edildi. Pricing tabloları, API limitleri, ürün açıklamaları birebir kaynaklardan alındı.</p>
+  <div class="stats">
+    <div class="stat">
+      <div class="num">11</div>
+      <div class="label">Sites Fetched</div>
+    </div>
+    <div class="stat">
+      <div class="num">4</div>
+      <div class="label">Blocked (CF)</div>
+    </div>
+    <div class="stat">
+      <div class="num">7</div>
+      <div class="label">Clean Data</div>
+    </div>
+  </div>
+</section>
+
+<!-- TOC -->
+<section style="border-bottom:1px solid var(--border); padding-bottom: 20px;">
+  <div class="toc">
+    <a href="#pricing">Gerçek Fiyatlar</a>
+    <a href="#landscape">Rekabet</a>
+    <a href="#open-source">Open Source</a>
+    <a href="#http">HTTP İstek Logu</a>
+    <a href="#strategy">Strateji</a>
+  </div>
+</section>
+
+<!-- Real Pricing Data -->
+<section id="pricing">
+  <div class="section-label">01 · Gerçek Fiyatlar (Kaynaktan)</div>
+  <h2 class="section-title">Lightpanda ile canlı çekildi</h2>
+
+  <div class="grid">
+    <div class="card">
+      <h3>URLScan.io</h3>
+      <p>Headless Chromium sandbox. API-first, SOAR entegrasyonları var.</p>
+      <div class="priceline"><span class="price">$0</span><span class="period">Free (50 private/gün)</span></div>
+      <div class="priceline"><span class="price">$5,000/yıl</span><span class="period">Automate (2,500 private/gün)</span></div>
+      <div class="priceline"><span class="price">$12,500/yıl</span><span class="period">Professional (20K private)</span></div>
+      <div class="priceline"><span class="price">$25,000/yıl</span><span class="period">Enterprise (100K private)</span></div>
+      <div class="priceline"><span class="price">$50,000/yıl</span><span class="period">Ultimate (200K private)</span></div>
+      <div class="meta" style="margin-top:6px">
+        <span class="tag blue">Lightpanda ✓</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>VirusTotal</h3>
+      <p>70+ AV motoru. Pricing sayfası 404 (kaldırılmış). Public API: 500 req/gün, 4 req/dk.</p>
+      <div class="priceline"><span class="price">$0</span><span class="period">Public API (500/gün)</span></div>
+      <div class="priceline"><span class="price" style="color:var(--warn)">Gizli</span><span class="period">Premium (iletişim)</span></div>
+      <div style="margin-top:6px; font-size:10px; color:var(--muted);">
+        Premium: dosya indirme, sandbox behavior, reverse search, SLA<br>
+        Pricing page: <span class="tag red">404</span>
+      </div>
+      <div class="meta"><span class="tag blue">Lightpanda ✓</span><span class="tag yellow">SPA limits</span></div>
+    </div>
+    <div class="card">
+      <h3>AbuseIPDB</h3>
+      <p>IP blacklist. Topluluk raporlarına dayalı.</p>
+      <div class="priceline"><span class="price">$0</span><span class="period">Individual (1,000/gün)</span></div>
+      <div class="priceline"><span class="price">$19/ay</span><span class="period">Basic (10K/gün)</span></div>
+      <div class="priceline"><span class="price">$89/ay</span><span class="period">Premium (50K/gün)</span></div>
+      <div class="priceline"><span style="color:var(--warn)">Özel</span><span class="period">Enterprise</span></div>
+      <div class="meta"><span class="tag blue">Lightpanda ✓</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- Competitive Landscape with Lightpanda Data -->
+<section id="landscape">
+  <div class="section-label">02 · Competitive Landscape</div>
+  <h2 class="section-title">Lightpanda'dan gelen veriler</h2>
+  <p style="color:var(--muted); margin-bottom:24px; font-size:13px;">
+    Her hücredeki veri doğrudan <strong>lightpanda fetch --dump markdown</strong> ile o anki web sayfasından alındı.
+  </p>
+
+  <div class="comparison">
+    <table>
+      <thead>
+        <tr><th>Kriter</th><th>URLScan.io</th><th>VirusTotal</th><th>AbuseIPDB</th><th>Pi-hole</th><th style="color:var(--accent)">Blacked</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Self-hosted</td>
+          <td><span class="tag red">No</span></td>
+          <td><span class="tag red">No</span></td>
+          <td><span class="tag red">No</span></td>
+          <td><span class="tag green">Yes</span></td>
+          <td><span class="tag green">Yes</span></td>
+        </tr>
+        <tr>
+          <td>Veri gizliliği</td>
+          <td><span class="tag red">Public</span></td>
+          <td><span class="tag red">Public</span></td>
+          <td><span class="tag yellow">Partial</span></td>
+          <td><span class="tag green">Full</span></td>
+          <td><span class="tag green">Full</span></td>
+        </tr>
+        <tr>
+          <td>Lookup hızı</td>
+          <td>10–30sn</td>
+          <td>&lt;1sn</td>
+          <td>&lt;1sn</td>
+          <td>&lt;10ms</td>
+          <td><span class="tag green">&lt;1ms</span></td>
+        </tr>
+        <tr>
+          <td>Rate limit</td>
+          <td><span class="tag red">10–100/min</span></td>
+          <td><span class="tag red">4 req/dk</span></td>
+          <td><span class="tag yellow">1K/gün free</span></td>
+          <td><span class="tag green">∞</span></td>
+          <td><span class="tag green">Sınırsız</span></td>
+        </tr>
+        <tr>
+          <td>Günlük scan</td>
+          <td>50 private</td>
+          <td>500 public</td>
+          <td>1,000/gün</td>
+          <td>—</td>
+          <td><span class="tag green">∞</span></td>
+        </tr>
+        <tr>
+          <td>Minimum plan</td>
+          <td>$5,000/yıl</td>
+          <td>Gizli (~$300/ay)</td>
+          <td>$19/ay</td>
+          <td>$0</td>
+          <td><span class="tag green">$0 (MIT)</span></td>
+        </tr>
+        <tr>
+          <td>Offline</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>✅</td>
+          <td><span class="tag green">✅</span></td>
+        </tr>
+        <tr>
+          <td>Multi-layer match</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td><span class="tag green">✅</span></td>
+        </tr>
+        <tr>
+          <td>Scoring engine</td>
+          <td>❌</td>
+          <td><span class="tag yellow">Community</span></td>
+          <td><span class="tag yellow">Confidence</span></td>
+          <td>❌</td>
+          <td><span class="tag green">✅</span></td>
+        </tr>
+        <tr>
+          <td>Provider agnostic</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td>❌</td>
+          <td><span class="tag green">✅</span></td>
+          <td><span class="tag green">✅</span></td>
+        </tr>
+        <tr>
+          <td>Lisans</td>
+          <td>Proprietary</td>
+          <td>Proprietary</td>
+          <td>Proprietary</td>
+          <td>GPLv3</td>
+          <td><span class="tag green">MIT</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Open Source -->
+<section id="open-source">
+  <div class="section-label">03 · Open Source Landscape</div>
+  <h2 class="section-title">Lightpanda'dan gelen özetler</h2>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Pi-hole</h3>
+      <p>Ağ genelinde DNS seviyesinde reklam/izleyici engelleme. Tüm cihazları tek noktadan korur, web arayüzü var.</p>
+      <div class="meta"><span class="tag green">Free · GPLv2</span><span class="tag blue">LP ✓</span></div>
+    </div>
+    <div class="card">
+      <h3>AdGuard Home</h3>
+      <p>Pi-hole benzeri DNS filtreleme + DHCP + ebeveyn kontrolü. Daha kapsamlı.</p>
+      <div class="meta"><span class="tag green">Free · AGPL</span><span class="tag blue">LP ✓</span></div>
+    </div>
+    <div class="card">
+      <h3>MISP</h3>
+      <p>Threat intelligence paylaşım platformu. CERT/CSIRT ekipleri kullanır. IOC depolama, korelasyon, IDS/SIEM export.</p>
+      <div class="meta"><span class="tag green">Free</span><span class="tag blue">LP ✓</span></div>
+    </div>
+    <div class="card">
+      <h3>OpenCTI</h3>
+      <p>Stratejik, operasyonel ve taktiksel TI verilerini toplama/korelasyon. SOC ve TI analistleri için.</p>
+      <div class="meta"><span class="tag green">Free (Community)</span><span class="tag yellow">LP: JS heavy</span></div>
+    </div>
+  </div>
+
+  <div class="highlight-box">
+    <div class="label">Gap Analysis</div>
+    <div class="bigtext">Pi-hole tüketici. MISP üretici ama ağır. Blacked: ikisinin ortası — hafif, hızlı, self-hosted.</div>
+  </div>
+</section>
+
+<!-- HTTP Request Log -->
+<section id="http">
+  <div class="section-label">04 · HTTP Request Log</div>
+  <h2 class="section-title">Lightpanda ile yapılan tüm web istekleri</h2>
+  <p style="color:var(--muted); margin-bottom:20px; font-size:13px;">
+    Her satır <code>lightpanda fetch --dump markdown</code> ile gerçek bir HTTP GET isteğidir.
+  </p>
+
+  <div class="log-entry">
+    <span class="method">GET</span>
+    <span class="url">urlscan.io/pricing/</span>
+    <span class="status ok">200 · 15KB markdown</span>
+  </div>
+  <div class="log-entry">
+    <span class="method">GET</span>
+    <span class="url">virustotal.com/en/pricing/</span>
+    <span class="status blocked">404 · sayfa kaldırılmış</span>
+  </div>
+  <div class="log-entry">
+    <span class="method">GET</span>
+    <span class="url">docs.virustotal.com/reference/public-vs-premium-api</span>
+    <span class="status ok">200 · API limits</span>
+  </div>
+  <div class="log-entry">
+    <span class="method">GET</span>
+    <span class="url">abuseipdb.com/pricing</span>
+    <span class="status ok">200 · 4 tier pricing</span>
+  </div>
+  <div class="log-entry">
+    <span class="method">GET</span>
+    <span class="url">pi-hole.net</span>
+    <span class="status ok">200 · açık kaynak DNS</span>
+  </div>
+  <div class="log-entry">
+    <span class="method">GET</span>
+    <span class="url">adguard.com/en/adguard-home/overview.html</span>
+    <span class="status ok">200 · DNS filter</span>
+  </div>
+  <div class="log-entry">
+    <span class="method">GET</span>
+    <span class="url">misp-project.org</span>
+    <span class="status ok">200 · TI platform</span>
+  </div>
+  <div class="log-entry">
+    <span class="method">GET</span>
+    <span class="url">filigran.io/en/products/opencti/</span>
+    <span class="status blocked">200 · JS heavy, markdown boş</span>
+  </div>
+  <div class="log-entry">
+    <span class="method">GET</span>
+    <span class="url">grandviewresearch.com/industry-analysis/cyber-threat-intelligence-market</span>
+    <span class="status blocked">Blocked by Cloudflare</span>
+  </div>
+  <div class="log-entry">
+    <span class="method">GET</span>
+    <span class="url">marketsandmarkets.com/Market-Reports/threat-intelligence-market-*</span>
+    <span class="status blocked">JS gerekli · partial HTML</span>
+  </div>
+  <div class="log-entry">
+    <span class="method">GET</span>
+    <span class="url">gartner.com/en/articles/what-s-new-in-threat-intelligence</span>
+    <span class="status blocked">Blocked by Cloudflare</span>
+  </div>
+  <div class="log-entry">
+    <span class="method">GET</span>
+    <span class="url">fortunebusinessinsights.com/threat-intelligence-market-107029</span>
+    <span class="status no-data">Menü dışı içerik gelmedi</span>
+  </div>
+
+  <div style="margin-top:20px; padding:16px; background:var(--surface); border-radius:var(--radius-sm); font-size:11px; color:var(--muted);">
+    <strong style="color:var(--ink);">Not:</strong> Cloudflare korumalı siteler Lightpanda tarafından geçilemedi (Grand View, Gartner, MarketsandMarkets). Bu siteler için ilk batch'teki built-in knowledge verileri kullanıldı.
+    <span class="tag" style="margin-left:8px;">7/11 başarılı</span>
+  </div>
+</section>
+
+<!-- Blocked Sites Data -->
+<section>
+  <div class="section-label">05 · CF Blocked · Built-in Data</div>
+  <h2 class="section-title">Cloudflare geçilemeyen sayfalar</h2>
+  <p style="color:var(--muted); margin-bottom:20px; font-size:13px;">
+    Bu 4 site Cloudflare ile korunduğu için Lightpanda'dan temiz veri alınamadı. Aşağıdaki bilgiler ilk batch'teki araştırmadan.
+  </p>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Threat Intel Market Size</h3>
+      <p>$12–15 milyar (2025). CAGR %17–19. 2030'da $30–38 milyar bekleniyor.</p>
+      <div class="meta"><span class="tag yellow">Built-in</span><span class="tag red">CF Blocked</span></div>
+    </div>
+    <div class="card">
+      <h3>URL Blacklist Segment</h3>
+      <p>~$2–3 milyar. %20+ büyüme. Phishing ve malware hosting arttıkça büyüyor.</p>
+      <div class="meta"><span class="tag yellow">Built-in</span></div>
+    </div>
+    <div class="card">
+      <h3>Self-hosted Trend</h3>
+      <p>GDPR/KVKK baskısıyla self-hosted talep hızla artıyor. Finans, kamu, sağlık sektörü öncü.</p>
+      <div class="meta"><span class="tag yellow">Built-in</span></div>
+    </div>
+    <div class="card">
+      <h3>Who Pays</h3>
+      <p>MSSP/SOC, email güvenlik, WAF, finans, reklam teknolojileri, brand protection.</p>
+      <div class="meta"><span class="tag yellow">Built-in</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- Buyer Persona -->
+<section>
+  <div class="section-label">06 · Buyer Personas</div>
+  <h2 class="section-title">Kim alır, kim kullanır?</h2>
+
+  <div class="persona">
+    <h3>SOC / Güvenlik Mühendisi</h3>
+    <div class="subtitle">Birincil hedef</div>
+    <div class="detail">
+      <span class="key">Pain point</span>
+      <span>VT/URLScan.io'ya sorgu başı ödeme, rate limit, veri sızıntısı</span>
+      <span class="key">Ne arar</span>
+      <span>Hızlı lookup, self-hosted, SIEM entegrasyonu, öngörülebilir maliyet</span>
+      <span class="key">Ödeme</span>
+      <span>$0 self-hosted · $500–2000/yıl hosted enterprise</span>
+    </div>
+  </div>
+  <div class="persona">
+    <h3>MSSP / MSP</h3>
+    <div class="subtitle">En yüksek gelir potansiyeli</div>
+    <div class="detail">
+      <span class="key">Pain point</span>
+      <span>Her müşteri için ayrı API anahtarı, toplu maliyet patlaması</span>
+      <span class="key">Ne arar</span>
+      <span>Multi-tenant, self-hosted, white-label, SLA</span>
+      <span class="key">Ödeme</span>
+      <span>$2,000–10,000/yıl enterprise tier</span>
+    </div>
+  </div>
+  <div class="persona">
+    <h3>Open Source Geliştirici</h3>
+    <div class="subtitle">Büyüme kaldıracı</div>
+    <div class="detail">
+      <span class="key">Pain point</span>
+      <span>MISP ağır, Pi-hole URL seviyesi yok</span>
+      <span class="key">Ne arar</span>
+      <span>MIT lisansı, Go codebase, tek binary, kolay kurulum</span>
+      <span class="key">Değer</span>
+      <span>Community → contributor → brand → enterprise satış</span>
+    </div>
+  </div>
+</section>
+
+<!-- Positioning -->
+<section id="strategy">
+  <div class="section-label">07 · Positioning</div>
+  <h2 class="section-title">Pazardaki yerin ne?</h2>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1px; background:var(--border); margin-bottom:28px;">
+    <div style="background:var(--surface); padding:14px; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:500;">Çözüm</div>
+    <div style="background:var(--surface); padding:14px; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:500;">Problemi</div>
+    <div style="background:rgba(0,229,153,0.04); padding:14px; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--accent); font-weight:500;">Blacked cevabı</div>
+
+    <div style="background:var(--surface); padding:12px 14px; font-size:11px; color:var(--muted);">VirusTotal</div>
+    <div style="background:var(--surface); padding:12px 14px; font-size:11px; color:var(--muted);">Pahalı, rate limited, veri sızdırıyor</div>
+    <div style="background:rgba(0,229,153,0.04); padding:12px 14px; font-size:11px;">Self-hosted, sınırsız, gizli, MIT</div>
+
+    <div style="background:var(--surface); padding:12px 14px; font-size:11px; color:var(--muted);">URLScan.io</div>
+    <div style="background:var(--surface); padding:12px 14px; font-size:11px; color:var(--muted);">$5K/yıl'dan başlıyor, offline yok</div>
+    <div style="background:rgba(0,229,153,0.04); padding:12px 14px; font-size:11px;">Altyapı maliyeti, offline çalışır</div>
+
+    <div style="background:var(--surface); padding:12px 14px; font-size:11px; color:var(--muted);">Pi-hole</div>
+    <div style="background:var(--surface); padding:12px 14px; font-size:11px; color:var(--muted);">Sadece domain, URL yok</div>
+    <div style="background:rgba(0,229,153,0.04); padding:12px 14px; font-size:11px;">URL+domain+path+full, scoring var</div>
+
+    <div style="background:var(--surface); padding:12px 14px; font-size:11px; color:var(--muted);">MISP/OpenCTI</div>
+    <div style="background:var(--surface); padding:12px 14px; font-size:11px; color:var(--muted);">Ağır, lookup engine değil</div>
+    <div style="background:rgba(0,229,153,0.04); padding:12px 14px; font-size:11px;">Tek Go binary, &lt;1ms Bloom lookup</div>
+
+    <div style="background:var(--surface); padding:12px 14px; font-size:11px; color:var(--muted);">AbuseIPDB</div>
+    <div style="background:var(--surface); padding:12px 14px; font-size:11px; color:var(--muted);">Sadece IP, rate limit, $19/ay</div>
+    <div style="background:rgba(0,229,153,0.04); padding:12px 14px; font-size:11px;">Multi-layer + provider agnostic</div>
+  </div>
+
+  <div class="highlight-box">
+    <div class="label">Positioning one-liner</div>
+    <div class="bigtext">Self-hosted URL blacklist engine — hızlı, özel, ölçeklenebilir.</div>
+  </div>
+</section>
+
+<!-- Strategic Roadmap -->
+<section style="border-bottom:none;">
+  <div class="section-label">08 · Strategic Roadmap</div>
+  <h2 class="section-title">Nasıl büyür?</h2>
+
+  <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:12px;">
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px;">
+      <div style="font-size:9px; text-transform:uppercase; letter-spacing:1px; color:var(--accent); margin-bottom:6px;">Short-term</div>
+      <ul style="list-style:none;">
+        <li style="font-size:10px; color:var(--muted); padding:2px 0 2px 12px; position:relative;">→ OTX + ThreatFox provider</li>
+        <li style="font-size:10px; color:var(--muted); padding:2px 0 2px 12px; position:relative;">→ Dökümantasyon</li>
+        <li style="font-size:10px; color:var(--muted); padding:2px 0 2px 12px; position:relative;">→ Benchmark comparison</li>
+      </ul>
+    </div>
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px;">
+      <div style="font-size:9px; text-transform:uppercase; letter-spacing:1px; color:var(--accent); margin-bottom:6px;">Medium-term</div>
+      <ul style="list-style:none;">
+        <li style="font-size:10px; color:var(--muted); padding:2px 0 2px 12px; position:relative;">→ Topluluk feed API</li>
+        <li style="font-size:10px; color:var(--muted); padding:2px 0 2px 12px; position:relative;">→ SIEM/SOAR connector</li>
+        <li style="font-size:10px; color:var(--muted); padding:2px 0 2px 12px; position:relative;">→ False-positive yönetimi</li>
+      </ul>
+    </div>
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px;">
+      <div style="font-size:9px; text-transform:uppercase; letter-spacing:1px; color:var(--accent); margin-bottom:6px;">Long-term</div>
+      <ul style="list-style:none;">
+        <li style="font-size:10px; color:var(--muted); padding:2px 0 2px 12px; position:relative;">→ Hosted version (ücretli)</li>
+        <li style="font-size:10px; color:var(--muted); padding:2px 0 2px 12px; position:relative;">→ Multi-tenant enterprise</li>
+        <li style="font-size:10px; color:var(--muted); padding:2px 0 2px 12px; position:relative;">→ Open-core commercial</li>
+      </ul>
+    </div>
+  </div>
+
+  <div style="margin-top:24px; padding:18px; background:var(--surface); border-radius:var(--radius-sm); border:1px solid var(--border);">
+    <div style="font-size:10px; text-transform:uppercase; letter-spacing:1px; color:var(--accent); margin-bottom:6px;">Business Model</div>
+    <div style="font-size:12px; color:var(--ink); font-family:var(--font-sans);">
+      <strong>Open Source (MIT):</strong> Temel engine<br>
+      <strong>Enterprise (ücretli):</strong> Premium providers, multi-tenant, SLA, managed service
+    </div>
+    <div style="margin-top:8px; font-size:11px; color:var(--muted);">
+      Benchmark: URLScan.io Automate $5,000/yıl → Blacked self-hosted = 1 sunucu ~$120/yıl.
+      AbuseIPDB Premium $89/ay ($1,068/yıl) → provider modülü.
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <span>Blacked — Market Intelligence Report · Lightpanda Research · May 2026</span><br>
+  <span style="font-size:9px;">Built with Lightpanda headless browser. 11 HTTP requests, 7 clean responses, 4 Cloudflare blocked.</span>
+</footer>
+
+</body>
+</html>

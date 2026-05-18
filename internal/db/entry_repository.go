@@ -151,8 +151,10 @@ func (r *entryRepository) ExistsByBloomType(ctx context.Context, matchType, key 
 		return exists, nil
 	case "host_path":
 		var exists bool
+		// Bloom key is host+path (e.g. "evil.com/malware"). Confirm against host and path
+		// with proper prefix matching to avoid substring false positives.
 		err := r.db.QueryRowContext(ctx, `
-			SELECT EXISTS(SELECT 1 FROM entries WHERE source_url LIKE '%' || ? AND deleted_at IS NULL LIMIT 1)
+			SELECT EXISTS(SELECT 1 FROM entries WHERE host || path = ? AND deleted_at IS NULL LIMIT 1)
 		`, key).Scan(&exists)
 		if err != nil {
 			return false, fmt.Errorf("exists by host_path: %w", err)
@@ -160,8 +162,9 @@ func (r *entryRepository) ExistsByBloomType(ctx context.Context, matchType, key 
 		return exists, nil
 	case "full_url":
 		var exists bool
+		// Bloom key is host+path+?query. Confirm with exact source_url match.
 		err := r.db.QueryRowContext(ctx, `
-			SELECT EXISTS(SELECT 1 FROM entries WHERE source_url LIKE '%' || ? AND deleted_at IS NULL LIMIT 1)
+			SELECT EXISTS(SELECT 1 FROM entries WHERE source_url = ? AND deleted_at IS NULL LIMIT 1)
 		`, key).Scan(&exists)
 		if err != nil {
 			return false, fmt.Errorf("exists by full_url: %w", err)

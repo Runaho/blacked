@@ -132,7 +132,8 @@ func determineBloomTarget(keys *URLKeys) (BloomType, string) {
 
 // Likely checks a URL against all applicable bloom types in parallel.
 // Check order: Domain → Host → HostPath → File → FullURL.
-// First hit wins — other goroutines are cancelled via context.
+// All hits are collected, then the highest-priority (lowest checkKeys index) match is selected,
+// ensuring deterministic precedence even with concurrent goroutines.
 func (bm *BloomManager) Likely(urlStr string) (*BloomResult, error) {
 	keys, err := ParseURL(urlStr)
 	if err != nil {
@@ -147,22 +148,12 @@ func (bm *BloomManager) Likely(urlStr string) (*BloomResult, error) {
 	bm.mu.RLock()
 	defer bm.mu.RUnlock()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	resultCh := make(chan BloomMatch, 1)
+	resultCh := make(chan indexedMatch, len(checkKeys))
 	var wg sync.WaitGroup
 
-	for _, ck := range checkKeys {
+	for i, ck := range checkKeys {
+		i, ck := i, ck
 		wg.Go(func() {
-
-			// Check context before acquiring any lock
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
 			bs, ok := bm.sets[ck.Type]
 			if !ok || bs == nil {
 				return
@@ -172,17 +163,16 @@ func (bm *BloomManager) Likely(urlStr string) (*BloomResult, error) {
 				return
 			}
 
-			// Hit — send result and cancel others
+			// Hit — send result with its priority index
 			for _, sid := range bs.GetSourceIDs() {
 				if bs.TestSource(sid, ck.Key) {
-					select {
-					case resultCh <- BloomMatch{
-						Type:     ck.Type,
-						SourceID: sid,
-						Key:      ck.Key,
-					}:
-						cancel() // Signal other goroutines to stop
-					case <-ctx.Done():
+					resultCh <- indexedMatch{
+						index: i,
+						match: BloomMatch{
+							Type:     ck.Type,
+							SourceID: sid,
+							Key:      ck.Key,
+						},
 					}
 					return
 				}
@@ -190,35 +180,40 @@ func (bm *BloomManager) Likely(urlStr string) (*BloomResult, error) {
 		})
 	}
 
-	// Close resultCh when all goroutines finish
+	// Wait for all goroutines, then close
 	go func() {
 		wg.Wait()
 		close(resultCh)
 	}()
 
-	// Collect results
-	matches := make([]BloomMatch, 0)
-	for m := range resultCh {
-		matches = append(matches, m)
+	// Collect all hits, then pick the highest-priority (lowest index) match
+	var bestMatch *BloomMatch
+	bestIndex := len(checkKeys) // higher than any valid index
+
+	for im := range resultCh {
+		if im.index < bestIndex {
+			cp := im.match
+			bestMatch = &cp
+			bestIndex = im.index
+		}
 	}
 
-	if len(matches) > 0 {
+	if bestMatch != nil {
 		result := &BloomResult{
-			Likely:  true,
-			Matches: matches,
-		}
-		for _, m := range matches {
-			if w, ok := DepthWeight[m.Type]; ok {
-				scaled := int(w * 100)
-				if scaled > result.MaxDepth {
-					result.MaxDepth = scaled
-				}
-			}
+			Likely:   true,
+			Matches:  []BloomMatch{*bestMatch},
+			MaxDepth: int(DepthWeight[bestMatch.Type] * 100),
 		}
 		return result, nil
 	}
 
 	return &BloomResult{Likely: false, Matches: nil}, nil
+}
+
+// indexedMatch pairs a bloom match with its priority index.
+type indexedMatch struct {
+	index int
+	match BloomMatch
 }
 
 // RebuildSource rebuilds only the bloom filters for a specific source.
