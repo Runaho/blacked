@@ -42,7 +42,7 @@ func GetResponseReader(sourceURL string, fetchFunc func() (io.Reader, error), pr
 	storePath := cfg.Collector.StorePath
 	storeResponses := cfg.Collector.StoreResponses
 
-	dataFilename, metaFilename := generateFilenames(storePath, providerName)
+	dataFilename, metaFilename := GenerateFilenames(storePath, providerName)
 
 	if storeResponses {
 		reader, meta, err := getStoredResponse(dataFilename, metaFilename, cacheTTL)
@@ -146,7 +146,7 @@ func saveResponseToFile(dataFilename string, metaFilename string, data io.Reader
 }
 
 // generateFilenames and RemoveStoredResponse - no changes needed
-func generateFilenames(storePath string, providerName string) (dataFilename string, metaFilename string) {
+func GenerateFilenames(storePath string, providerName string) (dataFilename string, metaFilename string) {
 	baseFilename := filepath.Join(storePath, providerName+"_response") // Base filename without extensions
 	dataFilename = baseFilename + ".dat"
 	metaFilename = baseFilename + ".meta.json"
@@ -162,7 +162,7 @@ func RemoveStoredResponse(providerName string) error {
 	}
 
 	storePath := cfg.Collector.StorePath
-	dataFilename, metaFilename := generateFilenames(storePath, providerName)
+	dataFilename, metaFilename := GenerateFilenames(storePath, providerName)
 
 	if err := os.Remove(dataFilename); err == nil {
 		log.Info().Str("file", dataFilename).Msg("Removed stored response data file")

@@ -53,6 +53,11 @@ func serve(c *cli.Context) (err error) {
 		log.Fatal().Err(err).Msg("Failed to initialize runner")
 	}
 
+	// Run startup decision engine — determines whether to skip, restore, or fetch each provider
+	if err := runner.RunStartupProviders(c.Context, *app.GetProviders()); err != nil {
+		log.Error().Err(err).Msg("Startup provider evaluation failed, continuing with server startup")
+	}
+
 	defer runner.ShutdownRunner(c.Context)
 
 	if err = graceful.Graceful(server.ListenAndServe, server.Shutdown); err != nil {
