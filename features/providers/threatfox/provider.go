@@ -19,13 +19,14 @@ import (
 	"blacked/internal/db"
 
 	"github.com/gocolly/colly/v2"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
 const providerName = "threatfox-online"
 
 // RepositoryProvider abstracts the subset of BlacklistRepository that
-// determineFetchURL needs, making it mockable in unit tests.
+// shouldUseDump needs, making it mockable in unit tests.
 type RepositoryProvider interface {
 	StreamEntriesCountBySource(ctx context.Context, source string) (int, error)
 	GetMaxCreatedAtBySource(ctx context.Context, source string) (int64, error)
@@ -43,6 +44,16 @@ type threatFoxIOC struct {
 	Reporter         string `json:"reporter,omitempty"`
 }
 
+// threatFoxProvider wraps BaseProvider with dynamic URL resolution so
+// that gap detection is re-evaluated on every Fetch() call, not frozen
+// at construction time. It also overrides Source() for accurate logging.
+type threatFoxProvider struct {
+	*base.BaseProvider
+	recentURL string
+	dumpURL   string
+	apiKey    string
+}
+
 // --- Public constructor ---
 
 func NewThreatFoxProvider(cfg *config.Config, collyClient *colly.Collector) base.Provider {
@@ -55,13 +66,13 @@ func NewThreatFoxProvider(cfg *config.Config, collyClient *colly.Collector) base
 		return nil
 	}
 
-	sourceURL := opts.SourceURL
-	if sourceURL == "" {
-		sourceURL = "https://threatfox-api.abuse.ch/v2/files/exports/{token}/recent.json"
+	recentURL := opts.SourceURL
+	if recentURL == "" {
+		recentURL = "https://threatfox-api.abuse.ch/v2/files/exports/{token}/recent.json"
 	}
-	dumpSourceURL := opts.DumpSourceURL
-	if dumpSourceURL == "" {
-		dumpSourceURL = "https://threatfox-api.abuse.ch/v2/files/exports/{token}/full.json.zip"
+	dumpURL := opts.DumpSourceURL
+	if dumpURL == "" {
+		dumpURL = "https://threatfox-api.abuse.ch/v2/files/exports/{token}/full.json.zip"
 	}
 	cron := opts.Cron
 	if cron == "" {
@@ -72,40 +83,98 @@ func NewThreatFoxProvider(cfg *config.Config, collyClient *colly.Collector) base
 		category = "threat_intel"
 	}
 
-	apiKey := opts.APIKey
-
-	// Determine which URL to fetch.
-	fetchURL := determineFetchURL(sourceURL, dumpSourceURL, apiKey, nil)
 	client := base.BuildCollyClientForProvider(collyClient, opts)
+	// ThreatFox responses routinely exceed 1MB (recent ~2MB, dump ~50MB).
+	if client != nil {
+		client.MaxBodySize = 100 * 1024 * 1024 // 100 MB
+	}
 
+	processID := uuid.New().String()
 	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
 		raw, err := io.ReadAll(data)
 		if err != nil {
 			return fmt.Errorf("read threatfox data: %w", err)
 		}
-		return parseThreatFoxResponse(raw, collector, providerName)
+		return parseThreatFoxResponse(raw, collector, providerName, processID)
 	}
 
-	provider := base.NewBaseProvider(
-		providerName,
-		fetchURL,
-		category,
-		client,
-		parseFunc,
-	)
-	provider.
-		SetCronSchedule(cron).
-		Register()
+	bp := base.NewBaseProvider(providerName, recentURL, category, client, parseFunc)
+	bp.SetCronSchedule(cron)
 
-	return provider
+	p := &threatFoxProvider{
+		BaseProvider: bp,
+		recentURL:    recentURL,
+		dumpURL:      dumpURL,
+		apiKey:       opts.APIKey,
+	}
+	p.Register()
+	return p
 }
 
-// determineFetchURL decides which URL to use. It is a separate function
-// so it can be tested in isolation. The first return value is the resolved
-// fetch URL; the second is true when the dump URL was selected.
+// Register wraps the base Register so the registry stores threatFoxProvider
+// (with overridden Fetch/Source), not the embedded BaseProvider.
+func (p *threatFoxProvider) Register() *base.BaseProvider {
+	base.RegisterProvider(p)
+	return p.BaseProvider
+}
+
+// Fetch re-evaluates gap detection on every call, so the URL is not
+// frozen at construction time — subsequent cron runs can switch between
+// dump and recent feed as needed.
+func (p *threatFoxProvider) Fetch() (io.Reader, error) {
+	targetURL := resolveThreatFoxURL(p.recentURL, p.apiKey)
+	if shouldUseDump(providerName, nil) {
+		log.Info().Str("provider", providerName).
+			Msg("gap or empty DB — using full dump")
+		targetURL = resolveThreatFoxURL(p.dumpURL, p.apiKey)
+	}
+
+	c := p.CollyClient.Clone()
+	if c == nil {
+		c = colly.NewCollector()
+	}
+	c.MaxBodySize = 100 * 1024 * 1024
+
+	var body []byte
+	var fetchErr error
+	c.OnResponse(func(r *colly.Response) {
+		body = r.Body
+		log.Info().Str("source", targetURL).Int("bytes", len(body)).
+			Msg("Fetched data from source")
+	})
+	c.OnError(func(r *colly.Response, err error) {
+		fetchErr = fmt.Errorf("colly error for %s (status %d): %w", targetURL, r.StatusCode, err)
+		log.Err(err).Str("url", targetURL).Int("code", r.StatusCode).
+			Msg("Colly error when fetching data")
+	})
+
+	log.Info().Msgf("Fetching %s", targetURL)
+	if err := c.Visit(targetURL); err != nil {
+		return nil, fmt.Errorf("visit %s: %w", targetURL, err)
+	}
+	c.Wait()
+
+	if fetchErr != nil {
+		return nil, fetchErr
+	}
+	if len(body) == 0 {
+		return nil, fmt.Errorf("empty response from %s", targetURL)
+	}
+	return bytes.NewReader(body), nil
+}
+
+// Source returns the dynamically resolved fetch URL for accurate logging.
+func (p *threatFoxProvider) Source() string {
+	if shouldUseDump(providerName, nil) {
+		return resolveThreatFoxURL(p.dumpURL, p.apiKey)
+	}
+	return resolveThreatFoxURL(p.recentURL, p.apiKey)
+}
+
+// --- Gap detection (testable pure functions) ---
+
 func determineFetchURL(recentURL, dumpURL, apiKey string, repo RepositoryProvider) string {
-	// Prefer dump when DB is empty or has a gap.
-	if shouldUseDump(apiKey, providerName, repo) {
+	if shouldUseDump(providerName, repo) {
 		log.Info().Str("provider", providerName).
 			Msg("no entries or gap detected — using full dump for initial load")
 		return resolveThreatFoxURL(dumpURL, apiKey)
@@ -116,10 +185,7 @@ func determineFetchURL(recentURL, dumpURL, apiKey string, repo RepositoryProvide
 	return resolveThreatFoxURL(recentURL, apiKey)
 }
 
-// shouldUseDump returns true when the dump should be used: either the DB
-// is empty for this source or a time gap exists between the most recent
-// entry in the DB and now. When repo is nil, it opens one from the DB package.
-func shouldUseDump(apiKey, source string, repo RepositoryProvider) bool {
+func shouldUseDump(source string, repo RepositoryProvider) bool {
 	if repo == nil {
 		rwDB, err := db.GetWriteDB()
 		if err != nil {
@@ -143,8 +209,6 @@ func shouldUseDump(apiKey, source string, repo RepositoryProvider) bool {
 		return true
 	}
 
-	// GAP detection: if the newest entry is older than 48 hours,
-	// the recent feed won't cover all time, so pull the dump.
 	maxCreatedAt, err := repo.GetMaxCreatedAtBySource(ctx, source)
 	if err != nil || maxCreatedAt == 0 {
 		return false
@@ -177,7 +241,7 @@ func resolveThreatFoxURL(template string, apiKey string) string {
 
 // --- Response parsing ---
 
-func parseThreatFoxResponse(data []byte, collector entry_collector.Collector, source string) error {
+func parseThreatFoxResponse(data []byte, collector entry_collector.Collector, source, processID string) error {
 	if isZip(data) {
 		log.Info().Int("bytes", len(data)).
 			Msg("detected zip archive — extracting full.json")
@@ -205,17 +269,17 @@ func parseThreatFoxResponse(data []byte, collector entry_collector.Collector, so
 		}
 		log.Info().Int("json_bytes", len(jsonData)).
 			Msg("extracted full.json from zip")
-		return parseThreatFoxJSON(jsonData, collector, source)
+		return parseThreatFoxJSON(jsonData, collector, source, processID)
 	}
-	return parseThreatFoxJSON(data, collector, source)
+	return parseThreatFoxJSON(data, collector, source, processID)
 }
 
 func isZip(data []byte) bool {
-	return len(data) > 4 && data[0] == 0x50 && data[1] == 0x4B &&
+	return len(data) >= 4 && data[0] == 0x50 && data[1] == 0x4B &&
 		data[2] == 0x03 && data[3] == 0x04
 }
 
-func parseThreatFoxJSON(data []byte, collector entry_collector.Collector, source string) error {
+func parseThreatFoxJSON(data []byte, collector entry_collector.Collector, source, processID string) error {
 	var response map[string][]threatFoxIOC
 	if err := json.Unmarshal(data, &response); err != nil {
 		return fmt.Errorf("unmarshal threatfox json: %w", err)
@@ -224,7 +288,7 @@ func parseThreatFoxJSON(data []byte, collector entry_collector.Collector, source
 	var totalEntries, skippedCount int
 	for _, iocs := range response {
 		for _, ioc := range iocs {
-			entry, err := iocToEntry(&ioc, source)
+			entry, err := iocToEntry(&ioc, source, processID)
 			if err != nil {
 				skippedCount++
 				continue
@@ -248,9 +312,12 @@ func parseThreatFoxJSON(data []byte, collector entry_collector.Collector, source
 
 // --- IOC → Entry mapping ---
 
-func iocToEntry(ioc *threatFoxIOC, source string) (*entries.Entry, error) {
+func iocToEntry(ioc *threatFoxIOC, source, processID string) (*entries.Entry, error) {
+	// Entry category is set to threat_type (e.g. "botnet_cc", "payload_delivery")
+	// — this is intentional: ThreatFox IOCs carry their type from the feed.
 	entry := entries.NewEntry().
 		WithSource(source).
+		WithProcessID(processID).
 		WithCategory(ioc.ThreatType)
 
 	switch ioc.IOCType {
@@ -269,13 +336,25 @@ func iocToEntry(ioc *threatFoxIOC, source string) (*entries.Entry, error) {
 		if err := entry.SetURL("//" + host); err != nil {
 			return nil, nil
 		}
+		// SetURL runs domain extraction on IPs, which produces misleading
+		// values (e.g. "114.149"). Override with the actual IP.
+		entry.Domain = host
+		entry.SubDomains = nil
 
 	case "domain":
+		if ioc.IOCValue == "" || ioc.IOCValue == "." {
+			log.Debug().Msg("empty domain IOC — skipping")
+			return nil, nil
+		}
 		if err := entry.SetURL(ioc.IOCValue); err != nil {
 			return nil, nil
 		}
 
 	case "url":
+		if ioc.IOCValue == "" {
+			log.Debug().Msg("empty url IOC — skipping")
+			return nil, nil
+		}
 		if err := entry.SetURL(ioc.IOCValue); err != nil {
 			return nil, nil
 		}

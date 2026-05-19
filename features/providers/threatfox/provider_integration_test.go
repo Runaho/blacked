@@ -67,7 +67,7 @@ func TestThreatFoxIntegration(t *testing.T) {
 
 	// Parse via our internal parser
 	col := &intgCollector{}
-	require.NoError(t, parseThreatFoxResponse(body, col, source))
+	require.NoError(t, parseThreatFoxResponse(body, col, source, "intg-process-id"))
 	require.Greater(t, len(col.entries), 0, "should have parsed at least one IOC")
 	t.Logf("Parsed %d entries", len(col.entries))
 
