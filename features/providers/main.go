@@ -2,6 +2,7 @@ package providers
 
 import (
 	"blacked/features/providers/base"
+	"blacked/features/providers/alienvault"
 	"blacked/features/providers/blocklistde"
 	"blacked/features/providers/emergingthreats"
 	"blacked/features/providers/greensnow"
@@ -60,6 +61,9 @@ func getProviders(cfg *config.Config, cc *colly.Collector) Providers {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
 	if p := emergingthreats.NewEmergingThreatsProvider(cfg, cc); p != nil {
+		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	}
+	if p := alienvault.NewAlienvaultProvider(cfg, cc); p != nil {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
 
