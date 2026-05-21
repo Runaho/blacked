@@ -46,6 +46,7 @@ type CollectorConfig struct {
 type ProviderOptions struct {
 	Enabled         *bool          `koanf:"enabled"`
 	SourceURL       string         `koanf:"source_url"`
+	URL             string         `koanf:"url"` // Alias for source_url
 	Cron            string         `koanf:"cron"`
 	Category        string         `koanf:"category"`
 	APIKey          string         `koanf:"api_key"`
@@ -55,6 +56,7 @@ type ProviderOptions struct {
 	ParserBatchSize int            `koanf:"parser_batch_size"`
 	MaxRedirects    int            `koanf:"max_redirects"`
 	MaxSize         int64          `koanf:"max_size"`
+	Extra           map[string]string `koanf:"-"` // Extra fields not in the struct
 }
 
 type CollyConfig struct {
