@@ -1,5 +1,4 @@
 package config
-
 import (
 	"errors"
 	"os"
@@ -66,20 +65,45 @@ func InitConfig() error {
 			panic(err)
 		}
 
-		if _config == emptyConfig {
-			err = errors.New("config is empty")
-			return
-		}
+	if _config == emptyConfig {
+		err = errors.New("config is empty")
+		return
+	}
 
-		// Default any nil Enabled to true (backward-compat behavior: empty = all enabled)
-		if _config.Providers != nil {
-			for _, opts := range _config.Providers {
-				if opts != nil && opts.Enabled == nil {
-					enabled := true
-					opts.Enabled = &enabled
+	// Default any nil Enabled to true (backward-compat behavior: empty = all enabled)
+	if _config.Providers != nil {
+		for _, opts := range _config.Providers {
+			if opts != nil && opts.Enabled == nil {
+				enabled := true
+				opts.Enabled = &enabled
+			}
+		}
+	}
+
+	// Populate Extra fields from raw config for providers
+	if _config.Providers != nil && _k != nil {
+		for name, opts := range _config.Providers {
+			if opts != nil && opts.Extra == nil {
+				providerPath := "providers." + name
+				if raw := _k.Get(providerPath); raw != nil {
+					if m, ok := raw.(map[string]interface{}); ok {
+						extra := make(map[string]string)
+						for key, val := range m {
+							// Skip fields that are already in the struct
+							switch key {
+							case "enabled", "source_url", "url", "cron", "category", "api_key", "user_agent", "timeout", "parser_workers", "parser_batch_size", "max_redirects", "max_size":
+								continue
+							}
+							if strVal, ok := val.(string); ok {
+								extra[key] = strVal
+							}
+						}
+						opts.Extra = extra
+					}
 				}
 			}
 		}
+	}
 
 		zerolog.SetGlobalLevel(_config.APP.LogLevel)
 	})

@@ -361,7 +361,7 @@ func TestAlienvaultProvider_Fetch(t *testing.T) {
 
 		_, err := avProvider.Fetch()
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "Unauthorized")
+		assert.Contains(t, err.Error(), "401")
 	})
 
 	t.Run("empty response", func(t *testing.T) {
@@ -393,6 +393,161 @@ func TestAlienvaultProvider_Fetch(t *testing.T) {
 		_, err := avProvider.Fetch()
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "empty response")
+	})
+
+	t.Run("pagination merges multiple pages", func(t *testing.T) {
+		// Create server first to capture base URL
+		var serverURL string
+		pageCount := 0
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			pageCount++
+			var response OTXResponse
+			switch pageCount {
+			case 1:
+				response = OTXResponse{
+					Count: 2,
+					Next:  serverURL + "/api/v1/pulses/subscribed?page=2",
+					Results: []OTXPulse{
+						{ID: "pulse-1", Name: "Pulse Page 1", Indicators: []OTXIndicator{
+							{Type: "IPv4", Indicator: "1.1.1.1"},
+							{Type: "domain", Indicator: "page1.example.com"},
+						}},
+					},
+				}
+			case 2:
+				response = OTXResponse{
+					Count: 2,
+					Next:  serverURL + "/api/v1/pulses/subscribed?page=3",
+					Results: []OTXPulse{
+						{ID: "pulse-2", Name: "Pulse Page 2", Indicators: []OTXIndicator{
+							{Type: "IPv4", Indicator: "2.2.2.2"},
+							{Type: "domain", Indicator: "page2.example.com"},
+						}},
+					},
+				}
+			case 3:
+				response = OTXResponse{
+					Count: 1,
+					Next:  "", // No more pages
+					Results: []OTXPulse{
+						{ID: "pulse-3", Name: "Pulse Page 3", Indicators: []OTXIndicator{
+							{Type: "IPv4", Indicator: "3.3.3.3"},
+						}},
+					},
+				}
+			default:
+				t.Fatalf("Unexpected page request: %d", pageCount)
+			}
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(response)
+		}))
+		defer server.Close()
+
+		// Capture server URL after creation
+		serverURL = server.URL
+
+		cfg := &config.Config{
+			Providers: map[string]*config.ProviderOptions{
+				"alienvault": {
+					Enabled:   boolPtr(true),
+					SourceURL: server.URL,
+					APIKey:    "test-api-key",
+				},
+			},
+		}
+
+		customColly := colly.NewCollector()
+		customColly.AllowedDomains = []string{}
+
+		provider := NewAlienvaultProvider(cfg, customColly)
+		require.NotNil(t, provider)
+
+		avProvider := provider.(*alienvaultProvider)
+		avProvider.rateLimit = 10 * time.Millisecond
+
+		reader, err := avProvider.Fetch()
+		require.NoError(t, err)
+		require.NotNil(t, reader)
+
+		data, err := io.ReadAll(reader)
+		require.NoError(t, err)
+
+		// Parse the merged response
+		var merged OTXResponse
+		err = json.Unmarshal(data, &merged)
+		require.NoError(t, err)
+
+		// Should have 3 pulses from 3 pages
+		assert.Equal(t, 3, merged.Count)
+		assert.Empty(t, merged.Next) // Next should be empty after merge
+
+		// Verify all pulses are present
+		assert.Len(t, merged.Results, 3)
+		assert.Equal(t, "pulse-1", merged.Results[0].ID)
+		assert.Equal(t, "pulse-2", merged.Results[1].ID)
+		assert.Equal(t, "pulse-3", merged.Results[2].ID)
+
+		// Verify all indicators are present (3 pulses × 2 indicators = 6, last pulse has 1)
+		totalIndicators := 0
+		for _, pulse := range merged.Results {
+			totalIndicators += len(pulse.Indicators)
+		}
+		assert.Equal(t, 5, totalIndicators) // 2 + 2 + 1
+	})
+
+	t.Run("pagination stops on empty next", func(t *testing.T) {
+		pageCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			pageCount++
+			if pageCount > 1 {
+				t.Fatalf("Should only request page 1, got page %d", pageCount)
+			}
+			response := OTXResponse{
+				Count: 1,
+				Next:  "", // Empty next
+				Results: []OTXPulse{
+					{ID: "single-pulse", Name: "Single Page", Indicators: []OTXIndicator{
+						{Type: "IPv4", Indicator: "9.9.9.9"},
+					}},
+				},
+			}
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(response)
+		}))
+		defer server.Close()
+
+		cfg := &config.Config{
+			Providers: map[string]*config.ProviderOptions{
+				"alienvault": {
+					Enabled:   boolPtr(true),
+					SourceURL: server.URL,
+					APIKey:    "test-api-key",
+				},
+			},
+		}
+
+		customColly := colly.NewCollector()
+		customColly.AllowedDomains = []string{}
+
+		provider := NewAlienvaultProvider(cfg, customColly)
+		require.NotNil(t, provider)
+
+		avProvider := provider.(*alienvaultProvider)
+		avProvider.rateLimit = 10 * time.Millisecond
+
+		reader, err := avProvider.Fetch()
+		require.NoError(t, err)
+		require.NotNil(t, reader)
+
+		data, err := io.ReadAll(reader)
+		require.NoError(t, err)
+
+		var merged OTXResponse
+		err = json.Unmarshal(data, &merged)
+		require.NoError(t, err)
+		assert.Equal(t, 1, merged.Count)
+		assert.Len(t, merged.Results, 1)
 	})
 }
 
