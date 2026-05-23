@@ -49,3 +49,4 @@ go.work
 go.work.sum
 vendor/
 research/
+.test-results/
