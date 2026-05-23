@@ -53,3 +53,6 @@ research/
 # Temporary test artifacts
 .test-results/
 *.test-results
+
+# All dot-directories (hidden folders)
+.[a-zA-Z0-9]*/
