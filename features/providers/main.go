@@ -5,7 +5,6 @@ import (
 	"blacked/features/providers/alienvault"
 	"blacked/features/providers/oisd"
 	"blacked/features/providers/openphish"
-	"blacked/features/providers/pihole"
 	"blacked/features/providers/phishtank"
 	"blacked/features/providers/urlhaus"
 
@@ -35,16 +34,12 @@ func getProviders(cfg *config.Config, cc *colly.Collector) Providers {
 	if p := phishtank.NewPhishTankProvider(cfg, cc); p != nil {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
-	if p := pihole.NewPiholeProvider(cfg, cc); p != nil {
-		log.Info().Str("provider", p.GetName()).Msg("registered provider")
-	}
 	if p := alienvault.NewAlienvaultProvider(cfg, cc); p != nil {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
 	if p := abuseipdb.NewAbuseIPDBProvider(cfg, cc); p != nil {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
-
 	providers := Providers(base.GetRegisteredProviders())
 	return providers
 }

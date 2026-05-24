@@ -47,6 +47,7 @@ type ProviderOptions struct {
 	Enabled         *bool          `koanf:"enabled"`
 	SourceURL       string         `koanf:"source_url"`
 	URL             string         `koanf:"url"` // Alias for source_url
+	DumpSourceURL   string         `koanf:"dump_source_url"`
 	Cron            string         `koanf:"cron"`
 	Category        string         `koanf:"category"`
 	APIKey          string         `koanf:"api_key"`

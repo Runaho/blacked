@@ -58,6 +58,15 @@ func defaultProviderConfigs() map[string]*config.ProviderOptions {
 			ParserWorkers:   4,
 			ParserBatchSize: 1000,
 		},
+		"threatfox-online": {
+			Enabled:         boolPtr(true),
+			SourceURL:       "https://threatfox-api.abuse.ch/v2/files/exports/{token}/recent.json",
+			DumpSourceURL:   "https://threatfox-api.abuse.ch/v2/files/exports/{token}/full.json.zip",
+			Cron:            "0 */2 * * *",
+			Category:        "threat_intel",
+			ParserWorkers:   4,
+			ParserBatchSize: 1000,
+		},
 	}
 }
 

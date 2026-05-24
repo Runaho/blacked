@@ -79,6 +79,18 @@ func (r *SQLiteRepository) StreamEntriesCountBySource(ctx context.Context, sourc
 	return count, nil
 }
 
+func (r *SQLiteRepository) GetMaxCreatedAtBySource(ctx context.Context, source string) (int64, error) {
+	query := `SELECT COALESCE(MAX(created_at), 0) FROM entries WHERE deleted_at IS NULL AND source = ?;`
+
+	row := r.db.QueryRowContext(ctx, query, source)
+	var maxCreatedAt int64
+	if err := row.Scan(&maxCreatedAt); err != nil {
+		log.Error().Err(err).Str("source", source).Msg("Failed to get max created_at by source from SQLite")
+		return 0, err
+	}
+	return maxCreatedAt, nil
+}
+
 func (r *SQLiteRepository) StreamEntries(ctx context.Context, out chan<- entries.EntryStream) error {
 	defer close(out)
 
