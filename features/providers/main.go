@@ -11,6 +11,7 @@ import (
 	"blacked/features/providers/openphish"
 	"blacked/features/providers/phishtank"
 	"blacked/features/providers/rtbh"
+	"blacked/features/providers/torexitnodes"
 	"blacked/features/providers/urlhaus"
 
 	"github.com/gocolly/colly/v2"
@@ -58,6 +59,9 @@ func getProviders(cfg *config.Config, cc *colly.Collector) Providers {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
 	if p := cinsarmy.NewCINSArmyProvider(cfg, cc); p != nil {
+		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	}
+	if p := toreexitnodes.NewTorExitNodesProvider(cfg, cc); p != nil {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
 	providers := Providers(base.GetRegisteredProviders())
