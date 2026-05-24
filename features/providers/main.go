@@ -7,6 +7,8 @@ import (
 	"blacked/features/providers/phishtank"
 	"blacked/features/providers/urlhaus"
 
+	"blacked/features/providers/threatfox"
+
 	"github.com/gocolly/colly/v2"
 	"github.com/rs/zerolog/log"
 
@@ -34,6 +36,9 @@ func getProviders(cfg *config.Config, cc *colly.Collector) Providers {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
 	if p := alienvault.NewAlienvaultProvider(cfg, cc); p != nil {
+		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	}
+	if p := threatfox.NewThreatFoxProvider(cfg, cc); p != nil {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
 	providers := Providers(base.GetRegisteredProviders())
