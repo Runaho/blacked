@@ -1,7 +1,6 @@
 package providers
 import (
 	"blacked/features/providers/base"
-	"blacked/features/providers/abuseipdb"
 	"blacked/features/providers/alienvault"
 	"blacked/features/providers/oisd"
 	"blacked/features/providers/openphish"
@@ -37,10 +36,6 @@ func getProviders(cfg *config.Config, cc *colly.Collector) Providers {
 	if p := alienvault.NewAlienvaultProvider(cfg, cc); p != nil {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
-	if p := abuseipdb.NewAbuseIPDBProvider(cfg, cc); p != nil {
-		log.Info().Str("provider", p.GetName()).Msg("registered provider")
-	}
-
 	providers := Providers(base.GetRegisteredProviders())
 	return providers
 }
