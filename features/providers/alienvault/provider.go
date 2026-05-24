@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -431,46 +430,4 @@ func indicatorToEntry(indicator *OTXIndicator, source, processID string) (*entri
 			Msg("unsupported indicator type — skipping")
 		return nil, nil
 	}
-}
-
-// HTTPFetcherWithAuth provides an alternative fetcher for AlienVault OTX
-// that uses net/http directly with proper authentication
-type HTTPFetcherWithAuth struct {
-	client    *http.Client
-	userAgent string
-	apiKey    string
-}
-
-func NewHTTPFetcherWithAuth(apiKey string) *HTTPFetcherWithAuth {
-	return &HTTPFetcherWithAuth{
-		client: &http.Client{
-			Timeout: 2 * time.Minute,
-		},
-		userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-		apiKey:    apiKey,
-	}
-}
-
-func (f *HTTPFetcherWithAuth) Fetch(u string) (io.ReadCloser, error) {
-	time.Sleep(1 * time.Second) // Rate limiting — 1 req/sec (confirmed via load testing)
-
-	req, err := http.NewRequest(http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", f.userAgent)
-	req.Header.Set("X-OTX-API-KEY", f.apiKey)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := f.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		resp.Body.Close()
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
-	}
-
-	return resp.Body, nil
 }
