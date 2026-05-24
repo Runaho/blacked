@@ -161,6 +161,8 @@ func (b *BaseProvider) Fetch() (io.Reader, error) {
 
 	c.Wait()
 
+	time.Sleep(1 * time.Second)
+
 	if fetchErr != nil {
 		return nil, fetchErr
 	}
