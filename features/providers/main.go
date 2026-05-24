@@ -2,6 +2,7 @@ package providers
 import (
 	"blacked/features/providers/base"
 	"blacked/features/providers/alienvault"
+	"blacked/features/providers/greensnow"
 	"blacked/features/providers/oisd"
 	"blacked/features/providers/openphish"
 	"blacked/features/providers/phishtank"
@@ -32,6 +33,9 @@ func getProviders(cfg *config.Config, cc *colly.Collector) Providers {
 	}
 	if p := phishtank.NewPhishTankProvider(cfg, cc); p != nil {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	if p := greensnow.NewGreenSnowProvider(cfg, cc); p != nil {
+		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	}
 	}
 	if p := alienvault.NewAlienvaultProvider(cfg, cc); p != nil {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
