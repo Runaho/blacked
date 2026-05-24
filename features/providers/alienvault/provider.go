@@ -141,11 +141,17 @@ for {
 				time.Sleep(sleepDuration)
 			}
 
-			c := p.CollyClient.Clone()
-			if c == nil {
+			// Build a fresh collector for each attempt. Cloning the parent's collector
+			// preserves global state (visited URLs, rate limiters) across retries, causing
+			// "already visited" errors on the 2nd attempt. Fresh collectors avoid this.
+			var c *colly.Collector
+			if attempt == 0 && p.CollyClient != nil {
+				c = p.CollyClient.Clone()
+			} else {
 				c = colly.NewCollector()
 			}
 			c.MaxBodySize = 10 * 1024 * 1024
+			c.AllowedDomains = []string{} // disable domain filter for API server
 
 			// Set OTX API key header
 			c.OnRequest(func(r *colly.Request) {
@@ -178,6 +184,16 @@ for {
 			log.Info().Msgf("Fetching page %d (attempt %d/%d): %s", pageCount+1, attempt+1, maxRetries, currentURL)
 			if err := c.Visit(currentURL); err != nil {
 				log.Err(err).Msgf("Visit error page %d", pageCount+1)
+				// Visit error may contain status code (e.g. "Unauthorized" for 401)
+				fetchErr = err
+				// If the error message contains auth codes or "Unauthorized", return immediately
+				errStr := err.Error()
+				if strings.Contains(errStr, "401") || strings.Contains(errStr, "403") ||
+					strings.Contains(errStr, "Unauthorized") || strings.Contains(errStr, "Forbidden") {
+					authErr := fmt.Errorf("authentication failed for %s (status %d)", currentURL, statusCode)
+					log.Error().Err(authErr).Msg("Visit returned auth error")
+					return nil, authErr
+				}
 				continue
 			}
 			c.Wait()
