@@ -374,6 +374,10 @@ func (c *PondCollector) periodicFlush() {
 func (c *PondCollector) flushBuffer() {
 	c.bufferMu.Lock()
 	if len(c.buffer) > 0 {
+		// Copy entries to a new slice allocated from the pool.
+		// The pooled slice is used for the copy destination; once submitFlush
+		// takes ownership we must not retain a reference to it (sync.Pool
+		// backing arrays are re-used and would race with the DB writer).
 		batch := batchSlicePool.Get().([]*entries.Entry)
 		batch = batch[:0]
 		batch = append(batch, c.buffer...)
@@ -381,10 +385,13 @@ func (c *PondCollector) flushBuffer() {
 		c.buffer = c.buffer[:0]
 		c.bufferMu.Unlock()
 
+		// submitFlush takes ownership; the batch slice we handed off must not
+		// be used again.  The DB writer will return the slice it received
+		// (after zeroing its length) back to the pool, so we do NOT put the
+		// original slice back here — that would be a double-put and would also
+		// create a window where the pool hands the same backing array to
+		// another caller while the writer is still writing through it.
 		c.submitFlush(batch)
-
-		batch = batch[:0]
-		batchSlicePool.Put(batch)
 	} else {
 		c.bufferMu.Unlock()
 	}
