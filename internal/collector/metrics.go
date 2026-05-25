@@ -45,6 +45,12 @@ type MetricsCollector struct {
 	BulkCheckTotal     *prometheus.CounterVec // Counter for total /bulk-check requests
 	BulkHitTotal       *prometheus.CounterVec // Counter for total /bulk-hit requests
 	BulkHitBlockedTotal *prometheus.CounterVec // Counter for /bulk-hit requests with at least one blocked
+
+	// Queue and backpressure metrics for DB write channel
+	QueueDepth         *prometheus.GaugeVec   // Current queue depth (number of batches waiting)
+	QueueHighWatermark  *prometheus.GaugeVec   // High watermark (peak queue depth)
+	BackpressureEvents  *prometheus.CounterVec // Count of backpressure activation events
+	QueueDroppedBatches *prometheus.CounterVec // Count of batches dropped due to saturation
 }
 
 func GetMetricsCollector() (*MetricsCollector, error) {
@@ -149,6 +155,27 @@ func NewMetricsCollector(providerNames []string) *MetricsCollector {
 			BulkHitBlockedTotal: promauto.NewCounterVec(prometheus.CounterOpts{
 				Name: "blacked_bulk_hit_blocked_total",
 				Help: "Total number of /bulk-hit requests with at least one blocked URL.",
+			}, nil),
+
+			// Queue and backpressure metrics
+			QueueDepth: promauto.NewGaugeVec(prometheus.GaugeOpts{
+				Name: "blacked_db_queue_depth",
+				Help: "Current number of batches waiting in the DB write queue.",
+			}, nil),
+
+			QueueHighWatermark: promauto.NewGaugeVec(prometheus.GaugeOpts{
+				Name: "blacked_db_queue_high_watermark",
+				Help: "Peak queue depth recorded since startup (high watermark).",
+			}, nil),
+
+			BackpressureEvents: promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: "blacked_backpressure_events_total",
+				Help: "Number of times backpressure was activated (queue reached high threshold).",
+			}, nil),
+
+			QueueDroppedBatches: promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: "blacked_queue_dropped_batches_total",
+				Help: "Number of batches dropped due to queue saturation.",
 			}, nil),
 		}
 		// Populate _mc’s providerMetrics
@@ -275,4 +302,26 @@ func (mc *MetricsCollector) GetAllProviderMetrics() map[string]*ProviderMetrics 
 // String method for ProviderMetrics - Can be simplified.
 func (pm *ProviderMetrics) String() string {
 	return "Provider: " + pm.ProviderName + ", Status: " + pm.SyncStatus + " (Detailed metrics in Prometheus)"
+}
+
+// -- Queue and backpressure metrics helpers --
+
+// UpdateQueueDepth sets the current queue depth and optionally updates the high watermark.
+func (mc *MetricsCollector) UpdateQueueDepth(depth int) {
+	mc.QueueDepth.With(nil).Set(float64(depth))
+}
+
+// UpdateQueueHighWatermark sets the high watermark value.
+func (mc *MetricsCollector) UpdateQueueHighWatermark(highWatermark int) {
+	mc.QueueHighWatermark.With(nil).Set(float64(highWatermark))
+}
+
+// RecordBackpressureEvent increments the backpressure event counter.
+func (mc *MetricsCollector) RecordBackpressureEvent() {
+	mc.BackpressureEvents.With(nil).Inc()
+}
+
+// RecordDroppedBatch increments the dropped batch counter and returns true if counter was updated.
+func (mc *MetricsCollector) RecordDroppedBatch(batchSize int) {
+	mc.QueueDroppedBatches.With(nil).Add(float64(batchSize))
 }
