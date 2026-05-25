@@ -22,9 +22,9 @@ func TestEntryToURLKeys_SchemeRouting(t *testing.T) {
 			wantIP: "185.234.72.15",
 		},
 		{
-			name:   "IP:port, no scheme — port stripped, goes to IP bloom",
+			name:   "IP:port, no scheme — port preserved in bloom key",
 			entry:  &entries.Entry{Host: "185.234.72.15:8080", Scheme: ""},
-			wantIP: "185.234.72.15",
+			wantIP: "185.234.72.15:8080",
 		},
 		{
 			name:   "scheme-prefixed IP — must NOT go to IP bloom (routes to full_url)",

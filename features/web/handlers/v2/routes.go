@@ -7,10 +7,11 @@ import (
 
 // MapV2Routes registers the v2 API routes on the given Echo group.
 // Group at /api/v1 is expected — routes are:
-//   GET  /api/v1/check?url=   → QueryHandler.Check (bloom only)
-//   GET  /api/v1/hit?url=     → QueryHandler.Hit   (bloom + DB + score)
-//   POST /api/v1/bulk-check    → QueryHandler.BulkCheck (bloom-only batch)
-//   POST /api/v1/bulk-hit      → QueryHandler.BulkHit   (full batch: bloom + DB + score)
+//   GET  /api/v1/check?url= or ?ip=  → QueryHandler.Check (bloom only)
+//   GET  /api/v1/hit?url=   or ?ip=   → QueryHandler.Hit   (bloom + DB + score)
+//   POST /api/v1/bulk-check           → QueryHandler.BulkCheck (bloom-only batch)
+//   POST /api/v1/bulk-hit             → QueryHandler.BulkHit   (full batch: bloom + DB + score)
+// ?ip= accepts bare IP or IP:port (port preserved). Schemes (http://, ftp://, etc.) rejected via ?ip= → use ?url= instead.
 func MapV2Routes(e *echo.Echo, handler *QueryHandler) error {
 	g := e.Group("/api/v1")
 

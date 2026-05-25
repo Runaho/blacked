@@ -5,7 +5,9 @@ import (
 	"blacked/features/web/handlers/response"
 	"blacked/internal/db"
 	"blacked/internal/query"
+	"net"
 	"net/http"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
@@ -39,11 +41,34 @@ func NewQueryHandlerWithDeps(svc *query.QueryService) *QueryHandler {
 	return &QueryHandler{svc: svc}
 }
 
-// Check handles GET /api/v1/check?url= — fast bloom-only check (~0.4ms).
-// Returns 204 No Content if no match, 200 with body if matched.
+// Check handles GET /api/v1/check?url= or GET /api/v1/check?ip= — fast bloom-only check (~0.4ms).
+// ?ip= accepts bare IP or IP:port. Port is preserved in bloom key.
+// Schemes like http://, ftp://, file:// are rejected via ?ip= (use ?url= for those → full_url bloom).
 func (h *QueryHandler) Check(c echo.Context) error {
+	ipStr := c.QueryParam("ip")
 	urlStr := c.QueryParam("url")
-	if urlStr == "" {
+
+	// ?ip= parameter — bare IP or IP:port, no scheme allowed
+	if ipStr != "" {
+		if strings.Contains(ipStr, "://") {
+			return c.NoContent(http.StatusNoContent) // reject schemes via ?ip=
+		}
+		// Validate IP (with optional port)
+		trimmed := strings.TrimSpace(ipStr)
+		if h, _, err := net.SplitHostPort(trimmed); err != nil {
+			// No port — check if pure IP
+			if net.ParseIP(trimmed) == nil {
+				return c.NoContent(http.StatusNoContent) // not a valid IP
+			}
+			urlStr = trimmed // "1.2.3.4" → IP bloom key
+		} else {
+			// Has port — verify host part is valid IP, keep port in bloom key
+			if net.ParseIP(h) == nil {
+				return c.NoContent(http.StatusNoContent) // not a valid IP
+			}
+			urlStr = trimmed // "1.2.3.4:8080" → IP bloom key (port preserved)
+		}
+	} else if urlStr == "" {
 		return c.NoContent(http.StatusNoContent)
 	}
 
@@ -60,11 +85,34 @@ func (h *QueryHandler) Check(c echo.Context) error {
 	return c.JSON(http.StatusOK, result)
 }
 
-// Hit handles GET /api/v1/hit?url= — full check (bloom + DB + score ~5-15ms).
-// Returns 204 No Content if no match, 200 with body if matched.
+// Hit handles GET /api/v1/hit?url= or GET /api/v1/hit?ip= — full check (bloom + DB + score ~5-15ms).
+// ?ip= accepts bare IP or IP:port. Port is preserved in bloom key.
+// Schemes like http://, ftp://, file:// are rejected via ?ip= (use ?url= for those → full_url bloom).
 func (h *QueryHandler) Hit(c echo.Context) error {
+	ipStr := c.QueryParam("ip")
 	urlStr := c.QueryParam("url")
-	if urlStr == "" {
+
+	// ?ip= parameter — bare IP or IP:port, no scheme allowed
+	if ipStr != "" {
+		if strings.Contains(ipStr, "://") {
+			return c.NoContent(http.StatusNoContent) // reject schemes via ?ip=
+		}
+		// Validate IP (with optional port)
+		trimmed := strings.TrimSpace(ipStr)
+		if h, _, err := net.SplitHostPort(trimmed); err != nil {
+			// No port — check if pure IP
+			if net.ParseIP(trimmed) == nil {
+				return c.NoContent(http.StatusNoContent) // not a valid IP
+			}
+			urlStr = trimmed // "1.2.3.4" → IP bloom key
+		} else {
+			// Has port — verify host part is valid IP, keep port in bloom key
+			if net.ParseIP(h) == nil {
+				return c.NoContent(http.StatusNoContent) // not a valid IP
+			}
+			urlStr = trimmed // "1.2.3.4:8080" → IP bloom key (port preserved)
+		}
+	} else if urlStr == "" {
 		return c.NoContent(http.StatusNoContent)
 	}
 
