@@ -102,5 +102,8 @@ func parseGreenSnowLine(line, processID string) (*entries.Entry, error) {
 	entry.Domain = line
 	entry.SubDomains = nil
 
+	// Set SourceURL so UNIQUE(source_url, source) constraint doesn't merge all entries
+	entry.SourceURL = defaultSourceURL
+
 	return entry, nil
 }

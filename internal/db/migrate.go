@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS entries (
     created_at  INTEGER,
     updated_at  INTEGER,
     deleted_at  INTEGER,
-    UNIQUE (source_url, source)
+    UNIQUE (source_url, source, host)
 );
 
 CREATE TABLE IF NOT EXISTS provider_processes (

@@ -401,7 +401,7 @@ func (r *SQLiteRepository) SaveEntry(ctx context.Context, entry entries.Entry) e
 			INSERT INTO entries (
 				id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, category, confidence, created_at, updated_at, deleted_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL) -- Insert with NULL deleted_at for new entries
-			ON CONFLICT (source_url, source) DO UPDATE SET -- UPSERT logic on conflict of 'source_url' and 'source'
+			ON CONFLICT (source_url, source, host) DO UPDATE SET -- UPSERT logic on conflict of 'source_url', 'source' and 'host'
 				process_id = EXCLUDED.process_id,
 				scheme = EXCLUDED.scheme,
 				domain = EXCLUDED.domain,
@@ -456,7 +456,7 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []*entr
         INSERT INTO entries (
             id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, category, confidence, created_at, updated_at, deleted_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
-        ON CONFLICT (source_url, source) DO UPDATE SET
+        ON CONFLICT (source_url, source, host) DO UPDATE SET
             process_id = EXCLUDED.process_id,
             scheme = EXCLUDED.scheme,
             domain = EXCLUDED.domain,
