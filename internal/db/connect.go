@@ -227,5 +227,11 @@ func connectSQLite(dataSourceName string, maxOpen, maxIdle int) (*sql.DB, error)
 		log.Warn().Err(err).Msg("Failed to set busy timeout")
 	}
 
+	// Enable automatic WAL checkpointing every 1000 pages
+	// This prevents the WAL file from growing unbounded
+	if _, err := db.Exec("PRAGMA wal_autocheckpoint = 1000"); err != nil {
+		log.Warn().Err(err).Msg("Failed to set wal_autocheckpoint")
+	}
+
 	return db, nil
 }
