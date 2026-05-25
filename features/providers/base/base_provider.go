@@ -2,6 +2,7 @@ package base
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"blacked/features/entries/repository"
 	"blacked/features/entry_collector"
 	"blacked/internal/config"
+	"blacked/internal/resilience"
 
 	"github.com/gocolly/colly/v2"
 	"github.com/google/uuid"
@@ -41,6 +43,7 @@ type Provider interface {
 	GetName() string
 	Source() string
 	Fetch() (io.Reader, error)
+	FetchWithContext(ctx context.Context) (io.Reader, error)
 	Parse(data io.Reader) error
 	SetProcessID(id uuid.UUID)
 	SetRepository(repository repository.BlacklistRepository)
@@ -52,15 +55,16 @@ type Provider interface {
 }
 
 type BaseProvider struct {
-	Name          string
-	SourceURL     string
-	Category      string
-	ProcessID     *uuid.UUID
-	CollyClient   *colly.Collector
-	CronSchedule  string
-	RateLimit     time.Duration
-	Repository    repository.BlacklistRepository
-	ParseFunction func(io.Reader, entry_collector.Collector) error
+	Name             string
+	SourceURL        string
+	Category         string
+	ProcessID        *uuid.UUID
+	CollyClient      *colly.Collector
+	CronSchedule     string
+	RateLimit        time.Duration
+	Repository       repository.BlacklistRepository
+	ParseFunction    func(io.Reader, entry_collector.Collector) error
+	ResilienceConfig *resilience.ProviderResilienceConfig
 }
 
 // NewBaseProvider creates a new BaseProvider
@@ -78,6 +82,12 @@ func NewBaseProvider(name, sourceURL, category string, collyClient *colly.Collec
 
 func (b *BaseProvider) Register() *BaseProvider {
 	RegisterProvider(b)
+	return b
+}
+
+// SetResilienceConfig sets the resilience configuration for the provider
+func (b *BaseProvider) SetResilienceConfig(cfg *resilience.ProviderResilienceConfig) *BaseProvider {
+	b.ResilienceConfig = cfg
 	return b
 }
 
@@ -132,45 +142,70 @@ func (b *BaseProvider) SetCronSchedule(cron string) *BaseProvider {
 }
 
 // Fetch retrieves data from source URL
+// This version uses default timeout from colly config (5 minutes)
+// Deprecated: Use FetchWithContext for proper timeout handling
 func (b *BaseProvider) Fetch() (io.Reader, error) {
-	var responseBody []byte
-	var fetchErr error
+	return b.FetchWithContext(context.Background())
+}
 
-	c := b.CollyClient.Clone()
-	c.OnResponse(func(r *colly.Response) {
-		responseBody = r.Body
-		log.Info().
-			Str("source", b.SourceURL).
-			Int("bytes", len(responseBody)).
-			Msg("Fetched data from source")
+// FetchWithContext retrieves data from source URL with context for timeout and cancellation
+// Uses resilience pattern: timeout override (default 30s), retry with exponential backoff, circuit breaker
+func (b *BaseProvider) FetchWithContext(ctx context.Context) (io.Reader, error) {
+	// Get resilience config or create default
+	resCfg := b.ResilienceConfig
+	if resCfg == nil {
+		// Create default resilience config for this provider
+		defaultCfg := resilience.DefaultProviderResilienceConfig(b.Name)
+		resCfg = &defaultCfg
+	}
+
+	// Use resilience.ExecuteWithResilience to wrap the actual fetch operation
+	reader, err := resilience.ExecuteWithResilience(ctx, b.Name, *resCfg, func(ctx context.Context) (io.Reader, error) {
+		var responseBody []byte
+		var fetchErr error
+
+		c := b.CollyClient.Clone()
+		
+		// Apply timeout from resilience config
+		c.SetRequestTimeout(resCfg.Timeout)
+
+		c.OnResponse(func(r *colly.Response) {
+			responseBody = r.Body
+			log.Info().
+				Str("source", b.SourceURL).
+				Int("bytes", len(responseBody)).
+				Msg("Fetched data from source")
+		})
+
+		c.OnError(func(r *colly.Response, err error) {
+			fetchErr = ErrFetchingSource
+			log.Err(err).
+				Str("url", r.Request.URL.String()).
+				Int("status_code", r.StatusCode).
+				Msg("Colly error when fetching data")
+		})
+
+		log.Info().Str("url", b.SourceURL).Msg("Fetching data")
+		if err := c.Visit(b.SourceURL); err != nil {
+			log.Err(err).Str("url", b.SourceURL).Msg("Failed to visit URL")
+			return nil, ErrVisitingURL
+		}
+
+		c.Wait()
+
+		if fetchErr != nil {
+			return nil, fetchErr
+		}
+
+		if len(responseBody) == 0 {
+			log.Error().Str("url", b.SourceURL).Msg("Empty response from source")
+			return nil, ErrEmptyResponse
+		}
+
+		return bytes.NewReader(responseBody), nil
 	})
 
-	c.OnError(func(r *colly.Response, err error) {
-		fetchErr = ErrFetchingSource
-		log.Err(err).
-			Str("url", r.Request.URL.String()).
-			Int("status_code", r.StatusCode).
-			Msg("Colly error when fetching data")
-	})
-
-	log.Info().Msgf("Fetching %s", b.SourceURL)
-	if err := c.Visit(b.SourceURL); err != nil {
-		log.Err(err).Str("url", b.SourceURL).Msg("Failed to visit URL")
-		return nil, ErrVisitingURL
-	}
-
-	c.Wait()
-
-	if fetchErr != nil {
-		return nil, fetchErr
-	}
-
-	if len(responseBody) == 0 {
-		log.Error().Str("url", b.SourceURL).Msg("Empty response from source")
-		return nil, ErrEmptyResponse
-	}
-
-	return bytes.NewReader(responseBody), nil
+	return reader, err
 }
 
 // Parse processes the fetched data

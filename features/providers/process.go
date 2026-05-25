@@ -12,6 +12,7 @@ import (
 
 	"context"
 	"errors"
+	"io"
 	"sync"
 	"time"
 
@@ -233,7 +234,14 @@ func (p Providers) processProvider(
 
 	fetchSpan := trace.SpanFromContext(ctx)
 	fetchSpan.AddEvent("fetching data from source")
-	reader, meta, err := utils.GetResponseReader(source, provider.Fetch, name, strProcessID, ttl)
+	
+	// Wrap FetchWithContext to match GetResponseReader's expected signature
+	// FetchWithContext includes: timeout override (default 30s), retry with exponential backoff, circuit breaker
+	fetchFunc := func() (io.Reader, error) {
+		return provider.FetchWithContext(ctx)
+	}
+	
+	reader, meta, err := utils.GetResponseReader(source, fetchFunc, name, strProcessID, ttl)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to fetch data")

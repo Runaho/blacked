@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/alitto/pond/v2 v2.3.3
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
+	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/creasty/defaults v1.8.0
 	github.com/dgraph-io/badger/v4 v4.7.0
 	github.com/fatih/color v1.18.0
@@ -23,6 +24,7 @@ require (
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/rs/xid v1.6.0
 	github.com/rs/zerolog v1.34.0
+	github.com/sony/gobreaker v1.0.0
 	github.com/stretchr/testify v1.11.1
 	github.com/unrolled/secure v1.17.0
 	github.com/urfave/cli/v2 v2.27.6
@@ -47,7 +49,6 @@ require (
 	github.com/antchfx/xpath v1.3.6 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.22.0 // indirect
-	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.6 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
