@@ -2,6 +2,7 @@ package v2
 
 import (
 	"blacked/features/bloom"
+	"blacked/features/entry_collector"
 	"blacked/internal/query"
 )
 
@@ -16,6 +17,12 @@ func NewBloomAdapter(mgr *bloom.BloomManager) query.BloomChecker {
 }
 
 func (ba *bloomAdapter) Check(urlStr string) (bool, []query.Match, error) {
+	// Wait for initial bloom bootstrap before checking
+	// This prevents false negatives during cold start (2-3s window)
+	if pc := entry_collector.GetPondCollector(); pc != nil {
+		pc.WaitForBootstrap()
+	}
+
 	result, err := ba.mgr.Likely(urlStr)
 	if err != nil {
 		return false, nil, err
