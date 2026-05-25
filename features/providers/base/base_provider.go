@@ -164,6 +164,11 @@ func (b *BaseProvider) FetchWithContext(ctx context.Context) (io.Reader, error) 
 		var responseBody []byte
 		var fetchErr error
 
+		// Nil check for CollyClient — some providers (like AlienVault) use fresh collectors
+		if b.CollyClient == nil {
+			log.Error().Str("provider", b.Name).Msg("CollyClient is nil — cannot fetch")
+			return nil, ErrFetchingSource
+		}
 		c := b.CollyClient.Clone()
 		
 		// Apply timeout from resilience config
