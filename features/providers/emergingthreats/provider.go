@@ -50,7 +50,7 @@ func NewEmergingThreatsProvider(cfg *config.Config, collyClient *colly.Collector
 
 	processID := uuid.New().String()
 	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
-		return parseIPList(data, collector, providerName, processID)
+		return parseIPList(data, collector, providerName, sourceURL, processID)
 	}
 
 	bp := base.NewBaseProvider(providerName, sourceURL, category, client, parseFunc)
@@ -97,7 +97,7 @@ func (p *emergingThreatsProvider) Fetch() (io.Reader, error) {
 
 // parseIPList reads plain IPv4 lines and submits each as an Entry.
 // Lines that fail net.ParseIP are silently skipped.
-func parseIPList(data io.Reader, collector entry_collector.Collector, source, processID string) error {
+func parseIPList(data io.Reader, collector entry_collector.Collector, source, sourceURL, processID string) error {
 	scanner := bufio.NewScanner(data)
 
 	var parsed, skipped int
@@ -131,6 +131,7 @@ func parseIPList(data io.Reader, collector entry_collector.Collector, source, pr
 
 		entry.Host = ip.String()
 		entry.Domain = ip.String()
+		entry.SourceURL = sourceURL
 
 		collector.Submit(entry)
 		parsed++
