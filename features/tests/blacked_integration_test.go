@@ -336,10 +336,11 @@ func TestCategoryA_ProviderSyncAndDBWrite(t *testing.T) {
 
 	t.Run("A_6_Tekrar_Ekleme_Unique_Constraint", func(t *testing.T) {
 		// Same URL from same source should be ignored (ON CONFLICT IGNORE)
+		// Must use the exact same (source_url, source, host) tuple that's already in DB
 		res, err := ts.db.Exec(`
 			INSERT OR IGNORE INTO entries (id, source, domain, host, source_url, scheme)
 			VALUES (?, ?, ?, ?, ?, ?)
-		`, "dup-test", "src-urlhaus", "test.com", "test.com", "http://103.224.212.251/jjjj.exe", "http")
+		`, "dup-test", "src-urlhaus", "103.224.212.251", "103.224.212.251", "http://103.224.212.251/jjjj.exe", "http")
 		require.NoError(t, err)
 
 		affected, _ := res.RowsAffected()

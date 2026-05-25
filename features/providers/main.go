@@ -10,6 +10,7 @@ import (
 	"blacked/features/providers/oisd"
 	"blacked/features/providers/openphish"
 	"blacked/features/providers/phishtank"
+	"blacked/features/providers/pihole"
 	"blacked/features/providers/rtbh"
 	"blacked/features/providers/threatfox"
 	"blacked/features/providers/torexitnodes"
@@ -60,6 +61,9 @@ func getProviders(cfg *config.Config, cc *colly.Collector) Providers {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
 	if p := alienvault.NewAlienvaultProvider(cfg, cc); p != nil {
+		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	}
+	if p := pihole.NewPiholeProvider(cfg, cc); p != nil {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
 	if p := threatfox.NewThreatFoxProvider(cfg, cc); p != nil {
