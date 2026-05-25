@@ -93,7 +93,11 @@ func NewApplication(cfg *config.ServerConfig) (*Application, error) {
 			return
 		}
 
-		app.ConfigurePprof()
+		if cfg.PprofEnabled {
+			app.ConfigurePprof()
+		} else {
+			log.Info().Msg("pprof disabled via config — /debug/pprof/* endpoints will not be registered")
+		}
 
 		app.providers = providers.GetProviders()
 

@@ -3,6 +3,7 @@ package v2
 import (
 	"blacked/features/bloom"
 	"blacked/features/web/handlers/response"
+	"blacked/internal/collector"
 	"blacked/internal/db"
 	"blacked/internal/query"
 	"net"
@@ -82,6 +83,10 @@ func (h *QueryHandler) Check(c echo.Context) error {
 	if !result.Likely {
 		return c.NoContent(http.StatusNoContent)
 	}
+	// Record business metric
+	if mc, err := collector.GetMetricsCollector(); err == nil {
+		mc.RecordCheck()
+	}
 	return c.JSON(http.StatusOK, result)
 }
 
@@ -124,7 +129,15 @@ func (h *QueryHandler) Hit(c echo.Context) error {
 	}
 
 	if !result.Blocked {
+		// Record business metric — allowed (not blocked)
+		if mc, err := collector.GetMetricsCollector(); err == nil {
+			mc.RecordHit(false)
+		}
 		return c.NoContent(http.StatusNoContent)
+	}
+	// Record business metric — blocked
+	if mc, err := collector.GetMetricsCollector(); err == nil {
+		mc.RecordHit(true)
 	}
 	return c.JSON(http.StatusOK, result)
 }
@@ -150,7 +163,10 @@ func (h *QueryHandler) BulkCheck(c echo.Context) error {
 		return response.ErrorWithDetails(c, http.StatusInternalServerError,
 			"Bulk check failed", err.Error())
 	}
-
+	// Record business metric
+	if mc, err := collector.GetMetricsCollector(); err == nil {
+		mc.RecordBulkCheck()
+	}
 	return c.JSON(http.StatusOK, results)
 }
 
@@ -170,6 +186,16 @@ func (h *QueryHandler) BulkHit(c echo.Context) error {
 		return response.ErrorWithDetails(c, http.StatusInternalServerError,
 			"Bulk hit failed", err.Error())
 	}
-
+	// Record business metric — check if any URL was blocked
+	anyBlocked := false
+	for _, r := range results {
+		if r.Blocked {
+			anyBlocked = true
+			break
+		}
+	}
+	if mc, err := collector.GetMetricsCollector(); err == nil {
+		mc.RecordBulkHit(anyBlocked)
+	}
 	return c.JSON(http.StatusOK, results)
 }
