@@ -9,7 +9,7 @@ import (
 // TestEntryToURLKeys_SchemeRouting verifies that entries with a non-empty Scheme
 // do NOT populate URLKeys.IP — scheme-prefixed URLs must go to the full_url
 // bloom filter, not the IP bloom filter. Only bare IPs (no scheme) should be
-// routed to the IP bloom.
+// routed to the IP bloom. Port is preserved in bloom key.
 func TestEntryToURLKeys_SchemeRouting(t *testing.T) {
 	tests := []struct {
 		name   string
