@@ -333,13 +333,7 @@ func iocToEntry(ioc *threatFoxIOC, source, processID string) (*entries.Entry, er
 				Msg("not a valid IP after split")
 			return nil, nil
 		}
-		if err := entry.SetURL("//" + host); err != nil {
-			return nil, nil
-		}
-		// SetURL runs domain extraction on IPs, which produces misleading
-		// values (e.g. "114.149"). Override with the actual IP.
-		entry.Domain = host
-		entry.SubDomains = nil
+		entry.WithIP(host)
 
 	case "domain":
 		if ioc.IOCValue == "" || ioc.IOCValue == "." {

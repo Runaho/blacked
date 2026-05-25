@@ -110,13 +110,8 @@ func TestIntegration_RTBHLiveFetch(t *testing.T) {
 		entry := entries.NewEntry().
 			WithSource(providerName).
 			WithProcessID(processID).
-			WithCategory("government-feed")
-
-		if err := entry.SetURL("//" + ip.String()); err != nil {
-			t.Logf("SetURL failed for IP %s: %v", ip.String(), err)
-			continue
-		}
-		entry.Domain = ip.String()
+			WithCategory("government-feed").
+			WithIP(ip.String())
 
 		result = append(result, entry)
 	}
