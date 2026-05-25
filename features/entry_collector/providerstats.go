@@ -12,4 +12,5 @@ type ProviderStats struct {
 	processID         string
 	active            bool
 	pendingOperations sync.WaitGroup // Track pending operations
+	lastActivityTime  time.Time      // Timestamp when provider was last active (or became inactive)
 }

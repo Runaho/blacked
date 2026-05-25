@@ -26,8 +26,9 @@ import (
 var ErrMissingBloomStreamCh = errors.New("bloom stream channel is nil")
 
 const (
-	PeriodicFlushInterval = 5 * time.Second
-	MaxProvidersInMemory  = 1000
+	PeriodicFlushInterval     = 5 * time.Second
+	MaxProvidersInMemory      = 1000
+	InactiveProviderThreshold = 1 * time.Hour // Cleanup providers inactive for more than 1 hour
 )
 
 var (
@@ -179,10 +180,11 @@ func (c *PondCollector) StartProviderProcessing(providerName, processID string) 
 	}
 
 	c.providerStats[providerName] = &ProviderStats{
-		processedCount: 0,
-		startTime:      time.Now(),
-		processID:      processID,
-		active:         true,
+		processedCount:   0,
+		startTime:        time.Now(),
+		processID:        processID,
+		active:           true,
+		lastActivityTime: time.Now(),
 	}
 
 	log.Info().
@@ -364,6 +366,7 @@ func (c *PondCollector) periodicFlush() {
 		select {
 		case <-ticker.C:
 			c.flushBuffer()
+			c.cleanupInactiveProviders()
 		case <-c.ctx.Done():
 			c.flushBuffer()
 			return
@@ -387,6 +390,25 @@ func (c *PondCollector) flushBuffer() {
 		batchSlicePool.Put(batch)
 	} else {
 		c.bufferMu.Unlock()
+	}
+}
+
+// cleanupInactiveProviders removes provider stats entries that have been inactive
+// for longer than InactiveProviderThreshold. This prevents memory leaks from
+// abandoned provider processes.
+func (c *PondCollector) cleanupInactiveProviders() {
+	c.statsMu.Lock()
+	defer c.statsMu.Unlock()
+
+	now := time.Now()
+	for provider, stats := range c.providerStats {
+		if !stats.active && now.Sub(stats.lastActivityTime) > InactiveProviderThreshold {
+			delete(c.providerStats, provider)
+			log.Info().
+				Str("provider", provider).
+				Time("last_activity", stats.lastActivityTime).
+				Msg("Cleaned up inactive provider stats")
+		}
 	}
 }
 
@@ -441,13 +463,12 @@ func (c *PondCollector) FinishProviderProcessing(providerName, processID string)
 	// Wait for all pending operations to complete
 	stats.pendingOperations.Wait()
 
-	// Now it's safe to mark as inactive and delete
+	// Now it's safe to mark as inactive and set timestamp for cleanup
 	c.statsMu.Lock()
 	stats.active = false
+	stats.lastActivityTime = time.Now() // Set timestamp for cleanup tracking
 	count = stats.processedCount
 	duration = time.Since(stats.startTime)
-
-	delete(c.providerStats, providerName)
 	c.statsMu.Unlock()
 
 	if mc, _ := collector.GetMetricsCollector(); mc != nil {
