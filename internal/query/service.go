@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"sync"
 )
 
 // BloomChecker is the minimal interface the query service needs from the bloom engine.
@@ -144,29 +145,105 @@ func hostname(urlStr string) string {
 }
 
 // BulkCheck performs fast bloom-only checks for multiple URLs (~0.4ms per URL).
+// Uses parallel goroutines with a semaphore to limit concurrency.
 func (qs *QueryService) BulkCheck(ctx context.Context, urls []string) ([]LikelyResponse, error) {
-	results := make([]LikelyResponse, len(urls))
-	for i, u := range urls {
-		resp, err := qs.Likely(ctx, u)
-		if err != nil {
-			return nil, fmt.Errorf("bulk check url=%s: %w", u, err)
-		}
-		results[i] = *resp
+	return bulkCheckParallel(ctx, qs, urls, 20) // 20 concurrent workers
+}
+
+// bulkCheckParallel runs Likely checks in parallel with bounded concurrency.
+func bulkCheckParallel(ctx context.Context, qs *QueryService, urls []string, concurrency int) ([]LikelyResponse, error) {
+	type result struct {
+		resp LikelyResponse
+		err  error
+		i    int
 	}
-	return results, nil
+
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	results := make([]result, len(urls))
+	resultChan := make(chan result, len(urls))
+
+	for i, u := range urls {
+		wg.Add(1)
+		go func(u string, i int) {
+			defer wg.Done()
+			sem <- struct{}{}        // acquire
+			defer func() { <-sem }() // release
+
+			resp, err := qs.Likely(ctx, u)
+			resultChan <- result{resp: *resp, err: err, i: i}
+		}(u, i)
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	for r := range resultChan {
+		if r.err != nil {
+			return nil, fmt.Errorf("bulk check url=%s: %w", urls[r.i], r.err)
+		}
+		results[r.i] = r
+	}
+
+	// Reassemble in original order
+	out := make([]LikelyResponse, len(urls))
+	for _, r := range results {
+		out[r.i] = r.resp
+	}
+	return out, nil
 }
 
 // BulkHit performs full lookups (bloom + DB + score) for multiple URLs.
+// Uses parallel goroutines with a semaphore to limit concurrency.
 func (qs *QueryService) BulkHit(ctx context.Context, urls []string) ([]QueryResponse, error) {
-	results := make([]QueryResponse, len(urls))
-	for i, u := range urls {
-		resp, err := qs.Hit(ctx, u)
-		if err != nil {
-			return nil, fmt.Errorf("bulk hit url=%s: %w", u, err)
-		}
-		results[i] = *resp
+	return bulkHitParallel(ctx, qs, urls, 20) // 20 concurrent workers
+}
+
+// bulkHitParallel runs Hit checks in parallel with bounded concurrency.
+func bulkHitParallel(ctx context.Context, qs *QueryService, urls []string, concurrency int) ([]QueryResponse, error) {
+	type result struct {
+		resp QueryResponse
+		err  error
+		i    int
 	}
-	return results, nil
+
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	results := make([]result, len(urls))
+	resultChan := make(chan result, len(urls))
+
+	for i, u := range urls {
+		wg.Add(1)
+		go func(u string, i int) {
+			defer wg.Done()
+			sem <- struct{}{}        // acquire
+			defer func() { <-sem }() // release
+
+			resp, err := qs.Hit(ctx, u)
+			resultChan <- result{resp: *resp, err: err, i: i}
+		}(u, i)
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	for r := range resultChan {
+		if r.err != nil {
+			return nil, fmt.Errorf("bulk hit url=%s: %w", urls[r.i], r.err)
+		}
+		results[r.i] = r
+	}
+
+	// Reassemble in original order
+	out := make([]QueryResponse, len(urls))
+	for _, r := range results {
+		out[r.i] = r.resp
+	}
+	return out, nil
 }
 
 // Search performs a filtered search against the entries table.

@@ -18,6 +18,7 @@ type ServerConfig struct {
 
 	AllowOrigins []string `koanf:"alloworigins" default:"[]"`
 	HealthCheck  bool     `koanf:"health_check" default:"true"`
+	PprofEnabled bool     `koanf:"pprof_enabled" default:"false"`
 }
 
 func (s *ServerConfig) GetServerURL() string {

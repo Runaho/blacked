@@ -1,13 +1,16 @@
 package cmd
 
 import (
+	"context"
+	"net/http"
+
 	"blacked/features/cache"
 	"blacked/features/entry_collector"
+	"blacked/features/providers"
 	"blacked/features/web"
 	"blacked/internal/config"
 	"blacked/internal/runner"
 
-	"github.com/ory/graceful"
 	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v2"
 )
@@ -46,23 +49,42 @@ func serve(c *cli.Context) (err error) {
 	}
 	log.Debug().Msg("Badger cache initialized")
 
-	server := graceful.WithDefaults(app.Echo.Server)
-	log.Info().Msgf("Starting server on %s", server.Addr)
-
-	if _, err := runner.InitializeRunner(*app.GetProviders()); err != nil {
-		log.Fatal().Err(err).Msg("Failed to initialize runner")
+	// Initialize providers — if this fails, we should NOT start the server
+	if _, err := providers.InitProviders(); err != nil {
+		log.Error().Err(err).Msg("Provider initialization failed — aborting server start")
+		return err
 	}
+	log.Debug().Msg("Providers initialized")
 
 	// Run startup decision engine — determines whether to skip, restore, or fetch each provider
 	if err := runner.RunStartupProviders(c.Context, *app.GetProviders()); err != nil {
 		log.Error().Err(err).Msg("Startup provider evaluation failed, continuing with server startup")
 	}
 
+	if _, err := runner.InitializeRunner(*app.GetProviders()); err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize runner")
+	}
+
 	defer runner.ShutdownRunner(c.Context)
 
-	if err = graceful.Graceful(server.ListenAndServe, server.Shutdown); err != nil {
-		log.Error().Err(err).Msg("Failed to start server")
-		return err
+	// Graceful shutdown with context timeout using native http.Server.Shutdown()
+	// This properly drains in-flight requests before closing connections
+	server := app.Echo.Server
+	shutdownTimeout := cfg.Server.ShutdownTimeout
+	shutdownCtx, cancel := context.WithTimeout(c.Context, shutdownTimeout)
+	defer cancel()
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error().Err(err).Msg("Server error")
+		}
+	}()
+
+	log.Info().Msgf("Starting server on %s", server.Addr)
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Error().Err(err).Msg("Graceful shutdown failed, forcing close")
+		return server.Close()
 	}
 
 	log.Info().Msg("Server stopped gracefully.")

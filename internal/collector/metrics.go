@@ -36,6 +36,15 @@ type MetricsCollector struct {
 	EntriesParsedTotal  *prometheus.CounterVec // Counter for total blacklist entries parsed from
 	EntriesSavedTotal   *prometheus.CounterVec // Counter for total blacklist entries saved from import
 	ImportErrorsTotal   *prometheus.CounterVec // Counter for total import requests that resulted in errors
+
+	// Business-level metrics for query operations
+	CheckTotal         *prometheus.CounterVec // Counter for total /check requests (bloom only)
+	HitTotal           *prometheus.CounterVec // Counter for total /hit requests (full lookup)
+	HitBlockedTotal    *prometheus.CounterVec // Counter for /hit requests that found a match (blocked)
+	HitAllowedTotal    *prometheus.CounterVec // Counter for /hit requests with no match (allowed)
+	BulkCheckTotal     *prometheus.CounterVec // Counter for total /bulk-check requests
+	BulkHitTotal       *prometheus.CounterVec // Counter for total /bulk-hit requests
+	BulkHitBlockedTotal *prometheus.CounterVec // Counter for /bulk-hit requests with at least one blocked
 }
 
 func GetMetricsCollector() (*MetricsCollector, error) {
@@ -105,6 +114,42 @@ func NewMetricsCollector(providerNames []string) *MetricsCollector {
 				Name: "blacklist_json_import_errors_total",
 				Help: "Total number of import requests that resulted in errors.",
 			}, []string{"provider"}),
+
+			// Business-level query metrics
+			CheckTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: "blacked_url_check_total",
+				Help: "Total number of /check requests (bloom-only).",
+			}, nil),
+
+			HitTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: "blacked_hit_total",
+				Help: "Total number of /hit requests (full bloom+DB+score lookup).",
+			}, nil),
+
+			HitBlockedTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: "blacked_hit_blocked_total",
+				Help: "Total number of /hit requests that found a blocked match.",
+			}, nil),
+
+			HitAllowedTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: "blacked_hit_allowed_total",
+				Help: "Total number of /hit requests with no blocked match.",
+			}, nil),
+
+			BulkCheckTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: "blacked_bulk_check_total",
+				Help: "Total number of /bulk-check requests.",
+			}, nil),
+
+			BulkHitTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: "blacked_bulk_hit_total",
+				Help: "Total number of /bulk-hit requests.",
+			}, nil),
+
+			BulkHitBlockedTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: "blacked_bulk_hit_blocked_total",
+				Help: "Total number of /bulk-hit requests with at least one blocked URL.",
+			}, nil),
 		}
 		// Populate _mc’s providerMetrics
 		for _, name := range providerNames {
@@ -182,6 +227,36 @@ func (mc *MetricsCollector) IncrementEntriesSaved(providerName string, count int
 
 func (mc *MetricsCollector) IncrementImportErrors(providerName string) {
 	mc.ImportErrorsTotal.With(prometheus.Labels{"provider": providerName}).Inc()
+}
+
+// -- Business query metrics helpers --
+
+// RecordCheck increments the /check request counter.
+func (mc *MetricsCollector) RecordCheck() {
+	mc.CheckTotal.With(nil).Inc()
+}
+
+// RecordHit increments the /hit request counter and whether it was blocked.
+func (mc *MetricsCollector) RecordHit(blocked bool) {
+	mc.HitTotal.With(nil).Inc()
+	if blocked {
+		mc.HitBlockedTotal.With(nil).Inc()
+	} else {
+		mc.HitAllowedTotal.With(nil).Inc()
+	}
+}
+
+// RecordBulkCheck increments the /bulk-check request counter.
+func (mc *MetricsCollector) RecordBulkCheck() {
+	mc.BulkCheckTotal.With(nil).Inc()
+}
+
+// RecordBulkHit increments the /bulk-hit request counter and whether any URL was blocked.
+func (mc *MetricsCollector) RecordBulkHit(anyBlocked bool) {
+	mc.BulkHitTotal.With(nil).Inc()
+	if anyBlocked {
+		mc.BulkHitBlockedTotal.With(nil).Inc()
+	}
 }
 
 // GetAllProviderMetrics - For status tracking (optional, Prometheus has aggregated data directly). Can return less info now.
