@@ -61,6 +61,9 @@ type PondCollector struct {
 	// Single-threaded database writer
 	dbWriteChan chan []*entries.Entry
 	dbWriteWg   sync.WaitGroup
+
+	// Bootstrap synchronization - closed when initial bloom population completes
+	bootstrapDone chan struct{}
 }
 
 // InitPondCollector initializes the global pond collector
@@ -92,6 +95,7 @@ func InitPondCollector(
 			cancel:         cancel,
 			cacheSyncState: CacheSyncStateIdle,
 			dbWriteChan:    make(chan []*entries.Entry, 100), // Buffered channel for batches
+			bootstrapDone:  make(chan struct{}),
 		}
 
 		// Start a single goroutine for ALL database writes (single-threaded writer)
@@ -106,6 +110,7 @@ func InitPondCollector(
 		// URL returns 204 until the provider pipeline runs.  For 630K entries
 		// this takes ~2-3s in background.
 		go func() {
+			defer close(globalCollector.bootstrapDone)
 			log.Info().Msg("Starting bloom bootstrap from existing database entries")
 			start := time.Now()
 
@@ -161,6 +166,16 @@ func GetPondCollector() *PondCollector {
 // GetBloomManager returns the single *bloom.BloomManager shared across the application.
 func (c *PondCollector) GetBloomManager() *bloom.BloomManager {
 	return c.bloomMgr
+}
+
+// WaitForBootstrap blocks until the initial bloom filter population completes.
+// This should be called by query handlers before performing bloom lookups.
+// It returns immediately if bootstrap is already complete or if the channel is nil.
+func (c *PondCollector) WaitForBootstrap() {
+	if c.bootstrapDone == nil {
+		return
+	}
+	<-c.bootstrapDone
 }
 
 // StartProviderProcessing initializes tracking for a provider process
