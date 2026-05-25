@@ -125,6 +125,7 @@ func GetCurrentVersion(db *sql.DB) (int, error) {
 }
 
 // Migrate runs all pending migrations up to currentSchemaVersion.
+// Each migration is wrapped in a transaction to ensure atomicity.
 func Migrate(db *sql.DB) error {
 	current, err := GetCurrentVersion(db)
 	if err != nil {
@@ -147,22 +148,37 @@ func Migrate(db *sql.DB) error {
 		}
 
 		log.Info().Int("version", version).Msg("Applying migration")
-		if _, err := db.Exec(sqlStr); err != nil {
+
+		// Wrap migration in a transaction for atomicity
+		tx, err := db.Begin()
+		if err != nil {
+			return fmt.Errorf("Migrate: failed to begin transaction for migration %d: %w", version, err)
+		}
+
+		if _, err := tx.Exec(sqlStr); err != nil {
+			tx.Rollback()
 			return fmt.Errorf("Migrate: failed to apply migration %d: %w", version, err)
 		}
 
-		if _, err := db.Exec(
+		if _, err := tx.Exec(
 			`INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)`,
 			version, time.Now().UTC(),
 		); err != nil {
+			tx.Rollback()
 			return fmt.Errorf("Migrate: failed to record migration %d: %w", version, err)
 		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("Migrate: failed to commit migration %d: %w", version, err)
+		}
+
 		log.Info().Int("version", version).Msg("Migration applied successfully")
 	}
 	return nil
 }
 
 // Rollback runs migrations down by one step (for testing/reversibility).
+// The rollback is wrapped in a transaction to ensure atomicity.
 func Rollback(db *sql.DB) error {
 	current, err := GetCurrentVersion(db)
 	if err != nil {
@@ -178,13 +194,27 @@ func Rollback(db *sql.DB) error {
 	}
 
 	log.Info().Int("version", current).Msg("Rolling back migration")
-	if _, err := db.Exec(sqlStr); err != nil {
+
+	// Wrap rollback in a transaction for atomicity
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("Rollback: failed to begin transaction: %w", err)
+	}
+
+	if _, err := tx.Exec(sqlStr); err != nil {
+		tx.Rollback()
 		return fmt.Errorf("Rollback: failed to rollback migration %d: %w", current, err)
 	}
 
-	if _, err := db.Exec(`DELETE FROM schema_migrations WHERE version = ?`, current); err != nil {
+	if _, err := tx.Exec(`DELETE FROM schema_migrations WHERE version = ?`, current); err != nil {
+		tx.Rollback()
 		return fmt.Errorf("Rollback: failed to remove migration record %d: %w", current, err)
 	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("Rollback: failed to commit: %w", err)
+	}
+
 	log.Info().Int("version", current).Msg("Rollback complete")
 	return nil
 }
