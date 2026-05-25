@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/errgroup"
 )
 
 // ErrManagerNotReady is returned when the bloom manager has no initialized BloomSets.
@@ -132,7 +133,7 @@ func determineBloomTarget(keys *URLKeys) (BloomType, string) {
 
 // Likely checks a URL against all applicable bloom types in parallel.
 // Check order: Domain → Host → HostPath → File → FullURL.
-// First hit wins — other goroutines are cancelled via context.
+// First hit wins — other goroutines are cancelled via errgroup context.
 func (bm *BloomManager) Likely(urlStr string) (*BloomResult, error) {
 	keys, err := ParseURL(urlStr)
 	if err != nil {
@@ -147,57 +148,55 @@ func (bm *BloomManager) Likely(urlStr string) (*BloomResult, error) {
 	bm.mu.RLock()
 	defer bm.mu.RUnlock()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// errgroup with context for true first-hit-wins semantics
+	g, ctx := errgroup.WithContext(context.Background())
 
-	resultCh := make(chan BloomMatch, 1)
-	var wg sync.WaitGroup
+	var (
+		resultMu sync.Mutex
+		matches  []BloomMatch
+	)
 
+	// Spawn goroutines for each check key
 	for _, ck := range checkKeys {
-		wg.Go(func() {
+		ck := ck // capture loop variable
+		g.Go(func() error {
 			select {
 			case <-ctx.Done():
-				return
+				return ctx.Err() // cancelled by another goroutine
 			default:
 			}
 
 			bs, ok := bm.sets[ck.Type]
 			if !ok || bs == nil {
-				return
+				return nil // no set for this type, continue checking others
 			}
 
 			if !bs.Test(ck.Key) {
-				return
+				return nil // not a match, continue checking others
 			}
 
-			// Hit — send result and cancel others
+			// Hit — find source and record result
 			for _, sid := range bs.GetSourceIDs() {
 				if bs.TestSource(sid, ck.Key) {
-					select {
-					case resultCh <- BloomMatch{
+					resultMu.Lock()
+					matches = append(matches, BloomMatch{
 						Type:     ck.Type,
 						SourceID: sid,
 						Key:      ck.Key,
-					}:
-						cancel()
-					case <-ctx.Done():
-					}
-					return
+					})
+					resultMu.Unlock()
+
+					// Signal cancellation to other goroutines
+					return errors.New("match found")
 				}
 			}
+			return nil
 		})
 	}
 
-	go func() {
-		wg.Wait()
-		close(resultCh)
-	}()
-
-	// Preallocate with expected capacity (max 1 match per check key)
-	matches := make([]BloomMatch, 0, len(checkKeys))
-	for m := range resultCh {
-		matches = append(matches, m)
-	}
+	// Wait for all goroutines. We ignore the error since our sentinel
+	// "match found" error is just for cancellation signaling.
+	_ = g.Wait()
 
 	if len(matches) > 0 {
 		result := &BloomResult{
