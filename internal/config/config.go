@@ -55,6 +55,10 @@ type ProviderOptions struct {
 	ParserBatchSize int            `koanf:"parser_batch_size"`
 	MaxRedirects    int            `koanf:"max_redirects"`
 	MaxSize         int64          `koanf:"max_size"`
+	// Resilience configuration
+	MaxRetries         *int  `koanf:"max_retries"`
+	EnableRetry        *bool `koanf:"enable_retry"`
+	EnableCircuitBreak *bool `koanf:"enable_circuit_breaker"`
 }
 
 type CollyConfig struct {

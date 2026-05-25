@@ -5,6 +5,7 @@ import (
 	"blacked/features/entry_collector"
 	"blacked/features/providers/base"
 	"blacked/internal/config"
+	"blacked/internal/resilience"
 	"io"
 	"strings"
 
@@ -49,6 +50,16 @@ func NewURLHausProvider(cfg *config.Config, collyClient *colly.Collector) base.P
 
 	client := base.BuildCollyClientForProvider(collyClient, opts)
 
+	// Create resilience configuration for this provider
+	// Default: 30s timeout, 3 retries with exponential backoff, circuit breaker
+	resilienceCfg := resilience.DefaultProviderResilienceConfig(providerName)
+	
+	// Override timeout if specified in config
+	if opts.Timeout != nil {
+		resCfg := resilience.GetProviderConfigFromOptions(providerName, opts.Timeout, 0)
+		resilienceCfg.Timeout = resCfg.Timeout
+	}
+
 	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
 		return base.ParseLinesParallel(data, collector, providerName, workers, batchSize, func(line, processID string) (*entries.Entry, error) {
 			line = strings.TrimSpace(line)
@@ -77,6 +88,9 @@ func NewURLHausProvider(cfg *config.Config, collyClient *colly.Collector) base.P
 		client,
 		parseFunc,
 	)
+
+	// Configure resilience settings
+	provider.SetResilienceConfig(&resilienceCfg)
 
 	provider.
 		SetCronSchedule(cron).
