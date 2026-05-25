@@ -22,12 +22,11 @@ func (app *Application) ConfigureRoutes() error {
 
 	health.MapHealth(e, *app.config)
 
-	// V2 API routes — inject the singleton BloomManager from PondCollector
-	collector := entry_collector.GetPondCollector()
-	if collector == nil {
-		log.Warn().Msg("PondCollector not ready — v2 routes skipped")
+	// V2 API routes — inject the BloomManager from App's PondCollector
+	if app.PondCollector == nil {
+		log.Warn().Msg("PondCollector not set — v2 routes skipped")
 	} else {
-		bloomMgr := collector.GetBloomManager()
+		bloomMgr := app.PondCollector.GetBloomManager()
 		trustConfig := config.LoadScoringConfig()
 		v2Handler, err := v2.NewQueryHandler(bloomMgr, trustConfig)
 		if err != nil {

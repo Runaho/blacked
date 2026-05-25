@@ -1,6 +1,7 @@
 package web
 
 import (
+	"blacked/features/entry_collector"
 	"blacked/features/providers"
 	"blacked/features/web/middlewares"
 	"blacked/internal/collector"
@@ -40,11 +41,12 @@ var (
 
 // Application holds our Echo instance, Config, Logger, and Services.
 type Application struct {
-	Echo      *echo.Echo
-	config    *config.ServerConfig
-	logger    *lecho.Logger
-	services  *Services
-	providers *providers.Providers
+	Echo          *echo.Echo
+	config        *config.ServerConfig
+	logger        *lecho.Logger
+	services      *Services
+	providers     *providers.Providers
+	PondCollector *entry_collector.PondCollector
 }
 
 func (app *Application) GetProviders() *providers.Providers {
