@@ -54,6 +54,9 @@ func (bs *BloomSet) Add(sourceID, key string) {
 
 // Test checks the global filter for a key.
 func (bs *BloomSet) Test(key string) bool {
+	if bs == nil {
+		return false
+	}
 	bs.mu.RLock()
 	defer bs.mu.RUnlock()
 
@@ -65,9 +68,17 @@ func (bs *BloomSet) Test(key string) bool {
 
 // TestSource checks a specific source's filter.
 func (bs *BloomSet) TestSource(sourceID, key string) bool {
+	if bs == nil {
+		return false
+	}
+	
 	bs.mu.RLock()
 	defer bs.mu.RUnlock()
 
+	if bs.SourceFilters == nil {
+		return false
+	}
+	
 	sf, ok := bs.SourceFilters[sourceID]
 	if !ok || sf == nil {
 		return false
@@ -82,6 +93,9 @@ func (bs *BloomSet) GetFilterNames() string {
 
 // GetSourceIDs returns all source IDs currently tracked.
 func (bs *BloomSet) GetSourceIDs() []string {
+	if bs == nil {
+		return []string{}
+	}
 	bs.mu.RLock()
 	defer bs.mu.RUnlock()
 
@@ -94,27 +108,33 @@ func (bs *BloomSet) GetSourceIDs() []string {
 
 // ResetSource clears a specific source's filter and rebuilds the global
 // filter from the remaining source filters so stale keys are not kept alive.
+// Uses double-buffering pattern to avoid race conditions during rebuild.
 func (bs *BloomSet) ResetSource(sourceID string) {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
 
 	delete(bs.SourceFilters, sourceID)
 
-	// Rebuild global filter from remaining source filters.
+	// Rebuild global filter from remaining source filters using double-buffering.
 	// Bloom filters do not support deletion — the only way to remove keys
 	// is to reconstruct the union of what's left.
-	bs.Filter = bloom.NewWithEstimates(bs.expectedItems, 0.01)
+	newFilter := bloom.NewWithEstimates(bs.expectedItems, 0.01)
 	for _, sf := range bs.SourceFilters {
 		if sf != nil {
-			bs.Filter.Merge(sf)
+			newFilter.Merge(sf)
 		}
 	}
+	// Atomic swap - readers will see either old or new filter, never partial state
+	bs.Filter = newFilter
 
 	log.Debug().Str("bloom_type", string(bs.Type)).Str("source_id", sourceID).Msg("Reset source bloom filter")
 }
 
 // SourceCount returns the number of per-source filters.
 func (bs *BloomSet) SourceCount() int {
+	if bs == nil {
+		return 0
+	}
 	bs.mu.RLock()
 	defer bs.mu.RUnlock()
 	return len(bs.SourceFilters)
@@ -122,6 +142,9 @@ func (bs *BloomSet) SourceCount() int {
 
 // TotalKeys returns an estimate of total keys across all source filters.
 func (bs *BloomSet) TotalKeys() uint {
+	if bs == nil {
+		return 0
+	}
 	bs.mu.RLock()
 	defer bs.mu.RUnlock()
 
