@@ -69,7 +69,12 @@ func ParseURL(raw string) (*URLKeys, error) {
 
 	if u.Path != "" && u.Path != "/" {
 		clean := path.Clean(u.Path)
-		keys.HostPath = host + clean
+		// Use strings.Builder for efficient concatenation
+		var builder strings.Builder
+		builder.Grow(len(host) + len(clean))
+		builder.WriteString(host)
+		builder.WriteString(clean)
+		keys.HostPath = builder.String()
 		keys.Path = clean
 	}
 
@@ -156,7 +161,16 @@ func (uk *URLKeys) KeysFor(types []BloomType) map[BloomType]string {
 // Order: Domain → Host → IP → HostPath (parents) → File → FullURL.
 // Shallowest bloom first; first hit wins in parallel check.
 func (uk *URLKeys) GenerateCheckKeys() []CheckKey {
-	var keys []CheckKey
+	// Preallocate with estimated capacity:
+	// domain(1) + host(1) + ip(1) + hostPaths(max) + file(1) + fullURL(1)
+	// hostPaths max = len(parentPaths(uk.Path)) if host and path present
+	hostPathCount := 0
+	if uk.Host != "" && uk.Path != "" {
+		hostPathCount = len(parentPaths(uk.Path))
+	}
+	estimatedCap := 4 + hostPathCount // domain+host+ip+fullURL + hostPaths
+	
+	keys := make([]CheckKey, 0, estimatedCap)
 
 	// 1. Domain (widest)
 	if uk.Domain != "" {
@@ -173,7 +187,7 @@ func (uk *URLKeys) GenerateCheckKeys() []CheckKey {
 		keys = append(keys, CheckKey{BloomIP, uk.IP})
 	}
 
-	// 4. HostPath variants — shallowest → deepest
+	// активности 4. HostPath variants — shallowest → deepest
 	if uk.Host != "" && uk.Path != "" {
 		for _, p := range parentPaths(uk.Path) {
 			keys = append(keys, CheckKey{BloomHostPath, uk.Host + p})
@@ -207,7 +221,9 @@ func parentPaths(p string) []string {
 		return nil
 	}
 	parts := strings.Split(p, "/")
-	var result []string
+	
+	// Preallocate result with exact capacity: len(parts)-1 prefixes
+	result := make([]string, 0, len(parts)-1)
 	for i := 1; i < len(parts); i++ {
 		result = append(result, strings.Join(parts[:i+1], "/"))
 	}

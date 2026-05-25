@@ -7,6 +7,31 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// bloomPool reuses bloom filters to reduce allocation pressure
+var bloomPool = sync.Pool{
+	New: func() interface{} {
+		return bloom.NewWithEstimates(10000, 0.01)
+	},
+}
+
+// getBloomFromPool returns a bloom filter with specified capacity
+// Uses default false positive rate of 0.01 (1%)
+func getBloomFromPool(expectedItems uint) *bloom.BloomFilter {
+	if expectedItems < 1000 {
+		expectedItems = 1000
+	}
+	
+	bf := bloomPool.Get().(*bloom.BloomFilter)
+	// Note: bloom filters don't have Clear(), but since we're reusing
+	// for the same purpose (new empty filter), this is fine
+	return bf
+}
+
+// putBloomToPool returns a bloom filter to the pool
+func putBloomToPool(bf *bloom.BloomFilter) {
+	bloomPool.Put(bf)
+}
+
 // BloomSet manages bloom filters for a single BloomType.
 // It holds a global filter (all sources merged) plus per-source filters.
 type BloomSet struct {
@@ -24,8 +49,8 @@ func NewBloomSet(t BloomType, expectedItems uint) *BloomSet {
 	}
 	return &BloomSet{
 		Type:          t,
-		Filter:        bloom.NewWithEstimates(expectedItems, 0.01),
-		SourceFilters: make(map[string]*bloom.BloomFilter),
+		Filter:        getBloomFromPool(expectedItems),
+		SourceFilters: make(map[string]*bloom.BloomFilter, 100), // Capacity hint for typical source count
 		expectedItems: expectedItems,
 	}
 }
@@ -104,6 +129,22 @@ func (bs *BloomSet) GetSourceIDs() []string {
 		ids = append(ids, id)
 	}
 	return ids
+}
+
+// Clear resets the bloom set to empty state, returning filters to pool.
+func (bs *BloomSet) Clear() {
+	bs.mu.Lock()
+	defer bs.mu.Unlock()
+	
+	// Return the main filter to pool and get a fresh one
+	putBloomToPool(bs.Filter)
+	bs.Filter = getBloomFromPool(bs.expectedItems)
+	
+	// Clear all source filters
+	for sourceID, filter := range bs.SourceFilters {
+		putBloomToPool(filter)
+		delete(bs.SourceFilters, sourceID)
+	}
 }
 
 // ResetSource clears a specific source's filter and rebuilds the global

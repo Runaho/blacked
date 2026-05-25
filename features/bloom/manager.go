@@ -28,7 +28,7 @@ type BloomManager struct {
 // NewBloomManager creates a manager with all supported BloomSets.
 func NewBloomManager(expectedItemsPerSet uint) *BloomManager {
 	bm := &BloomManager{
-		sets: make(map[BloomType]*BloomSet),
+		sets: make(map[BloomType]*BloomSet, 7), // capacity for all bloom types
 	}
 
 	allTypes := []BloomType{
@@ -193,7 +193,8 @@ func (bm *BloomManager) Likely(urlStr string) (*BloomResult, error) {
 		close(resultCh)
 	}()
 
-	matches := make([]BloomMatch, 0)
+	// Preallocate with expected capacity (max 1 match per check key)
+	matches := make([]BloomMatch, 0, len(checkKeys))
 	for m := range resultCh {
 		matches = append(matches, m)
 	}
