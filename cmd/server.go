@@ -78,9 +78,13 @@ func serve(c *cli.Context) (err error) {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Error().Err(err).Msg("Server error")
 		}
+		cancel() // Cancel shutdown context when server stops
 	}()
 
 	log.Info().Msgf("Starting server on %s", server.Addr)
+
+	// Wait for shutdown signal
+	<-c.Context.Done()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("Graceful shutdown failed, forcing close")

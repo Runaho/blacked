@@ -165,8 +165,10 @@ func (uk *URLKeys) GenerateCheckKeys() []CheckKey {
 	// domain(1) + host(1) + ip(1) + hostPaths(max) + file(1) + fullURL(1)
 	// hostPaths max = len(parentPaths(uk.Path)) if host and path present
 	hostPathCount := 0
+	var parentPathsResult []string
 	if uk.Host != "" && uk.Path != "" {
-		hostPathCount = len(parentPaths(uk.Path))
+		parentPathsResult = parentPaths(uk.Path)
+		hostPathCount = len(parentPathsResult)
 	}
 	estimatedCap := 4 + hostPathCount // domain+host+ip+fullURL + hostPaths
 	
@@ -187,9 +189,9 @@ func (uk *URLKeys) GenerateCheckKeys() []CheckKey {
 		keys = append(keys, CheckKey{BloomIP, uk.IP})
 	}
 
-	// активности 4. HostPath variants — shallowest → deepest
+	// 4. HostPath variants — shallowest → deepest
 	if uk.Host != "" && uk.Path != "" {
-		for _, p := range parentPaths(uk.Path) {
+		for _, p := range parentPathsResult {
 			keys = append(keys, CheckKey{BloomHostPath, uk.Host + p})
 		}
 	}
