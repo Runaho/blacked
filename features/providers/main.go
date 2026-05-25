@@ -1,19 +1,19 @@
 package providers
 
 import (
+	"blacked/features/providers/alienvault"
 	"blacked/features/providers/base"
 	"blacked/features/providers/blocklistde"
+	"blacked/features/providers/cinsarmy"
 	"blacked/features/providers/emergingthreats"
 	"blacked/features/providers/greensnow"
-	"blacked/features/providers/cinsarmy"
 	"blacked/features/providers/oisd"
 	"blacked/features/providers/openphish"
 	"blacked/features/providers/phishtank"
 	"blacked/features/providers/rtbh"
 	"blacked/features/providers/threatfox"
-	"blacked/features/providers/urlhaus"
-
 	"blacked/features/providers/torexitnodes"
+	"blacked/features/providers/urlhaus"
 
 	"github.com/gocolly/colly/v2"
 	"github.com/rs/zerolog/log"
@@ -41,28 +41,30 @@ func getProviders(cfg *config.Config, cc *colly.Collector) Providers {
 	if p := phishtank.NewPhishTankProvider(cfg, cc); p != nil {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
-	if p := threatfox.NewThreatFoxProvider(cfg, cc); p != nil {
-		log.Info().Str("provider", p.GetName()).Msg("registered provider")
-	}
-	if p := greensnow.NewGreenSnowProvider(cfg, cc); p != nil {
-		log.Info().Str("provider", p.GetName()).Msg("registered provider")
-	}
 	if p := blocklistde.NewBlocklistDeProvider(cfg, cc); p != nil {
-		log.Info().Str("provider", p.GetName()).Msg("registered provider")
-	}
-	if p := toreexitnodes.NewTorExitNodesProvider(cfg, cc); p != nil {
-		log.Info().Str("provider", p.GetName()).Msg("registered provider")
-	}
-	if p := rtbh.NewRTBHTurkeyProvider(cfg, cc); p != nil {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
 	if p := cinsarmy.NewCINSArmyProvider(cfg, cc); p != nil {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
+	if p := greensnow.NewGreenSnowProvider(cfg, cc); p != nil {
+		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	}
 	if p := emergingthreats.NewEmergingThreatsProvider(cfg, cc); p != nil {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
-
+	if p := torexitnodes.NewTorExitNodesProvider(cfg, cc); p != nil {
+		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	}
+	if p := rtbh.NewRTBHTurkeyProvider(cfg, cc); p != nil {
+		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	}
+	if p := alienvault.NewAlienvaultProvider(cfg, cc); p != nil {
+		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	}
+	if p := threatfox.NewThreatFoxProvider(cfg, cc); p != nil {
+		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	}
 	providers := Providers(base.GetRegisteredProviders())
 	return providers
 }

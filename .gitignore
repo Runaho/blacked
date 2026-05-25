@@ -50,6 +50,7 @@ go.work.sum
 vendor/
 research/
 .test-results/
+*.test-results
 
 # All dot-directories (hidden folders)
 .[a-zA-Z0-9]*/

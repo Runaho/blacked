@@ -1,4 +1,4 @@
-package toreexitnodes
+package torexitnodes
 
 import (
 	"strings"
