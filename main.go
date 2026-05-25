@@ -5,6 +5,7 @@ import (
 	"blacked/features/cache"
 	"blacked/features/entry_collector"
 	"blacked/features/providers"
+	"blacked/features/web"
 	"blacked/internal/config"
 	"blacked/internal/db"
 	"blacked/internal/logger"
@@ -115,7 +116,8 @@ func before(ctx context.Context) cli.BeforeFunc {
 		log.Debug().Msg("Cache Provider Initialized")
 
 		log.Debug().Msg("Initializing Pond Collector")
-		entry_collector.InitPondCollector(ctx, writeDB)
+		pondCollector := entry_collector.InitPondCollector(ctx, writeDB)
+		web.SetPondCollector(pondCollector)
 		log.Debug().Msg("Pond Collector Initialized")
 
 		log.Trace().Msg("Initializing providers")

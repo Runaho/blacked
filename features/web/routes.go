@@ -1,7 +1,6 @@
 package web
 
 import (
-	"blacked/features/entry_collector"
 	"blacked/features/web/handlers/health"
 	"blacked/features/web/handlers/provider"
 	v2 "blacked/features/web/handlers/v2"

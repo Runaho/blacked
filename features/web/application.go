@@ -37,7 +37,17 @@ var (
 var (
 	onceApplication sync.Once
 	application     *Application
+
+	// pendingPondCollector allows injection before NewApplication's sync.Once runs.
+	// Set via SetPondCollector() before calling NewApplication().
+	pendingPondCollector *entry_collector.PondCollector
 )
+
+// SetPondCollector stores the collector for use by NewApplication's ConfigureRoutes.
+// Call this before NewApplication() in the initialization sequence.
+func SetPondCollector(c *entry_collector.PondCollector) {
+	pendingPondCollector = c
+}
 
 // Application holds our Echo instance, Config, Logger, and Services.
 type Application struct {
@@ -69,10 +79,11 @@ func NewApplication(cfg *config.ServerConfig) (*Application, error) {
 		e.Server.Addr = ":" + strconv.Itoa(cfg.Port)
 		log.Info().Str("address", e.Server.Addr).Msg("Server address")
 
-		app := &Application{
-			Echo:   e,
-			config: cfg,
-		}
+	app := &Application{
+		Echo:          e,
+		config:        cfg,
+		PondCollector: pendingPondCollector,
+	}
 
 		app.configureLogger()
 
