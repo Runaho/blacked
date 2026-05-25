@@ -503,9 +503,17 @@ func entryToURLKeys(e *entries.Entry) *bloom.URLKeys {
 	}
 
 	ip := ""
-	if trimmed := strings.TrimSpace(e.Host); trimmed != "" {
-		if net.ParseIP(trimmed) != nil {
-			ip = trimmed
+	// Only put pure IPs (no scheme) into IP bloom
+	// Scheme-prefixed URLs (http://185.234.72.15, ftp://10.0.0.1) go to full_url bloom, not IP bloom
+	if e.Scheme == "" {
+		if trimmed := strings.TrimSpace(e.Host); trimmed != "" {
+			// Strip port if present: "185.234.72.15:8080" → "185.234.72.15"
+			if host, port, err := net.SplitHostPort(trimmed); err == nil && port != "" {
+				trimmed = host // use host without port
+			}
+			if net.ParseIP(trimmed) != nil {
+				ip = trimmed
+			}
 		}
 	}
 
