@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"blacked/features/bloom"
@@ -28,6 +29,19 @@ var ErrMissingBloomStreamCh = errors.New("bloom stream channel is nil")
 const (
 	PeriodicFlushInterval = 5 * time.Second
 	MaxProvidersInMemory  = 1000
+	
+	// DB Write Channel capacity
+	DBWriteChannelSize = 100
+	
+	// Backpressure thresholds (as fraction of channel capacity)
+	BackpressureHighThreshold = 0.8  // 80% - signal backpressure
+	BackpressureLowThreshold  = 0.5  // 50% - signal normal operation
+)
+
+// Channel state for backpressure signaling
+const (
+	ChannelStateNormal = iota
+	ChannelStateBackpressure
 )
 
 var (
@@ -64,6 +78,11 @@ type PondCollector struct {
 
 	// Bootstrap synchronization - closed when initial bloom population completes
 	bootstrapDone chan struct{}
+
+	// Backpressure management
+	channelState         int32 // atomic: ChannelStateNormal or ChannelStateBackpressure
+	queueHighWatermark   int32 // atomic: peak queue depth since startup
+	backpressureNotifyCh chan struct{} // closed when backpressure clears
 }
 
 // InitPondCollector initializes the global pond collector
@@ -85,17 +104,20 @@ func InitPondCollector(
 		bloomMgr := bloom.NewBloomManager(1_000_000)
 
 		globalCollector = &PondCollector{
-			pool:           pool,
-			repo:           repository.NewSQLiteRepository(db),
-			bloomMgr:       bloomMgr,
-			batchSize:      collectorConfig.BatchSize,
-			buffer:         make([]*entries.Entry, 0, collectorConfig.BatchSize),
-			providerStats:  make(map[string]*ProviderStats),
-			ctx:            ctxWithCancel,
-			cancel:         cancel,
-			cacheSyncState: CacheSyncStateIdle,
-			dbWriteChan:    make(chan []*entries.Entry, 100), // Buffered channel for batches
-			bootstrapDone:  make(chan struct{}),
+			pool:                pool,
+			repo:                repository.NewSQLiteRepository(db),
+			bloomMgr:            bloomMgr,
+			batchSize:           collectorConfig.BatchSize,
+			buffer:              make([]*entries.Entry, 0, collectorConfig.BatchSize),
+			providerStats:       make(map[string]*ProviderStats),
+			ctx:                 ctxWithCancel,
+			cancel:              cancel,
+			cacheSyncState:      CacheSyncStateIdle,
+			dbWriteChan:         make(chan []*entries.Entry, DBWriteChannelSize),
+			bootstrapDone:       make(chan struct{}),
+			channelState:        ChannelStateNormal,
+			queueHighWatermark:  0,
+			backpressureNotifyCh: make(chan struct{}),
 		}
 
 		// Start a single goroutine for ALL database writes (single-threaded writer)
@@ -233,16 +255,84 @@ func (c *PondCollector) Submit(entry *entries.Entry) {
 	}
 }
 func (c *PondCollector) submitFlush(batch []*entries.Entry) {
-	// Simply send the batch to the single-threaded DB writer channel
-	// The single writer goroutine will handle all database operations sequentially
+	// Check current queue depth and update metrics
+	queueDepth := len(c.dbWriteChan)
+	
+	// Update metrics
+	if mc, err := collector.GetMetricsCollector(); err == nil && mc != nil {
+		mc.UpdateQueueDepth(queueDepth)
+		
+		// Track high watermark
+		if int32(queueDepth) > atomic.LoadInt32(&c.queueHighWatermark) {
+			atomic.StoreInt32(&c.queueHighWatermark, int32(queueDepth))
+			mc.UpdateQueueHighWatermark(queueDepth)
+		}
+	}
+	
+	// Check for backpressure threshold
+	highThreshold := int(float64(DBWriteChannelSize) * BackpressureHighThreshold)
+	lowThreshold := int(float64(DBWriteChannelSize) * BackpressureLowThreshold)
+	
+	if queueDepth >= highThreshold {
+		// Transition to backpressure state
+		if atomic.CompareAndSwapInt32(&c.channelState, ChannelStateNormal, ChannelStateBackpressure) {
+			log.Warn().
+				Int("queue_depth", queueDepth).
+				Int("capacity", DBWriteChannelSize).
+				Float64("threshold_pct", BackpressureHighThreshold*100).
+				Msg("DB write channel approaching saturation - backpressure activated")
+			
+			// Record backpressure event
+			if mc, err := collector.GetMetricsCollector(); err == nil && mc != nil {
+				mc.RecordBackpressureEvent()
+			}
+		}
+	}
+	
+	// Try to send the batch with timeout for graceful handling
 	select {
 	case c.dbWriteChan <- batch:
-		// Batch queued successfully
+		// Batch queued successfully - check if we can clear backpressure
+		newDepth := len(c.dbWriteChan)
+		if newDepth < lowThreshold {
+			// Signal that backpressure has cleared
+			if atomic.CompareAndSwapInt32(&c.channelState, ChannelStateBackpressure, ChannelStateNormal) {
+				log.Info().
+					Int("queue_depth", newDepth).
+					Msg("DB write channel recovered - backpressure cleared")
+				
+				// Close and recreate the notification channel
+				select {
+				case <-c.backpressureNotifyCh:
+					// Already closed, create new one
+				default:
+					// Not closed yet, close it now
+					close(c.backpressureNotifyCh)
+				}
+				c.backpressureNotifyCh = make(chan struct{})
+			}
+		}
 	case <-c.ctx.Done():
 		// Context cancelled, drop the batch
 		log.Warn().
 			Int("batch_size", len(batch)).
 			Msg("Context cancelled, dropping batch")
+		if mc, err := collector.GetMetricsCollector(); err == nil && mc != nil {
+			mc.RecordDroppedBatch(len(batch))
+		}
+	default:
+		// Channel is full - this shouldn't happen often with backpressure
+		// but handle it gracefully
+		log.Error().
+			Int("batch_size", len(batch)).
+			Int("queue_depth", queueDepth).
+			Int("capacity", DBWriteChannelSize).
+			Msg("DB write channel full - dropping batch")
+		
+		// Record dropped batch
+		if mc, err := collector.GetMetricsCollector(); err == nil && mc != nil {
+			mc.RecordDroppedBatch(len(batch))
+		}
 	}
 }
 
@@ -495,6 +585,47 @@ func (c *PondCollector) GetStatsMapSize() int {
 	c.statsMu.RLock()
 	defer c.statsMu.RUnlock()
 	return len(c.providerStats)
+}
+
+// GetQueueDepth returns the current number of batches waiting in the DB write queue
+func (c *PondCollector) GetQueueDepth() int {
+	return len(c.dbWriteChan)
+}
+
+// GetQueueHighWatermark returns the peak queue depth since startup
+func (c *PondCollector) GetQueueHighWatermark() int {
+	return int(atomic.LoadInt32(&c.queueHighWatermark))
+}
+
+// IsBackpressureActive returns true if the DB write queue is in backpressure state
+func (c *PondCollector) IsBackpressureActive() bool {
+	return atomic.LoadInt32(&c.channelState) == ChannelStateBackpressure
+}
+
+// GetBackpressureNotifyCh returns a channel that is closed when backpressure clears
+// Callers can use this to wait for the queue to drain during backpressure
+func (c *PondCollector) GetBackpressureNotifyCh() <-chan struct{} {
+	return c.backpressureNotifyCh
+}
+
+// WaitForQueueSpace waits until the queue has space or the context is cancelled.
+// This is useful for providers generating large volumes of entries.
+// Returns true if space is available, false if context was cancelled.
+func (c *PondCollector) WaitForQueueSpace(ctx context.Context) bool {
+	// Check if already below threshold
+	if len(c.dbWriteChan) < int(float64(DBWriteChannelSize)*BackpressureHighThreshold) {
+		return true
+	}
+	
+	// Wait for backpressure to clear
+	select {
+	case <-c.backpressureNotifyCh:
+		// Backpressure channel was closed - we may need to recreate
+		// Actually, this means backpressure WAS active and is now cleared
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // entryToURLKeys converts an entries.Entry into bloom.URLKeys without re-parsing the URL.
