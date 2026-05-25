@@ -140,22 +140,17 @@ for {
 				time.Sleep(sleepDuration)
 			}
 
-			// Build a fresh collector for each attempt. Cloning the parent's collector
-			// preserves global state (visited URLs, rate limiters) across retries, causing
-			// "already visited" errors on the 2nd attempt. Fresh collectors avoid this.
-			var c *colly.Collector
-			if attempt == 0 && p.CollyClient != nil {
-				c = p.CollyClient.Clone()
-			} else {
-				c = colly.NewCollector()
-			}
+			// Always use fresh collector for OTX API — clone inherits browser UA from parent,
+			// which OTX rejects with 403. Fresh collector with explicit headers works reliably.
+			c := colly.NewCollector()
 			c.MaxBodySize = 10 * 1024 * 1024
 			c.AllowedDomains = []string{} // disable domain filter for API server
 
-			// Set OTX API key header
+			// Set OTX API key header (API endpoint requires non-browser User-Agent)
 			c.OnRequest(func(r *colly.Request) {
 				r.Headers.Set("X-OTX-API-KEY", p.apiKey)
 				r.Headers.Set("Accept", "application/json")
+				r.Headers.Set("User-Agent", "blacked/1.0")
 			})
 
 			body = nil
