@@ -3,6 +3,7 @@ package base
 import (
 	"blacked/features/entries"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -46,6 +47,9 @@ func (m *MockCollector) FinishProviderProcessing(name, processID string) (int, t
 	return 0, 0, true
 }
 func (m *MockCollector) GetProcessedCount(source string) int { return 0 }
+func (m *MockCollector) RemoveStaleEntriesAndSyncBloom(ctx context.Context, providerName, processID string) error {
+	return nil
+}
 
 // TestParseLinesParallel_BasicFunctionality tests that parallel parsing works correctly
 func TestParseLinesParallel_BasicFunctionality(t *testing.T) {

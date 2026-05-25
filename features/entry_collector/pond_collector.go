@@ -613,6 +613,129 @@ func (c *PondCollector) WaitForQueueSpace(ctx context.Context) bool {
 	}
 }
 
+// RemoveStaleEntriesAndSyncBloom removes old entries for a provider and rebuilds the bloom filter.
+// This is called after a provider finishes processing to soft-delete stale entries
+// that were not present in the latest provider run.
+func (c *PondCollector) RemoveStaleEntriesAndSyncBloom(ctx context.Context, providerName, processID string) error {
+	log.Info().
+		Str("provider", providerName).
+		Str("process_id", processID).
+		Msg("Starting stale entry removal and bloom sync")
+
+	// First, wait for all pending operations for this provider
+	c.statsMu.RLock()
+	stats, exists := c.providerStats[providerName]
+	c.statsMu.RUnlock()
+
+	if exists && stats != nil {
+		stats.pendingOperations.Wait()
+	}
+
+	// Soft delete entries from previous runs
+	if err := c.repo.RemoveOlderInsertions(ctx, providerName, processID); err != nil {
+		log.Error().Err(err).
+			Str("provider", providerName).
+			Str("process_id", processID).
+			Msg("Failed to remove older insertions")
+		return err
+	}
+
+	log.Info().
+		Str("provider", providerName).
+		Str("process_id", processID).
+		Msg("Stale entries removed, rebuilding bloom filter")
+
+	// Rebuild the bloom filter for this source
+	if c.bloomMgr != nil {
+		if err := c.bloomMgr.RebuildSource(ctx, providerName, &repositoryEntryStream{repo: c.repo, source: providerName}, GetAllBloomTypes()); err != nil {
+			log.Error().Err(err).
+				Str("provider", providerName).
+				Msg("Failed to rebuild bloom filter after stale entry removal")
+			return err
+		}
+	}
+
+	log.Info().
+		Str("provider", providerName).
+		Str("process_id", processID).
+		Msg("Bloom filter rebuild completed")
+
+	return nil
+}
+
+// repositoryEntryStream implements bloom.SourceEntryStream using the repository
+type repositoryEntryStream struct {
+	repo   repository.BlacklistRepository
+	source string
+}
+
+func (r *repositoryEntryStream) StreamEntriesBySource(ctx context.Context, sourceID string) ([]bloom.Entry, error) {
+	dbEntries, err := r.repo.GetEntriesBySource(ctx, sourceID)
+	if err != nil {
+		return nil, err
+	}
+
+	entries := make([]bloom.Entry, 0, len(dbEntries))
+	for _, e := range dbEntries {
+		entries = append(entries, bloom.Entry{
+			SourceID: e.Source,
+			Domain:   e.Domain,
+			Host:     e.Host,
+			Path:     e.Path,
+			File:     extractFileFromPath(e.Path),
+			Query:    e.RawQuery,
+			Login:    "",
+			IP:       extractIPFromHost(e.Scheme, e.Host),
+		})
+	}
+	return entries, nil
+}
+
+// GetAllBloomTypes returns all bloom types that need to be rebuilt
+func GetAllBloomTypes() []bloom.BloomType {
+	return []bloom.BloomType{
+		bloom.BloomDomain, bloom.BloomHost, bloom.BloomHostPath,
+		bloom.BloomFile, bloom.BloomFullURL, bloom.BloomLogin, bloom.BloomIP,
+	}
+}
+
+// extractFileFromPath extracts the filename from a path if it has an extension
+func extractFileFromPath(path string) string {
+	if path == "" || path == "/" {
+		return ""
+	}
+	base := path
+	if idx := strings.LastIndex(path, "/"); idx >= 0 {
+		base = path[idx+1:]
+	}
+	if extIdx := strings.LastIndex(base, "."); extIdx > 0 && extIdx < len(base)-1 {
+		return base
+	}
+	return ""
+}
+
+// extractIPFromHost extracts IP address from host if applicable
+func extractIPFromHost(scheme, host string) string {
+	if scheme != "" {
+		return "" // Not a raw IP
+	}
+	trimmed := strings.TrimSpace(host)
+	if trimmed == "" {
+		return ""
+	}
+	// Check if host part is valid IP (with optional port)
+	if h, _, err := net.SplitHostPort(trimmed); err == nil {
+		if net.ParseIP(h) != nil {
+			return trimmed
+		}
+	} else {
+		if net.ParseIP(trimmed) != nil {
+			return trimmed
+		}
+	}
+	return ""
+}
+
 // entryToURLKeys converts an entries.Entry into bloom.URLKeys without re-parsing the URL.
 // The entry already has Domain, Host, Path, and RawQuery stored from the original provider parse.
 // This saves ~310MB of ParseURL alloc during provider sync.

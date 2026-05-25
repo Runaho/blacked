@@ -302,6 +302,17 @@ func (p Providers) processProvider(
 	entriesProcessed, processingTime, _ := pondCollector.FinishProviderProcessing(name, strProcessID)
 	span.AddEvent("provider processing finished")
 
+	// Remove stale entries and sync bloom filter after provider finishes
+	// This ensures entries not present in the latest run are soft-deleted
+	// and removed from the bloom filter to prevent false positives
+	if err := pondCollector.RemoveStaleEntriesAndSyncBloom(context.Background(), name, strProcessID); err != nil {
+		providerLogger.Err(err).
+			Str("provider", name).
+			Str("process_id", strProcessID).
+			Msg("Failed to remove stale entries and sync bloom")
+		// Don't return error - this is cleanup, not critical
+	}
+
 	// Cleanup if needed
 	cfg := config.GetConfig()
 	if cfg.APP.Environment == "development" {

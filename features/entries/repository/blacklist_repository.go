@@ -21,6 +21,7 @@ type BlacklistRepository interface {
 	BatchSaveEntries(ctx context.Context, entries []*entries.Entry) error // Batched UPSERT
 	ClearAllEntries(ctx context.Context) error                            // Soft Delete All
 	SoftDeleteEntryByID(ctx context.Context, id string) error
+	RemoveOlderInsertions(ctx context.Context, providerName string, currentProcessID string) error
 	QueryLink(ctx context.Context, link string) ([]entries.Hit, error)
 	QueryLinkByType(ctx context.Context, link string, queryType *enums.QueryType) ([]entries.Hit, error)
 	QueryExactURLMatch(ctx context.Context, normalizedLink string) []entries.Hit
