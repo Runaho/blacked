@@ -2,6 +2,7 @@ package entry_collector
 
 import (
 	"blacked/features/entries"
+	"context"
 	"time"
 )
 
@@ -13,4 +14,5 @@ type Collector interface {
 	GetProcessedCount(source string) int
 	StartProviderProcessing(providerName, processID string)
 	FinishProviderProcessing(providerName, processID string) (count int, duration time.Duration, ok bool)
+	RemoveStaleEntriesAndSyncBloom(ctx context.Context, providerName, processID string) error
 }
