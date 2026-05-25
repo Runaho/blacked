@@ -6,16 +6,11 @@ import (
 	"net/url"
 	"path"
 	"strings"
-	"sync"
 
 	"blacked/internal/utils"
 )
 
 var ErrInvalidURL = errors.New("invalid URL")
-
-var (
-	urlCache sync.Map // key: URL string, value: *URLKeys
-)
 
 // URLKeys holds all decomposed keys from a URL for bloom filtering.
 type URLKeys struct {
@@ -44,11 +39,6 @@ func ParseURL(raw string) (*URLKeys, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, ErrInvalidURL
-	}
-
-	// Check cache
-	if cached, ok := urlCache.Load(raw); ok {
-		return cached.(*URLKeys), nil
 	}
 
 	if !strings.Contains(raw, "://") && !strings.HasPrefix(raw, "//") {
@@ -114,8 +104,6 @@ func ParseURL(raw string) (*URLKeys, error) {
 		}
 	}
 
-	// Store in cache
-	urlCache.Store(raw, keys)
 	return keys, nil
 }
 

@@ -222,7 +222,7 @@ func newTestSuite(t *testing.T) *testSuite {
 	}
 
 	// Build bloom manager
-	bm := bloom.NewBloomManager(10000, 10)
+	bm := bloom.NewBloomManager(10000)
 	populateBloom(t, bm, db)
 
 	// Build entry repository on read pool (use same db for in-memory)
@@ -541,7 +541,7 @@ func TestCategoryD_CacheAndReSyncStability(t *testing.T) {
 	})
 
 	t.Run("D_4_Bloom_ColdStart_True_Empty_Manager", func(t *testing.T) {
-		emptyBM := bloom.NewBloomManager(100, 10)
+		emptyBM := bloom.NewBloomManager(100)
 		assert.True(t, emptyBM.ColdStart(), "fresh manager should be cold")
 	})
 
@@ -781,7 +781,7 @@ func BenchmarkBloomPopulate(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		bm := bloom.NewBloomManager(10000, 10)
+		bm := bloom.NewBloomManager(10000)
 		populateBloom(b, bm, db)
 	}
 }
@@ -796,7 +796,7 @@ func BenchmarkBloomCheck(b *testing.B) {
 		insertEntry(b, db, fmt.Sprintf("b-%d", i), "src-urlhaus", url)
 	}
 
-	bm := bloom.NewBloomManager(10000, 10)
+	bm := bloom.NewBloomManager(10000)
 	populateBloom(b, bm, db)
 
 	checkURL := "http://103.224.212.251/jjjj.exe"
@@ -816,7 +816,7 @@ func BenchmarkQueryServiceHit(b *testing.B) {
 		insertEntry(b, db, fmt.Sprintf("b-%d", i), "src-urlhaus", url)
 	}
 
-	bm := bloom.NewBloomManager(10000, 10)
+	bm := bloom.NewBloomManager(10000)
 	populateBloom(b, bm, db)
 
 	repo := idb.NewEntryRepository(db)

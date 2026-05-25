@@ -7,7 +7,6 @@ import (
 	"path"
 	"sync"
 
-	"github.com/alitto/pond/v2"
 	"github.com/rs/zerolog/log"
 )
 
@@ -24,14 +23,12 @@ type SourceEntryStream interface {
 type BloomManager struct {
 	sets map[BloomType]*BloomSet
 	mu   sync.RWMutex
-	pool pond.Pool
 }
 
 // NewBloomManager creates a manager with all supported BloomSets.
-func NewBloomManager(expectedItemsPerSet uint, concurrency int) *BloomManager {
+func NewBloomManager(expectedItemsPerSet uint) *BloomManager {
 	bm := &BloomManager{
 		sets: make(map[BloomType]*BloomSet, 7), // capacity for all bloom types
-		pool: pond.NewPool(concurrency),
 	}
 
 	allTypes := []BloomType{

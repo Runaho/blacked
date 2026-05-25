@@ -97,7 +97,7 @@ func TestBloomSetBasicOperations(t *testing.T) {
 }
 
 func TestBloomManager_Likely(t *testing.T) {
-	bm := NewBloomManager(10000, 10)
+	bm := NewBloomManager(10000)
 
 	// Cold start: no entries
 	if !bm.ColdStart() {
@@ -163,7 +163,7 @@ func TestBloomManager_Likely(t *testing.T) {
 }
 
 func TestBloomManager_PopulateAndCheck(t *testing.T) {
-	bm := NewBloomManager(10000, 10)
+	bm := NewBloomManager(10000)
 
 	// Populate HostPath entry
 	keys1, _ := ParseURL("https://evil.com/path1")
@@ -204,7 +204,7 @@ func TestBloomManager_PopulateAndCheck(t *testing.T) {
 }
 
 func TestBloomManager_EmptyURL(t *testing.T) {
-	bm := NewBloomManager(1000, 10)
+	bm := NewBloomManager(1000)
 
 	_, err := bm.Likely("")
 	if err == nil {
@@ -213,7 +213,7 @@ func TestBloomManager_EmptyURL(t *testing.T) {
 }
 
 func TestBloomManager_PopulateEntry_Targets(t *testing.T) {
-	bm := NewBloomManager(10000, 10)
+	bm := NewBloomManager(10000)
 
 	// FullURL: file + query → BloomFullURL
 	keys, _ := ParseURL("https://cdn.example.com/malware/shell.php?ref=evil")
@@ -283,7 +283,7 @@ func TestBloomManager_PopulateEntry_Targets(t *testing.T) {
 }
 
 func TestParentPath_Match(t *testing.T) {
-	bm := NewBloomManager(10000, 10)
+	bm := NewBloomManager(10000)
 
 	keys, _ := ParseURL("https://www.example.com/a/b/c/exploit")
 	bm.PopulateEntry("src1", keys)
@@ -330,7 +330,7 @@ func TestParentPath_Match(t *testing.T) {
 }
 
 func TestDifferentSubdomain_NoMatch(t *testing.T) {
-	bm := NewBloomManager(10000, 10)
+	bm := NewBloomManager(10000)
 
 	keys, _ := ParseURL("https://sub1.example.com/path")
 	bm.PopulateEntry("src1", keys)
@@ -350,7 +350,7 @@ func TestDifferentSubdomain_NoMatch(t *testing.T) {
 }
 
 func TestQuery_ProviderResponsibility(t *testing.T) {
-	bm := NewBloomManager(10000, 10)
+	bm := NewBloomManager(10000)
 
 	// Populate with query → FullURL
 	keys, _ := ParseURL("https://cdn.example.com/shell.php?ref=evil")

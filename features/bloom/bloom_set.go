@@ -4,32 +4,7 @@ import (
 	"sync"
 
 	"github.com/bits-and-blooms/bloom/v3"
-	"github.com/rs/zerolog/log"
 )
-
-// bloomPool reuses bloom filters to reduce allocation pressure
-var bloomPool = sync.Pool{
-	New: func() interface{} {
-		return bloom.NewWithEstimates(10000, 0.01)
-	},
-}
-
-// getBloomFromPool returns a bloom filter with specified capacity
-// Uses default false positive rate of 0.01 (1%)
-func getBloomFromPool(expectedItems uint) *bloom.BloomFilter {
-	if expectedItems < 1000 {
-		expectedItems = 1000
-	}
-
-	// Create a new bloom filter instead of reusing from pool
-	// This prevents false positives from previous use
-	return bloom.NewWithEstimates(expectedItems, 0.01)
-}
-
-// putBloomToPool returns a bloom filter to the pool
-func putBloomToPool(bf *bloom.BloomFilter) {
-	bloomPool.Put(bf)
-}
 
 // BloomSet manages bloom filters for a single BloomType.
 // It holds a global filter (all sources merged) plus per-source filters.
@@ -48,8 +23,8 @@ func NewBloomSet(t BloomType, expectedItems uint) *BloomSet {
 	}
 	return &BloomSet{
 		Type:          t,
-		Filter:        getBloomFromPool(expectedItems),
-		SourceFilters: make(map[string]*bloom.BloomFilter, 100), // Capacity hint for typical source count
+		Filter:        bloom.NewWithEstimates(expectedItems, 0.01),
+		SourceFilters: make(map[string]*bloom.BloomFilter, 100),
 		expectedItems: expectedItems,
 	}
 }
@@ -130,44 +105,32 @@ func (bs *BloomSet) GetSourceIDs() []string {
 	return ids
 }
 
-// Clear resets the bloom set to empty state, returning filters to pool.
+// Clear resets the bloom set to empty state.
 func (bs *BloomSet) Clear() {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
-	
-	// Return the main filter to pool and get a fresh one
-	putBloomToPool(bs.Filter)
-	bs.Filter = getBloomFromPool(bs.expectedItems)
-	
-	// Clear all source filters
-	for sourceID, filter := range bs.SourceFilters {
-		putBloomToPool(filter)
-		delete(bs.SourceFilters, sourceID)
-	}
+
+	// Create fresh filters
+	bs.Filter = bloom.NewWithEstimates(bs.expectedItems, 0.01)
+	bs.SourceFilters = make(map[string]*bloom.BloomFilter, 100)
 }
 
 // ResetSource clears a specific source's filter and rebuilds the global
-// filter from the remaining source filters so stale keys are not kept alive.
-// Uses double-buffering pattern to avoid race conditions during rebuild.
+// filter from the remaining source filters.
 func (bs *BloomSet) ResetSource(sourceID string) {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
 
 	delete(bs.SourceFilters, sourceID)
 
-	// Rebuild global filter from remaining source filters using double-buffering.
-	// Bloom filters do not support deletion — the only way to remove keys
-	// is to reconstruct the union of what's left.
+	// Rebuild global filter from remaining source filters
 	newFilter := bloom.NewWithEstimates(bs.expectedItems, 0.01)
 	for _, sf := range bs.SourceFilters {
 		if sf != nil {
 			newFilter.Merge(sf)
 		}
 	}
-	// Atomic swap - readers will see either old or new filter, never partial state
 	bs.Filter = newFilter
-
-	log.Debug().Str("bloom_type", string(bs.Type)).Str("source_id", sourceID).Msg("Reset source bloom filter")
 }
 
 // SourceCount returns the number of per-source filters.
