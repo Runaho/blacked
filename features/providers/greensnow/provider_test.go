@@ -158,7 +158,8 @@ func TestParseGreenSnowLine_SpecialAddresses(t *testing.T) {
 }
 
 func TestParseGreenSnowLine_NoSetURL(t *testing.T) {
-	// Verify SetURL is NOT called — all URL-derived fields remain empty.
+	// Verify SetURL is NOT called — URL-derived fields remain empty.
+	// WithIP is used instead for raw IP handling.
 	entry, err := parseGreenSnowLine("1.2.3.4", testPID)
 	require.NoError(t, err)
 	require.NotNil(t, entry)
@@ -166,5 +167,7 @@ func TestParseGreenSnowLine_NoSetURL(t *testing.T) {
 	assert.Empty(t, entry.Scheme, "Scheme should be empty — SetURL not called")
 	assert.Empty(t, entry.Path, "Path should be empty — SetURL not called")
 	assert.Empty(t, entry.RawQuery, "RawQuery should be empty — SetURL not called")
-	assert.Empty(t, entry.SourceURL, "SourceURL should be empty — SetURL not called")
+	// SourceURL is set manually in the provider for UNIQUE constraint, not via SetURL
+	assert.Equal(t, "https://blocklist.greensnow.co/greensnow.txt", entry.SourceURL,
+		"SourceURL should be the provider's default URL — set manually for uniqueness")
 }
