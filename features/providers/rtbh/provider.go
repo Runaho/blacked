@@ -76,6 +76,7 @@ func NewRTBHTurkeyProvider(cfg *config.Config, collyClient *colly.Collector) bas
 			WithProcessID(processID).
 			WithCategory(category).
 			WithIP(ip.String())
+		entry.SourceURL = sourceURL
 
 		return entry, nil
 		})

@@ -78,7 +78,7 @@ func NewBlocklistDeProvider(cfg *config.Config, collyClient *colly.Collector) ba
 	}
 	cron := opts.Cron
 	if cron == "" {
-		cron = "0 */15 * * * *"
+		cron = "0 */15 * * *"
 	}
 	category := opts.Category
 	if category == "" {

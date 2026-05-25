@@ -50,7 +50,7 @@ func TestEmergingThreatsIntegration(t *testing.T) {
 	t.Logf("Fetched %d bytes", len(data))
 
 	col := &intgCollector{}
-	err = parseIPList(strings.NewReader(string(data)), col, providerName, "intg-test")
+	err = parseIPList(strings.NewReader(string(data)), col, providerName, "https://rules.emergingthreats.net/test", "intg-test")
 	require.NoError(t, err)
 
 	t.Logf("Fetched and parsed %d entries", len(col.entries))
