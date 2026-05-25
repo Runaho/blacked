@@ -60,6 +60,8 @@ type BaseProvider struct {
 	Category         string
 	ProcessID        *uuid.UUID
 	CollyClient      *colly.Collector
+	HTTPClient        interface{} // *http.Client for API providers
+	HTTPHeaders      map[string]string // Custom headers for HTTP client
 	CronSchedule     string
 	RateLimit        time.Duration
 	Repository       repository.BlacklistRepository
@@ -161,14 +163,56 @@ func (b *BaseProvider) FetchWithContext(ctx context.Context) (io.Reader, error) 
 
 	// Use resilience.ExecuteWithResilience to wrap the actual fetch operation
 	reader, err := resilience.ExecuteWithResilience(ctx, b.Name, *resCfg, func(ctx context.Context) (io.Reader, error) {
-		var responseBody []byte
-		var fetchErr error
-
+		// Check for HTTPClient first (for API providers like AbuseIPDB)
+		if b.HTTPClient != nil {
+			httpClient, ok := b.HTTPClient.(*http.Client)
+			if !ok {
+				log.Error().Str("provider", b.Name).Msg("HTTPClient is not *http.Client")
+				return nil, ErrFetchingSource
+			}
+			
+			req, err := http.NewRequestWithContext(ctx, "GET", b.SourceURL, nil)
+			if err != nil {
+				return nil, err
+			}
+			
+			// Apply custom headers
+			for key, value := range b.HTTPHeaders {
+				req.Header.Set(key, value)
+			}
+			
+			resp, err := httpClient.Do(req)
+			if err != nil {
+				return nil, err
+			}
+			
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				resp.Body.Close()
+				return nil, fmt.Errorf("HTTP %d: failed to fetch %s", resp.StatusCode, b.Name)
+			}
+			
+			data, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				return nil, err
+			}
+			
+			log.Info().
+				Str("source", b.SourceURL).
+				Int("bytes", len(data)).
+				Msg("Fetched data via HTTP client")
+			
+			return bytes.NewReader(data), nil
+		}
+		
 		// Nil check for CollyClient — some providers (like AlienVault) use fresh collectors
 		if b.CollyClient == nil {
-			log.Error().Str("provider", b.Name).Msg("CollyClient is nil — cannot fetch")
+			log.Error().Str("provider", b.Name).Msg("Neither HTTPClient nor CollyClient set — cannot fetch")
 			return nil, ErrFetchingSource
 		}
+		
+		var responseBody []byte
+		var fetchErr error
 		c := b.CollyClient.Clone()
 		
 		// Apply timeout from resilience config
