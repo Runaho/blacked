@@ -44,9 +44,8 @@ func TestParseIPLines_ValidIPv4(t *testing.T) {
 		entry := entries.NewEntry().
 			WithSource("rtbh-turkey").
 			WithProcessID(processID).
-			WithCategory("government-feed")
-		_ = entry.SetURL("//" + ip.String())
-		entry.Domain = ip.String()
+			WithCategory("government-feed").
+			WithIP(ip.String())
 		return entry, nil
 	}
 
@@ -79,9 +78,8 @@ func TestParseIPLines_IPv6Skip(t *testing.T) {
 		entry := entries.NewEntry().
 			WithSource("rtbh-turkey").
 			WithProcessID(processID).
-			WithCategory("government-feed")
-		_ = entry.SetURL("//" + ip.String())
-		entry.Domain = ip.String()
+			WithCategory("government-feed").
+			WithIP(ip.String())
 		return entry, nil
 	}
 
@@ -108,9 +106,8 @@ func TestParseIPLines_EmptyAndSkip(t *testing.T) {
 		entry := entries.NewEntry().
 			WithSource("rtbh-turkey").
 			WithProcessID(processID).
-			WithCategory("government-feed")
-		_ = entry.SetURL("//" + ip.String())
-		entry.Domain = ip.String()
+			WithCategory("government-feed").
+			WithIP(ip.String())
 		return entry, nil
 	}
 
@@ -136,9 +133,8 @@ func TestParseIPLines_CRLF(t *testing.T) {
 		entry := entries.NewEntry().
 			WithSource("rtbh-turkey").
 			WithProcessID(processID).
-			WithCategory("government-feed")
-		_ = entry.SetURL("//" + ip.String())
-		entry.Domain = ip.String()
+			WithCategory("government-feed").
+			WithIP(ip.String())
 		return entry, nil
 	}
 
@@ -170,9 +166,8 @@ func TestParseIPLines_BatchSizeOne(t *testing.T) {
 		entry := entries.NewEntry().
 			WithSource("rtbh-turkey").
 			WithProcessID(processID).
-			WithCategory("government-feed")
-		_ = entry.SetURL("//" + ip.String())
-		entry.Domain = ip.String()
+			WithCategory("government-feed").
+			WithIP(ip.String())
 		return entry, nil
 	}
 

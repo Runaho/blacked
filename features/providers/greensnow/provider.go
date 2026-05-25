@@ -94,13 +94,8 @@ func parseGreenSnowLine(line, processID string) (*entries.Entry, error) {
 	entry := entries.NewEntry().
 		WithSource(providerName).
 		WithProcessID(processID).
-		WithCategory(providerCategory)
-
-	// IP entries: Host and Domain are both the IP string.
-	// SetURL is NOT called — no domain extraction needed.
-	entry.Host = line
-	entry.Domain = line
-	entry.SubDomains = nil
+		WithCategory(providerCategory).
+		WithIP(line)
 
 	// Set SourceURL so UNIQUE(source_url, source) constraint doesn't merge all entries
 	entry.SourceURL = defaultSourceURL

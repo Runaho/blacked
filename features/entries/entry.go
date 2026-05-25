@@ -23,16 +23,17 @@ type Entry struct {
 	ProcessID  string   `json:"process_id"`   // xid
 	Scheme     string   `json:"scheme"`
 	Domain     string   `json:"domain"`
-	Host       string   `json:"host"` // Includes Domain + TLD
+	Host       string   `json:"host"`         // Includes Domain + TLD
+	IP         string   `json:"ip"`           // Raw IP address (IPv4/IPv6)
 	SubDomains []string `json:"sub_domains"`
 	Path       string   `json:"path"`
 	RawQuery   string   `json:"raw_query"`
-	SourceURL  string   `json:"source_url"`           // Raw URL From the source
-	Source     string   `json:"source"`               // Name of the provider
-	Category   string   `json:"category"`             // Category tag
+	SourceURL  string   `json:"source_url"`   // Raw URL From the source
+	Source     string   `json:"source"`       // Name of the provider
+	Category   string   `json:"category"`     // Category tag
 	Confidence float64  `json:"confidence,omitempty"` // Optional confidence score
-	CreatedAt  int64    `json:"created_at"`           // Unix timestamp (nanoseconds), zero-alloc
-	UpdatedAt  int64    `json:"updated_at"`           // Unix timestamp (nanoseconds), zero-alloc
+	CreatedAt  int64    `json:"created_at"`   // Unix timestamp (nanoseconds), zero-alloc
+	UpdatedAt  int64    `json:"updated_at"`   // Unix timestamp (nanoseconds), zero-alloc
 	DeletedAt  *int64   `json:"deleted_at,omitempty"` // Pointer to timestamp, nil if not deleted
 }
 
@@ -123,6 +124,19 @@ func (b *Entry) WithConfidence(confidence float64) *Entry {
 // WithCategory sets the category tag and returns the entry for chaining
 func (b *Entry) WithCategory(category string) *Entry {
 	b.Category = category
+	b.UpdatedAt = time.Now().UnixNano()
+	return b
+}
+
+// WithIP sets the raw IP address (IPv4/IPv6) for malicious_ip entries.
+// Avoids URL parsing and keeps Domain field semantic for actual domains.
+func (b *Entry) WithIP(ip string) *Entry {
+	b.IP = ip
+	b.Host = ip
+	b.Domain = ip
+	b.SubDomains = nil
+	b.Path = ""
+	b.RawQuery = ""
 	b.UpdatedAt = time.Now().UnixNano()
 	return b
 }

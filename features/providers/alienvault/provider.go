@@ -349,31 +349,19 @@ func indicatorToEntry(indicator *OTXIndicator, source, processID string) (*entri
 	// Map OTX indicator types to appropriate entry types
 	switch indicator.Type {
 	case "IPv4", "IPv6":
-		// Handle IP addresses
+		// Handle IP addresses directly - no URL parsing needed
 		host := strings.TrimSpace(indicator.Indicator)
 		if host == "" {
 			log.Debug().Msg("empty IP indicator — skipping")
 			return nil, nil
 		}
-		
+
 		entry := entries.NewEntry().
 			WithSource(source).
 			WithProcessID(processID).
-			WithCategory("malicious_ip")
-		
-		// Set as URL with // prefix for IP handling
-		if err := entry.SetURL("//" + host); err != nil {
-			// If SetURL fails (e.g., for IPv6 format issues), create entry manually
-			entry.Host = host
-			entry.Domain = host
-			entry.SubDomains = nil
-			entry.Path = ""
-			entry.RawQuery = ""
-			return entry, nil
-		}
-		// Override domain extraction for IPs
-		entry.Domain = host
-		entry.SubDomains = nil
+			WithCategory("malicious_ip").
+			WithIP(host)
+
 		return entry, nil
 
 	case "domain":

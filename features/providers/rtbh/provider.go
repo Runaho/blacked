@@ -71,21 +71,13 @@ func NewRTBHTurkeyProvider(cfg *config.Config, collyClient *colly.Collector) bas
 				return nil, nil // skip IPv6
 			}
 
-			entry := entries.NewEntry().
-				WithSource(providerName).
-				WithProcessID(processID).
-				WithCategory(category)
+		entry := entries.NewEntry().
+			WithSource(providerName).
+			WithProcessID(processID).
+			WithCategory(category).
+			WithIP(ip.String())
 
-			// SetURL parses "//<ip>" which sets Host to the IP.
-			// Domain extraction on IPs produces misleading values,
-			// so override with the actual IP.
-			if err := entry.SetURL("//" + ip.String()); err != nil {
-				log.Debug().Err(err).Str("ip", ip.String()).Msg("failed to set URL for IP")
-				return nil, nil
-			}
-			entry.Domain = ip.String()
-
-			return entry, nil
+		return entry, nil
 		})
 	}
 

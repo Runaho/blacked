@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS entries (
     scheme      TEXT,
     domain      TEXT,
     host        TEXT,
+    ip          TEXT,
     sub_domains TEXT,
     path        TEXT,
     raw_query   TEXT,
@@ -70,6 +71,7 @@ CREATE TABLE IF NOT EXISTS provider_processes (
 -- Indexes for entries table
 CREATE INDEX IF NOT EXISTS idx_entries_domain ON entries(domain);
 CREATE INDEX IF NOT EXISTS idx_entries_host ON entries(host);
+CREATE INDEX IF NOT EXISTS idx_entries_ip ON entries(ip);
 CREATE INDEX IF NOT EXISTS idx_entries_source ON entries(source);
 CREATE INDEX IF NOT EXISTS idx_entries_source_url ON entries(source_url);
 
