@@ -1,6 +1,7 @@
 package greensnow
 
 import (
+	"context"
 	"testing"
 
 	"blacked/features/entries"
@@ -19,6 +20,7 @@ type testCollector struct {
 
 func (c *testCollector) Submit(entry *entries.Entry) { c.entries = append(c.entries, entry) }
 func (c *testCollector) Wait()                        {}
+func (c *testCollector) RemoveStaleEntriesAndSyncBloom(ctx context.Context, providerName, processID string) error { return nil }
 func (c *testCollector) Close()                       {}
 func (c *testCollector) GetProcessedCount(source string) int {
 	return len(c.entries)

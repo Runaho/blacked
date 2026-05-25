@@ -1,6 +1,7 @@
 package torexitnodes
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ type testCollector struct {
 
 func (c *testCollector) Submit(entry *entries.Entry)                   { c.entries = append(c.entries, entry) }
 func (c *testCollector) Wait()                                          {}
+func (c *testCollector) RemoveStaleEntriesAndSyncBloom(ctx context.Context, providerName, processID string) error { return nil }
 func (c *testCollector) Close()                                         {}
 func (c *testCollector) GetProcessedCount(_ string) int                 { return len(c.entries) }
 func (c *testCollector) StartProviderProcessing(_, _ string)            {}

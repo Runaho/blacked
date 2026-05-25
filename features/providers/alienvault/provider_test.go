@@ -1,6 +1,7 @@
 package alienvault
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -589,6 +590,10 @@ func (m *mockEntryCollector) Wait() {}
 
 func (m *mockEntryCollector) GetProcessedCount(source string) int {
 	return 0
+}
+
+func (m *mockEntryCollector) RemoveStaleEntriesAndSyncBloom(ctx context.Context, providerName, processID string) error {
+	return nil
 }
 
 func (m *mockEntryCollector) StartProviderProcessing(providerName, processID string) {}

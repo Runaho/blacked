@@ -1,6 +1,7 @@
 package pihole
 
 import (
+	"context"
 	"blacked/features/entries"
 	"time"
 )
@@ -24,6 +25,10 @@ func (c *testCollector) Close() {
 
 func (c *testCollector) GetProcessedCount(source string) int {
 	return len(c.entries)
+}
+
+func (c *testCollector) RemoveStaleEntriesAndSyncBloom(ctx context.Context, providerName, processID string) error {
+	return nil
 }
 
 func (c *testCollector) StartProviderProcessing(providerName, processID string) {

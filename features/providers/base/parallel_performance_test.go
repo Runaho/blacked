@@ -1,6 +1,7 @@
 package base
 
 import (
+	"context"
 	"blacked/features/entries"
 	"bytes"
 	"fmt"
@@ -45,6 +46,10 @@ func (p *PerformanceCollector) FinishProviderProcessing(name, processID string) 
 	return 0, time.Since(p.startTime), true
 }
 func (p *PerformanceCollector) GetProcessedCount(source string) int { return 0 }
+
+func (p *PerformanceCollector) RemoveStaleEntriesAndSyncBloom(ctx context.Context, providerName, processID string) error {
+	return nil
+}
 
 // generateTestData creates realistic test data with comments and domains
 func generateTestData(numLines int) string {

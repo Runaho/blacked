@@ -288,7 +288,7 @@ func (r *SQLiteRepository) GetEntriesByIDs(ctx context.Context, ids []string) ([
 
 // GetEntriesBySource retrieves all active blacklist entries for a given source from SQLite.
 func (r *SQLiteRepository) GetEntriesBySource(ctx context.Context, source string) ([]entries.Entry, error) {
-	rows, err := r.db.QueryContext(ctx, "SELECT * FROM entries WHERE source = ? AND deleted_at IS NULL") // Added WHERE deleted_at IS NULL
+	rows, err := r.db.QueryContext(ctx, "SELECT * FROM entries WHERE source = ? AND deleted_at IS NULL", source)
 	if err != nil {
 		log.Err(err).
 			Str("source", source).

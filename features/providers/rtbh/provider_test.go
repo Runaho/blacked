@@ -1,6 +1,7 @@
 package rtbh
 
 import (
+	"context"
 	"net"
 	"strings"
 	"testing"
@@ -21,6 +22,7 @@ type mockCollector struct {
 
 func (m *mockCollector) Submit(entry *entries.Entry)                { m.entries = append(m.entries, entry) }
 func (m *mockCollector) Wait()                                       {}
+func (m *mockCollector) RemoveStaleEntriesAndSyncBloom(ctx context.Context, providerName, processID string) error { return nil }
 func (m *mockCollector) Close()                                      {}
 func (m *mockCollector) StartProviderProcessing(name, processID string) {}
 func (m *mockCollector) FinishProviderProcessing(name, processID string) (int, time.Duration, bool) {
