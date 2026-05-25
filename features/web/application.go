@@ -1,6 +1,7 @@
 package web
 
 import (
+	"blacked/features/entry_collector"
 	"blacked/features/providers"
 	"blacked/features/web/middlewares"
 	"blacked/internal/collector"
@@ -36,15 +37,26 @@ var (
 var (
 	onceApplication sync.Once
 	application     *Application
+
+	// pendingPondCollector allows injection before NewApplication's sync.Once runs.
+	// Set via SetPondCollector() before calling NewApplication().
+	pendingPondCollector *entry_collector.PondCollector
 )
+
+// SetPondCollector stores the collector for use by NewApplication's ConfigureRoutes.
+// Call this before NewApplication() in the initialization sequence.
+func SetPondCollector(c *entry_collector.PondCollector) {
+	pendingPondCollector = c
+}
 
 // Application holds our Echo instance, Config, Logger, and Services.
 type Application struct {
-	Echo      *echo.Echo
-	config    *config.ServerConfig
-	logger    *lecho.Logger
-	services  *Services
-	providers *providers.Providers
+	Echo          *echo.Echo
+	config        *config.ServerConfig
+	logger        *lecho.Logger
+	services      *Services
+	providers     *providers.Providers
+	PondCollector *entry_collector.PondCollector
 }
 
 func (app *Application) GetProviders() *providers.Providers {
@@ -67,10 +79,11 @@ func NewApplication(cfg *config.ServerConfig) (*Application, error) {
 		e.Server.Addr = ":" + strconv.Itoa(cfg.Port)
 		log.Info().Str("address", e.Server.Addr).Msg("Server address")
 
-		app := &Application{
-			Echo:   e,
-			config: cfg,
-		}
+	app := &Application{
+		Echo:          e,
+		config:        cfg,
+		PondCollector: pendingPondCollector,
+	}
 
 		app.configureLogger()
 
