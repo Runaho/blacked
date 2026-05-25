@@ -79,7 +79,7 @@ func InitPondCollector(
 		pool := pond.NewPool(collectorConfig.Concurrency)
 
 		// Initialize bloom manager for new entries table
-		bloomMgr := bloom.NewBloomManager(1_000_000)
+		bloomMgr := bloom.NewBloomManager(1_000_000, 10)
 
 		globalCollector = &PondCollector{
 			pool:           pool,

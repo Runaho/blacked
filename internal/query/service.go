@@ -170,8 +170,12 @@ func bulkCheckParallel(ctx context.Context, qs *QueryService, urls []string, con
 			sem <- struct{}{}        // acquire
 			defer func() { <-sem }() // release
 
-			resp, err := qs.Likely(ctx, u)
+		resp, err := qs.Likely(ctx, u)
+		if err != nil {
+			resultChan <- result{resp: LikelyResponse{}, err: err, i: i}
+		} else {
 			resultChan <- result{resp: *resp, err: err, i: i}
+		}
 		}(u, i)
 	}
 
@@ -221,8 +225,12 @@ func bulkHitParallel(ctx context.Context, qs *QueryService, urls []string, concu
 			sem <- struct{}{}        // acquire
 			defer func() { <-sem }() // release
 
-			resp, err := qs.Hit(ctx, u)
+		resp, err := qs.Hit(ctx, u)
+		if err != nil {
+			resultChan <- result{resp: QueryResponse{}, err: err, i: i}
+		} else {
 			resultChan <- result{resp: *resp, err: err, i: i}
+		}
 		}(u, i)
 	}
 

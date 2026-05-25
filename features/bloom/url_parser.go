@@ -6,11 +6,16 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 
 	"blacked/internal/utils"
 )
 
 var ErrInvalidURL = errors.New("invalid URL")
+
+var (
+	urlCache sync.Map // key: URL string, value: *URLKeys
+)
 
 // URLKeys holds all decomposed keys from a URL for bloom filtering.
 type URLKeys struct {
@@ -39,6 +44,11 @@ func ParseURL(raw string) (*URLKeys, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, ErrInvalidURL
+	}
+
+	// Check cache
+	if cached, ok := urlCache.Load(raw); ok {
+		return cached.(*URLKeys), nil
 	}
 
 	if !strings.Contains(raw, "://") && !strings.HasPrefix(raw, "//") {
@@ -104,6 +114,8 @@ func ParseURL(raw string) (*URLKeys, error) {
 		}
 	}
 
+	// Store in cache
+	urlCache.Store(raw, keys)
 	return keys, nil
 }
 
@@ -165,8 +177,10 @@ func (uk *URLKeys) GenerateCheckKeys() []CheckKey {
 	// domain(1) + host(1) + ip(1) + hostPaths(max) + file(1) + fullURL(1)
 	// hostPaths max = len(parentPaths(uk.Path)) if host and path present
 	hostPathCount := 0
+	var parentPathsResult []string
 	if uk.Host != "" && uk.Path != "" {
-		hostPathCount = len(parentPaths(uk.Path))
+		parentPathsResult = parentPaths(uk.Path)
+		hostPathCount = len(parentPathsResult)
 	}
 	estimatedCap := 4 + hostPathCount // domain+host+ip+fullURL + hostPaths
 	
@@ -187,9 +201,9 @@ func (uk *URLKeys) GenerateCheckKeys() []CheckKey {
 		keys = append(keys, CheckKey{BloomIP, uk.IP})
 	}
 
-	// активности 4. HostPath variants — shallowest → deepest
+	// 4. HostPath variants — shallowest → deepest
 	if uk.Host != "" && uk.Path != "" {
-		for _, p := range parentPaths(uk.Path) {
+		for _, p := range parentPathsResult {
 			keys = append(keys, CheckKey{BloomHostPath, uk.Host + p})
 		}
 	}

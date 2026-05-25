@@ -20,11 +20,10 @@ func getBloomFromPool(expectedItems uint) *bloom.BloomFilter {
 	if expectedItems < 1000 {
 		expectedItems = 1000
 	}
-	
-	bf := bloomPool.Get().(*bloom.BloomFilter)
-	// Note: bloom filters don't have Clear(), but since we're reusing
-	// for the same purpose (new empty filter), this is fine
-	return bf
+
+	// Create a new bloom filter instead of reusing from pool
+	// This prevents false positives from previous use
+	return bloom.NewWithEstimates(expectedItems, 0.01)
 }
 
 // putBloomToPool returns a bloom filter to the pool
