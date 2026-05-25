@@ -35,6 +35,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
 	golang.org/x/net v0.53.0
+	golang.org/x/sync v0.20.0
 	modernc.org/sqlite v1.37.0
 )
 
