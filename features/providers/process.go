@@ -264,13 +264,15 @@ func (p Providers) processProvider(
 	}
 	span.AddEvent("data fetched successfully")
 
-	// Handle metadata if present
+	// Metadata is only used for caching - processID should NEVER be reused from cache
+	// Each run must have a unique processID to properly track which entries belong to it
+	// Reusing processID from cache causes RemoveOlderInsertions to delete wrong entries
 	if meta != nil {
-		strProcessID = meta.ProcessID
+		// Log but ignore the cached processID - use the current run's locally generated processID
 		providerLogger.Info().
-			Str("new_process_id", strProcessID).
-			Msg("Found metadata, changing process ID")
-		provider.SetProcessID(uuid.MustParse(strProcessID))
+			Str("cached_process_id", meta.ProcessID).
+			Str("current_process_id", strProcessID).
+			Msg("Ignoring cached processID, using fresh UUID for this run")
 	}
 
 	// Set the repository for the provider
