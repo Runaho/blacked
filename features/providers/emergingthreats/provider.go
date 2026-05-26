@@ -2,6 +2,7 @@ package emergingthreats
 
 import (
 	"bufio"
+	"context"
 	"io"
 	"net"
 	"strings"
@@ -77,6 +78,11 @@ func (p *emergingThreatsProvider) Register() *base.BaseProvider {
 
 // Fetch uses HTTPFetcher instead of Colly for a plain-text feed.
 func (p *emergingThreatsProvider) Fetch() (io.Reader, error) {
+	return p.FetchWithContext(context.Background())
+}
+
+// FetchWithContext uses HTTPFetcher to fetch plain-text data with context support.
+func (p *emergingThreatsProvider) FetchWithContext(ctx context.Context) (io.Reader, error) {
 	source := p.Source()
 	log.Info().Str("provider", providerName).Str("url", source).Msg("Fetching IP list via HTTPFetcher")
 

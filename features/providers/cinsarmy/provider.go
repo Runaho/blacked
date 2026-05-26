@@ -1,6 +1,7 @@
 package cinsarmy
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -77,6 +78,11 @@ func (p *cinsArmyProvider) Register() *base.BaseProvider {
 
 // Fetch uses HTTPFetcher to fetch plain-text data instead of colly.
 func (p *cinsArmyProvider) Fetch() (io.Reader, error) {
+	return p.FetchWithContext(context.Background())
+}
+
+// FetchWithContext uses HTTPFetcher to fetch plain-text data with context support.
+func (p *cinsArmyProvider) FetchWithContext(ctx context.Context) (io.Reader, error) {
 	rc, err := p.httpFetcher.Fetch(p.SourceURL)
 	if err != nil {
 		return nil, fmt.Errorf("fetch %s: %w", p.SourceURL, err)
