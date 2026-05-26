@@ -301,11 +301,11 @@ func (r *SQLiteRepository) GetEntriesBySource(ctx context.Context, source string
 	var _entries []entries.Entry = []entries.Entry{} // Initialize empty slice
 	for rows.Next() {
 		var entry entries.Entry
-		var subDomainsStr string
-		var deletedAt sql.NullInt64 
+		var scheme, domain, ip, subDomainsStr, path, rawQuery sql.NullString
+		var deletedAt sql.NullInt64
 		err := rows.Scan(
-			&entry.ID, &entry.ProcessID, &entry.Scheme, &entry.Domain, &entry.Host, &entry.IP, &subDomainsStr,
-			&entry.Path, &entry.RawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
+			&entry.ID, &entry.ProcessID, &scheme, &domain, &entry.Host, &ip, &subDomainsStr,
+			&path, &rawQuery, &entry.SourceURL, &entry.Source, &entry.Category,
 			&entry.Confidence, &entry.CreatedAt, &entry.UpdatedAt, &deletedAt,
 		)
 		if err != nil {
@@ -315,9 +315,24 @@ func (r *SQLiteRepository) GetEntriesBySource(ctx context.Context, source string
 
 			return nil, ErrToScan
 		}
-		entry.SubDomains = strings.Split(subDomainsStr, ",")
-		if entry.SubDomains[0] == "" {
-			entry.SubDomains = nil
+		// Handle nullable columns
+		if scheme.Valid {
+			entry.Scheme = scheme.String
+		}
+		if domain.Valid {
+			entry.Domain = domain.String
+		}
+		if ip.Valid {
+			entry.IP = ip.String
+		}
+		if path.Valid {
+			entry.Path = path.String
+		}
+		if rawQuery.Valid {
+			entry.RawQuery = rawQuery.String
+		}
+		if subDomainsStr.Valid && subDomainsStr.String != "" {
+			entry.SubDomains = strings.Split(subDomainsStr.String, ",")
 		}
 		if deletedAt.Valid {
 			entry.DeletedAt = &deletedAt.Int64

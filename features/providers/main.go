@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"blacked/features/providers/abuseipdb"
 	"blacked/features/providers/alienvault"
 	"blacked/features/providers/base"
 	"blacked/features/providers/blocklistde"
@@ -67,6 +68,9 @@ func getProviders(cfg *config.Config, cc *colly.Collector) Providers {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
 	if p := threatfox.NewThreatFoxProvider(cfg, cc); p != nil {
+		log.Info().Str("provider", p.GetName()).Msg("registered provider")
+	}
+	if p := abuseipdb.NewAbuseIPDBProvider(cfg, cc); p != nil {
 		log.Info().Str("provider", p.GetName()).Msg("registered provider")
 	}
 	providers := Providers(base.GetRegisteredProviders())
