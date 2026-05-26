@@ -105,6 +105,7 @@ func NewThreatFoxProvider(cfg *config.Config, collyClient *colly.Collector) base
 		dumpURL:      dumpURL,
 		apiKey:       opts.APIKey,
 	}
+	log.Info().Str("provider", providerName).Str("apiKey", opts.APIKey).Msg("ThreatFox provider constructed with API key")
 	p.Register()
 	return p
 }
@@ -114,6 +115,14 @@ func NewThreatFoxProvider(cfg *config.Config, collyClient *colly.Collector) base
 func (p *threatFoxProvider) Register() *base.BaseProvider {
 	base.RegisterProvider(p)
 	return p.BaseProvider
+}
+
+// FetchWithContext delegates to Fetch for context-aware timeout handling.
+// Required because process.go calls FetchWithContext(), not Fetch().
+// Without this override, BaseProvider.FetchWithContext() would use CollyClient.Clone()
+// which doesn't have proper URL resolution for {token} replacement.
+func (p *threatFoxProvider) FetchWithContext(ctx context.Context) (io.Reader, error) {
+	return p.Fetch()
 }
 
 // Fetch re-evaluates gap detection on every call, so the URL is not
