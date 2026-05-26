@@ -2,6 +2,7 @@ package alienvault
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -106,6 +107,14 @@ func NewAlienvaultProvider(cfg *config.Config, collyClient *colly.Collector) bas
 func (p *alienvaultProvider) Register() *base.BaseProvider {
 	base.RegisterProvider(p)
 	return p.BaseProvider
+}
+
+// FetchWithContext delegates to Fetch for context-aware timeout handling.
+// Required because process.go calls FetchWithContext(), not Fetch().
+// Without this override, BaseProvider.FetchWithContext() would use CollyClient.Clone()
+// which inherits browser User-Agent and causes 403 Forbidden from OTX API.
+func (p *alienvaultProvider) FetchWithContext(ctx context.Context) (io.Reader, error) {
+	return p.Fetch()
 }
 
 // Fetch implements OTX API fetching with proper authentication, rate limiting,

@@ -87,14 +87,12 @@ func NewAbuseIPDBProvider(cfg *config.Config, collyClient *colly.Collector) base
 	// Resilience config
 	resilienceCfg := resilience.DefaultProviderResilienceConfig(providerName)
 
-	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
+	parseFunc := func(data io.Reader, collector entry_collector.Collector, processID string) error {
 		var response AbuseIPDBResponse
 		if err := json.NewDecoder(data).Decode(&response); err != nil {
 			log.Error().Err(err).Str("provider", providerName).Msg("failed to parse JSON response")
 			return err
 		}
-
-		processID := time.Now().UTC().Format("20060102-150405")
 
 		for _, entry := range response.Data {
 			if entry.IPAddress == "" {
