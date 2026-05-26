@@ -43,7 +43,7 @@ var SourceSeed = []Source{
 	{ID: "oisd-big", ProviderID: "oisd", Name: "OISD Big", SourceURL: "https://big.oisd.nl/domainswild2", Type: SourceTypeFlat, Enabled: true, UpdateInterval: sql.NullInt64{Int64: 86400, Valid: true}},       // daily
 	{ID: "oisd-nsfw", ProviderID: "oisd", Name: "OISD NSFW", SourceURL: "https://nsfw.oisd.nl/domainswild2", Type: SourceTypeFlat, Enabled: true, UpdateInterval: sql.NullInt64{Int64: 86400, Valid: true}},   // daily
 	{ID: "urlhaus-online", ProviderID: "abuse-ch", Name: "URLHaus Online", SourceURL: "https://urlhaus.abuse.ch/downloads/text/", Type: SourceTypeFlat, Enabled: true, UpdateInterval: sql.NullInt64{Int64: 7200, Valid: true}},    // 2 hours
-	{ID: "openphish-feed", ProviderID: "openphish", Name: "OpenPhish Feed", SourceURL: "https://openphish.com/feed.txt", Type: SourceTypeFlat, Enabled: true, UpdateInterval: sql.NullInt64{Int64: 14400, Valid: true}},     // 4 hours
+	{ID: "openphish-feed", ProviderID: "openphish", Name: "OpenPhish Feed", SourceURL: "https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt", Type: SourceTypeFlat, Enabled: true, UpdateInterval: sql.NullInt64{Int64: 14400, Valid: true}},     // 4 hours
 	{ID: "phishtank-online-valid", ProviderID: "phishtank", Name: "PhishTank Online Valid", SourceURL: "https://data.phishtank.com/data/online-valid.json", Type: SourceTypeJSON, Enabled: true, UpdateInterval: sql.NullInt64{Int64: 14400, Valid: true}}, // 4 hours
 	{ID: "spamhaus-drop", ProviderID: "spamhaus", Name: "Spamhaus DROP", SourceURL: "https://www.spamhaus.org/drop/drop.txt", Type: SourceTypeFlat, Enabled: true, UpdateInterval: sql.NullInt64{Int64: 86400, Valid: true}}, // daily
 }
