@@ -29,9 +29,11 @@ var ErrMissingBloomStreamCh = errors.New("bloom stream channel is nil")
 const (
 	PeriodicFlushInterval = 5 * time.Second
 	MaxProvidersInMemory  = 1000
-	
-	// DB Write Channel capacity
-	DBWriteChannelSize = 100
+
+	// DB Write Channel capacity - increased from 100 to handle high-volume provider bursts
+	// During startup, providers like oisd-big (450K entries) can overwhelm a small channel
+	// causing backpressure. 10000 allows ~10M entries in flight before blocking.
+	DBWriteChannelSize = 10000
 	
 	// Backpressure thresholds (as fraction of channel capacity)
 	BackpressureHighThreshold = 0.8  // 80% - signal backpressure
