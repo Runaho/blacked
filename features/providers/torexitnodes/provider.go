@@ -12,7 +12,6 @@ import (
 	"blacked/internal/config"
 
 	"github.com/gocolly/colly/v2"
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
@@ -49,8 +48,7 @@ func NewTorExitNodesProvider(cfg *config.Config, collyClient *colly.Collector) b
 		category = "anonymizer"
 	}
 
-	processID := uuid.New().String()
-	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
+	parseFunc := func(data io.Reader, collector entry_collector.Collector, processID string) error {
 		raw, err := io.ReadAll(data)
 		if err != nil {
 			return fmt.Errorf("read tor exit nodes: %w", err)

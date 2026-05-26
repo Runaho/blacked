@@ -14,7 +14,6 @@ import (
 	"blacked/internal/config"
 
 	"github.com/gocolly/colly/v2"
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
@@ -87,8 +86,7 @@ func NewBlocklistDeProvider(cfg *config.Config, collyClient *colly.Collector) ba
 
 	client := base.BuildCollyClientForProvider(collyClient, opts)
 
-	processID := uuid.New().String()
-	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
+	parseFunc := func(data io.Reader, collector entry_collector.Collector, processID string) error {
 		raw, err := io.ReadAll(data)
 		if err != nil {
 			return fmt.Errorf("read blocklistde data: %w", err)

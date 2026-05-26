@@ -12,7 +12,6 @@ import (
 	"blacked/internal/config"
 
 	"github.com/gocolly/colly/v2"
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
@@ -48,8 +47,7 @@ func NewEmergingThreatsProvider(cfg *config.Config, collyClient *colly.Collector
 
 	client := base.BuildCollyClientForProvider(collyClient, opts)
 
-	processID := uuid.New().String()
-	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
+	parseFunc := func(data io.Reader, collector entry_collector.Collector, processID string) error {
 		return parseIPList(data, collector, providerName, sourceURL, processID)
 	}
 

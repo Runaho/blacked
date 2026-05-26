@@ -9,7 +9,6 @@ import (
 	"io"
 
 	"github.com/gocolly/colly/v2"
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
@@ -57,9 +56,8 @@ func NewPhishTankProvider(cfg *config.Config, collyClient *colly.Collector) base
 
 	client := base.BuildCollyClientForProvider(collyClient, opts)
 
-	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
+	parseFunc := func(data io.Reader, collector entry_collector.Collector, processID string) error {
 		var phishEntries []PhishTankEntry
-		id := uuid.New().String()
 
 		decoder := json.NewDecoder(data)
 		if err := decoder.Decode(&phishEntries); err != nil {
@@ -83,7 +81,7 @@ func NewPhishTankProvider(cfg *config.Config, collyClient *colly.Collector) base
 			}
 
 			return entry, nil
-		}, id)
+		}, processID)
 	}
 
 	provider := base.NewBaseProvider(

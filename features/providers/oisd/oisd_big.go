@@ -49,8 +49,8 @@ func NewOISDBigProvider(cfg *config.Config, collyClient *colly.Collector) base.P
 
 	client := base.BuildCollyClientForProvider(collyClient, opts)
 
-	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
-		return base.ParseLinesParallel(data, collector, providerName, workers, batchSize, func(line, processID string) (*entries.Entry, error) {
+	parseFunc := func(data io.Reader, collector entry_collector.Collector, processID string) error {
+		return base.ParseLinesParallel(data, collector, providerName, processID, workers, batchSize, func(line, processID string) (*entries.Entry, error) {
 			line = strings.TrimSpace(line)
 			if line == "" || strings.HasPrefix(line, "#") {
 				return nil, nil
