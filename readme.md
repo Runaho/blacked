@@ -43,15 +43,15 @@ Blacked collects threat intelligence from multiple sources (OISD, URLHaus, Threa
 
 ## ⚡ Performance
 
-|| Metric | Value |
-||:-------|:------|
-|| Bloom Check (P99) | **0.4 ms** |
-|| Full Hit (bloom + DB + score) | **5–15 ms** |
-|| CPU Usage (idle, 1M entries) | **~2%** |
-|| Heap (idle) | **~420 MB** |
-|| Sync Alloc | **~1.73 GB** |
-|| Sync Duration (12 providers, 1M entries) | **~30 s** |
-|| E2E Tests | **14 / 14** · **0.59 s** · No network calls |
+| Metric | Value |
+|:-------|:------|
+| Bloom Check (P99) | **0.4 ms** |
+| Full Hit (bloom + DB + score) | **5–15 ms** |
+| CPU Usage (idle, 1M entries) | **~2%** |
+| Heap (idle) | **~420 MB** |
+| Sync Alloc | **~1.73 GB** |
+| Sync Duration (12 providers, 1M entries) | **~30 s** |
+| E2E Tests | **14 / 14** · **0.59 s** · No network calls |
 
 ---
 
