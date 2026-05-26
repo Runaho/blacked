@@ -14,7 +14,6 @@ import (
 	"blacked/internal/config"
 
 	"github.com/gocolly/colly/v2"
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
@@ -82,8 +81,7 @@ func NewAlienvaultProvider(cfg *config.Config, collyClient *colly.Collector) bas
 		client.MaxBodySize = 10 * 1024 * 1024 // 10 MB
 	}
 
-	processID := uuid.New().String()
-	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
+	parseFunc := func(data io.Reader, collector entry_collector.Collector, processID string) error {
 		raw, err := io.ReadAll(data)
 		if err != nil {
 			return fmt.Errorf("read alienvault data: %w", err)

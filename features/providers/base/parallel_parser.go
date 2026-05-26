@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
@@ -107,10 +106,13 @@ type LineProcessor func(line string, processID string) (*entries.Entry, error)
 
 // ParseLinesParallel reads lines from a reader and processes them in parallel
 // This is optimized for large files with millions of lines
+// processID must be passed to ensure entries are written with the same processID
+// that will be used for RemoveOlderInsertions later
 func ParseLinesParallel(
 	data io.Reader,
 	collector entry_collector.Collector,
 	providerName string,
+	processID string,
 	numWorkers int,
 	batchSize int,
 	processor LineProcessor,
@@ -125,7 +127,6 @@ func ParseLinesParallel(
 		batchSize = 1000
 	}
 
-	processID := uuid.New().String()
 	stopExecTrace := maybeStartExecTrace(providerName, processID)
 	defer stopExecTrace()
 

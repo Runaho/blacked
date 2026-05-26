@@ -63,12 +63,12 @@ type BaseProvider struct {
 	CronSchedule     string
 	RateLimit        time.Duration
 	Repository       repository.BlacklistRepository
-	ParseFunction    func(io.Reader, entry_collector.Collector) error
+	ParseFunction    func(io.Reader, entry_collector.Collector, string) error
 	ResilienceConfig *resilience.ProviderResilienceConfig
 }
 
 // NewBaseProvider creates a new BaseProvider
-func NewBaseProvider(name, sourceURL, category string, collyClient *colly.Collector, parseFunc func(io.Reader, entry_collector.Collector) error) *BaseProvider {
+func NewBaseProvider(name, sourceURL, category string, collyClient *colly.Collector, parseFunc func(io.Reader, entry_collector.Collector, string) error) *BaseProvider {
 	p := &BaseProvider{
 		Name:        name,
 		SourceURL:   sourceURL,
@@ -231,7 +231,14 @@ func (b *BaseProvider) Parse(data io.Reader) error {
 		return ErrParsingData
 	}
 
-	err := b.ParseFunction(data, collector)
+	// Get the processID that was set by process.go
+	if b.ProcessID == nil {
+		log.Error().Str("provider", b.Name).Msg("ProcessID not set")
+		return ErrProcessIDNotSet
+	}
+	strProcessID := b.ProcessID.String()
+
+	err := b.ParseFunction(data, collector, strProcessID)
 	if err != nil {
 		log.Err(err).Str("provider", b.Name).Msg("Error parsing data")
 		return ErrParsingData

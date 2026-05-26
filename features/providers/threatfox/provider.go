@@ -19,7 +19,6 @@ import (
 	"blacked/internal/db"
 
 	"github.com/gocolly/colly/v2"
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
@@ -89,8 +88,7 @@ func NewThreatFoxProvider(cfg *config.Config, collyClient *colly.Collector) base
 		client.MaxBodySize = 100 * 1024 * 1024 // 100 MB
 	}
 
-	processID := uuid.New().String()
-	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
+	parseFunc := func(data io.Reader, collector entry_collector.Collector, processID string) error {
 		raw, err := io.ReadAll(data)
 		if err != nil {
 			return fmt.Errorf("read threatfox data: %w", err)

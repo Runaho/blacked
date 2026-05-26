@@ -59,8 +59,8 @@ func NewGreenSnowProvider(cfg *config.Config, collyClient *colly.Collector) base
 
 	client := base.BuildCollyClientForProvider(collyClient, opts)
 
-	parseFunc := func(data io.Reader, collector entry_collector.Collector) error {
-		return base.ParseLinesParallel(data, collector, providerName, workers, batchSize,
+	parseFunc := func(data io.Reader, collector entry_collector.Collector, processID string) error {
+		return base.ParseLinesParallel(data, collector, providerName, processID, workers, batchSize,
 			func(line, processID string) (*entries.Entry, error) {
 				return parseGreenSnowLine(line, processID)
 			})
