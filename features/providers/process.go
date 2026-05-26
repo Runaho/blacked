@@ -268,7 +268,7 @@ func (p Providers) processProvider(
 	// Each run must have a unique processID to properly track which entries belong to it
 	// Reusing processID from cache causes RemoveOlderInsertions to delete wrong entries
 	if meta != nil {
-		// Log but ignore the cached processID - use the fresh one from line 70
+		// Log but ignore the cached processID - use the current run's locally generated processID
 		providerLogger.Info().
 			Str("cached_process_id", meta.ProcessID).
 			Str("current_process_id", strProcessID).
