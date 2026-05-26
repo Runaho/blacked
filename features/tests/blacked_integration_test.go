@@ -126,7 +126,7 @@ func seedSources(t testing.TB, db *sql.DB) {
 		{"src-phishtank", "test-phishtank", "PhishTank Source", "https://phishtank.org/files/valid/", "phishtank", 0.70, 7200},
 		{"src-oisd-nsfw", "test-oisd-nsfw", "OISD NSFW Source", "https://nsfw.oisd.nl/", "oisd_nsfw", 0.65, 86400},
 		{"src-oisd-big", "test-oisd-big", "OISD Big Source", "https://big.oisd.nl/", "oisd_big", 0.65, 86400},
-		{"src-openphish", "test-openphish", "OpenPhish Source", "https://openphish.com/feed.txt", "openphish", 0.70, 1800},
+		{"src-openphish", "test-openphish", "OpenPhish Source", "https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt", "openphish", 0.70, 1800},
 	}
 	for _, s := range sources {
 		_, err := db.Exec(`

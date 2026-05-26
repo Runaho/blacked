@@ -44,7 +44,7 @@ func defaultProviderConfigs() map[string]*config.ProviderOptions {
 		},
 		"openphish-feed": {
 			Enabled:         boolPtr(false),
-			SourceURL:       "https://openphish.com/feed.txt",
+			SourceURL:       "https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt",
 			Cron:            "30 */4 * * *",
 			Category:        "phishing",
 			ParserWorkers:   4,

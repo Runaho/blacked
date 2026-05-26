@@ -26,7 +26,7 @@ func NewOpenPhishFeedProvider(cfg *config.Config, collyClient *colly.Collector) 
 
 	sourceURL := opts.SourceURL
 	if sourceURL == "" {
-		sourceURL = "https://openphish.com/feed.txt"
+		sourceURL = "https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt"
 	}
 	cron := opts.Cron
 	if cron == "" {
