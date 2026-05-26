@@ -11,11 +11,11 @@
 
 **High-performance URL blacklist aggregator with multi-bloom filtering and scoring.**
 
-Blacked collects threat intelligence from multiple sources (OISD, URLHaus, OpenPhish, PhishTank), decomposes every URL across 6 bloom dimensions, and answers `is this URL blocked?` in ~0.4ms.
+Blacked collects threat intelligence from multiple sources (OISD, URLHaus, ThreatFox, AlienVault, AbuseIPDB, and more), decomposes every URL/IP across 6 bloom dimensions, and answers `is this URL/IP blocked?` in ~0.4ms.
 
 <table>
   <tr>
-    <td align="center"><h3>📡 Aggregation</h3><p><sub>Provider → Source pipeline with independent fetch, parse, and schedule per source. 3 active providers feeding <strong>938K+ entries</strong>.</sub></p></td>
+    <td align="center"><h3>📡 Aggregation</h3><p><sub>Provider → Source pipeline with independent fetch, parse, and schedule per source. 12 active providers feeding <strong>1M+ entries</strong>.</sub></p></td>
     <td align="center"><h3>🧬 Bloom Engine</h3><p><sub>6-layer parallel check at ~0.4ms. One entry → one bloom type. First hit wins, parent-path cascade.</sub></p></td>
     <td align="center"><h3>📊 Scoring</h3><p><sub>Provider trust × depth weight. Single match uses trust directly. 5 levels: critical → informational.</sub></p></td>
     <td align="center"><h3>🏗️ Core</h3><p><sub>HTTP-agnostic `internal/query/` package. Testable standalone. Adapter pattern — zero framework lock-in.</sub></p></td>
@@ -43,15 +43,15 @@ Blacked collects threat intelligence from multiple sources (OISD, URLHaus, OpenP
 
 ## ⚡ Performance
 
-| Metric | Value |
-|:-------|:------|
-| Bloom Check (P99) | **0.4 ms** |
-| Full Hit (bloom + DB + score) | **5–15 ms** |
-| CPU Usage (idle, 820K entries) | **1.28%** |
-| Heap (idle) | **101 MB** |
-| Sync Alloc (before perf fixes) | 2.36 GB → **~1.73 GB** (−628 MB) |
-| Sync Duration (3 providers, 826K entries) | **~109 s** |
-| E2E Tests | **14 / 14** · **0.59 s** · No network calls |
+|| Metric | Value |
+||:-------|:------|
+|| Bloom Check (P99) | **0.4 ms** |
+|| Full Hit (bloom + DB + score) | **5–15 ms** |
+|| CPU Usage (idle, 1M entries) | **~2%** |
+|| Heap (idle) | **~420 MB** |
+|| Sync Alloc | **~1.73 GB** |
+|| Sync Duration (12 providers, 1M entries) | **~30 s** |
+|| E2E Tests | **14 / 14** · **0.59 s** · No network calls |
 
 ---
 
@@ -147,7 +147,28 @@ cp .env.toml.copy .env.toml
 go run . serve
 ```
 
-The server starts at `http://localhost:8082`.
+The server starts at `http://localhost:8088`.
+
+### Supported Providers
+
+| Provider | Type | Entries | Schedule | Description |
+|----------|------|---------|----------|-------------|
+| **oisd-big** | Domain | ~440K | Daily | Comprehensive domain blacklist |
+| **oisd-nsfw** | Domain | ~330K | Daily | Adult/malware domains |
+| **urlhaus-online** | URL/IP | ~76K | 2h | Active malware URLs |
+| **threatfox-online** | IOC | ~104K | 2h | ThreatFox IOC feed |
+| **alienvault** | IOC | ~500K+ | 6h | AlienVault OTX pulses |
+| **rtbh-turkey** | IP | ~63K | 30min | Turkish government blocklist |
+| **blocklist-de** | IP | ~24K | 15min | Multi-category attack IPs |
+| **cins-army** | IP | ~15K | 30min | Active scanner/probe IPs |
+| **abuseipdb** | IP | ~10K | Daily | AbuseIPDB blacklist |
+| **greensnow** | IP | ~6K | 6h | Attack IPs |
+| **tor-exit-nodes** | IP | ~1.3K | 6h | Tor exit nodes |
+| **emerging-threats** | IP | ~500 | 12h | Compromised IPs |
+| **openphish-feed** | URL | ~300 | 4h | Phishing URLs |
+| **phishtank-online-valid** | URL | - | 6h | PhishTank (API key required, disabled by default) |
+
+**Total: 1M+ entries** (domains + IPs + URLs combined)
 
 ### CLI
 
@@ -209,7 +230,7 @@ environment = "development"  # or "production"
 log_level = "info"
 
 [Server]
-port = 8082
+port = 8088
 host = "localhost"
 
 [Cache]
@@ -220,8 +241,7 @@ badger_path = ""
 batch_size = 1000
 cron_schedule = "0 0 * * *"
 
-# Each provider is independently configured.
-# enabled = false → provider is skipped entirely.
+# Domain/URL providers
 [providers.oisd-big]
 enabled = true
 source_url = "https://big.oisd.nl/domainswild2"
@@ -230,12 +250,119 @@ category = "blocklist"
 parser_workers = 4
 parser_batch_size = 1000
 
+[providers.oisd-nsfw]
+enabled = true
+source_url = "https://nsfw.oisd.nl/domainswild"
+cron = "22 6 * * *"
+category = "nsfw"
+parser_workers = 4
+parser_batch_size = 1000
+
+[providers.urlhaus-online]
+enabled = true
+source_url = "https://urlhaus.abuse.ch/downloads/text/"
+cron = "15 */2 * * *"
+category = "malware"
+parser_workers = 4
+parser_batch_size = 1000
+timeout = "90s"
+max_retries = 3
+circuit_breaker = true
+
+[providers.openphish-feed]
+enabled = true
+source_url = "https://openphish.com/feed.txt"
+cron = "30 */4 * * *"
+category = "phishing"
+parser_workers = 4
+parser_batch_size = 1000
+
 [providers.phishtank-online-valid]
 enabled = false
 source_url = "https://data.phishtank.com/data/{api_key}/online-valid.json"
-api_key = ""
+api_key = ""  # Required if enabled
 cron = "45 */6 * * *"
 category = "phishing"
+
+# IOC providers
+[providers.threatfox-online]
+enabled = true
+api_key = "your-threatfox-api-key"
+source_url = "https://threatfox-api.abuse.ch/v2/files/exports/{token}/recent.json"
+dump_source_url = "https://threatfox-api.abuse.ch/v2/files/exports/{token}/full.json.zip"
+cron = "0 */2 * * *"
+category = "threat_intel"
+parser_workers = 4
+parser_batch_size = 1000
+
+[providers.alienvault]
+enabled = true
+url = "https://otx.alienvault.com/api/v1/pulses/subscribed"
+api_key = "your-alienvault-api-key"
+cron = "0 */6 * * *"
+category = "threat_intel"
+parser_workers = 4
+parser_batch_size = 1000
+
+# IP providers
+[providers.abuseipdb]
+enabled = true
+url = "https://api.abuseipdb.com/api/v2/blacklist"
+api_key = "your-abuseipdb-api-key"
+confidence_minimum = 90
+limit = 10000
+cron = "0 0 * * *"
+category = "abuse"
+parser_workers = 4
+parser_batch_size = 1000
+
+[providers.blocklist-de]
+enabled = true
+source_url = "https://lists.blocklist.de/lists/all.txt"
+cron = "0 */15 * * *"
+category = "attacker"
+parser_workers = 4
+parser_batch_size = 1000
+
+[providers.cins-army]
+enabled = true
+source_url = "https://cinsscore.com/list/ci-badguys.txt"
+cron = "*/30 * * * *"
+category = "scanner"
+parser_workers = 4
+parser_batch_size = 1000
+
+[providers.rtbh-turkey]
+enabled = true
+source_url = "https://list.rtbh.com.tr/output.txt"
+cron = "*/30 * * * *"
+category = "government-feed"
+parser_workers = 4
+parser_batch_size = 1000
+
+[providers.greensnow]
+enabled = true
+source_url = "https://blocklist.greensnow.co/greensnow.txt"
+cron = "0 */6 * * *"
+category = "attacker"
+parser_workers = 4
+parser_batch_size = 1000
+
+[providers.tor-exit-nodes]
+enabled = true
+source_url = "https://check.torproject.org/torbulkexitlist"
+cron = "0 */6 * * *"
+category = "tor"
+parser_workers = 4
+parser_batch_size = 1000
+
+[providers.emerging-threats]
+enabled = true
+source_url = "https://rules.emergingthreats.net/blockrules/compromised-ips.txt"
+cron = "0 */12 * * *"
+category = "compromised"
+parser_workers = 4
+parser_batch_size = 1000
 ```
 
 **All provider settings come from `.env.toml` — zero hard-coded URLs, crons, or categories.** API keys are never committed to code; they live in the `api_key` field of the provider block or are injected via environment variables.
@@ -397,7 +524,20 @@ features/
 ├── cache/               # BadgerDB cache layer
 ├── entries/             # Entry model, repository, services
 ├── entry_collector/     # Pond collector (batch writer + cache sync)
-├── providers/           # Provider system (OISD, URLHaus, OpenPhish, PhishTank)
+├── providers/           # Provider system (14 providers)
+│   ├── oisd/            # OISD Big & NSFW domain lists
+│   ├── urlhaus/         # URLHaus malware URLs
+│   ├── openphish/       # OpenPhish phishing feed
+│   ├── phishtank/       # PhishTank phishing feed
+│   ├── threatfox/       # ThreatFox IOC feed
+│   ├── alienvault/      # AlienVault OTX pulses
+│   ├── abuseipdb/       # AbuseIPDB blacklist
+│   ├── blocklistde/     # Blocklist.de attack IPs
+│   ├── cinsarmy/        # CINS Army scanner IPs
+│   ├── rtbh/            # RTBH Turkey
+│   ├── greensnow/       # GreenSnow attack IPs
+│   ├── torexit/          # Tor exit nodes
+│   └── emergingthreats/  # Emerging Threats compromised IPs
 ├── tests/               # Integration tests
 ├── web/                 # Echo handlers, routes, middleware
 └── e2e/                 # Bloom-aware E2E tests (no network)
