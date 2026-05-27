@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"errors"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,6 +16,13 @@ import (
 var (
 	ErrProcessAlreadyRunning = errors.New("a provider process is already running")
 	ErrProcessNotFound       = errors.New("process not found")
+)
+
+// Retry config
+const (
+	retryAttempts   = 3
+	retryBaseDelay  = 100 * time.Millisecond
+	retryMaxDelay   = 500 * time.Millisecond
 )
 
 // ProcessPersistence is the interface for persisting process status to DB.
@@ -65,45 +73,74 @@ func (pm *ProcessManager) SetPersistence(persistence ProcessPersistence) {
 // TryStartProcess attempts to start a new process.
 // Returns the process ID if successful, or an error if a process is already running.
 // Persists to DB if persistence is configured.
+// Uses exponential backoff with jitter for retry attempts.
 func (pm *ProcessManager) TryStartProcess(ctx context.Context, source string, providersToProcess, providersToRemove []string) (string, error) {
-	// Fast path: check if already running without lock
-	if pm.isRunning.Load() {
-		return "", ErrProcessAlreadyRunning
-	}
+	var lastErr error
 
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
+	for attempt := 0; attempt < retryAttempts; attempt++ {
+		// Fast path: check if already running without lock
+		if !pm.isRunning.Load() {
+			pm.mu.Lock()
 
-	// Double-check under lock
-	if pm.isRunning.Load() {
-		return "", ErrProcessAlreadyRunning
-	}
+			// Double-check under lock
+			if !pm.isRunning.Load() {
+				processID := uuid.New().String()
 
-	processID := uuid.New().String()
+				pm.currentProcess = &ProcessStatus{
+					ID:                 processID,
+					Status:             "running",
+					StartTime:          time.Now(),
+					ProvidersProcessed: providersToProcess,
+					ProvidersRemoved:   providersToRemove,
+				}
+				pm.isRunning.Store(true)
 
-	pm.currentProcess = &ProcessStatus{
-		ID:                 processID,
-		Status:             "running",
-		StartTime:          time.Now(),
-		ProvidersProcessed: providersToProcess,
-		ProvidersRemoved:   providersToRemove,
-	}
-	pm.isRunning.Store(true)
+				// Persist to DB if configured
+				if pm.persistence != nil {
+					if err := pm.persistence.InsertProcess(ctx, pm.currentProcess); err != nil {
+						log.Warn().Err(err).Str("process_id", processID).Msg("Failed to persist process start to DB")
+					}
+				}
 
-	// Persist to DB if configured
-	if pm.persistence != nil {
-		if err := pm.persistence.InsertProcess(ctx, pm.currentProcess); err != nil {
-			log.Warn().Err(err).Str("process_id", processID).Msg("Failed to persist process start to DB")
+				log.Info().
+					Str("process_id", processID).
+					Str("source", source).
+					Strs("providers", providersToProcess).
+					Msg("Process started")
+
+				pm.mu.Unlock()
+				return processID, nil
+			}
+
+			pm.mu.Unlock()
+		}
+
+		lastErr = ErrProcessAlreadyRunning
+
+		// Don't wait after last attempt
+		if attempt < retryAttempts-1 {
+			// Exponential backoff with jitter
+			delay := retryBaseDelay * time.Duration(1<<attempt)
+			if delay > retryMaxDelay {
+				delay = retryMaxDelay
+			}
+			// Add jitter (±25%)
+			jitter := time.Duration(rand.Int63n(int64(delay / 4)))
+			delay = delay - jitter/2 + jitter
+
+			// Respect context cancellation
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(delay):
+			}
 		}
 	}
 
-	log.Info().
-		Str("process_id", processID).
-		Str("source", source).
-		Strs("providers", providersToProcess).
-		Msg("Process started")
-
-	return processID, nil
+	log.Warn().
+		Int("attempts", retryAttempts).
+		Msg("Failed to start process after all retry attempts")
+	return "", lastErr
 }
 
 // FinishProcess marks the current process as completed or failed.
