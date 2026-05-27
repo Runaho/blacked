@@ -12,12 +12,14 @@ type BloomSet struct {
 	Type          BloomType
 	Filter        *bloom.BloomFilter
 	SourceFilters map[string]*bloom.BloomFilter
+	sourceOrder   []string // LRU order of source IDs
 	mu            sync.RWMutex
 	expectedItems uint // capacity estimate for per-source filters
+	maxSources    uint // maximum number of source filters to keep (0 = unlimited)
 }
 
 // NewBloomSet creates a BloomSet for a given type.
-func NewBloomSet(t BloomType, expectedItems uint) *BloomSet {
+func NewBloomSet(t BloomType, expectedItems uint, maxSources uint) *BloomSet {
 	if expectedItems < 1000 {
 		expectedItems = 1000
 	}
@@ -25,7 +27,9 @@ func NewBloomSet(t BloomType, expectedItems uint) *BloomSet {
 		Type:          t,
 		Filter:        bloom.NewWithEstimates(expectedItems, 0.01),
 		SourceFilters: make(map[string]*bloom.BloomFilter, 100),
+		sourceOrder:   make([]string, 0, 100),
 		expectedItems: expectedItems,
+		maxSources:    maxSources,
 	}
 }
 
