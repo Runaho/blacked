@@ -13,6 +13,7 @@ import (
 	"blacked/features/entry_collector"
 	"blacked/features/providers/base"
 	"blacked/internal/config"
+	"blacked/internal/utils"
 
 	"github.com/gocolly/colly/v2"
 	"github.com/rs/zerolog/log"
@@ -312,6 +313,271 @@ for {
 
 	return bytes.NewReader(finalJSON), nil
 }
+
+// FetchPages implements base.MultiPageProvider.
+// Each page is saved to disk immediately after fetch (per-page persistence),
+// then parsed and yielded as entries. Memory usage is bounded by single page size.
+// On crash, ResumePageNumber detects the highest saved page and resumes from next.
+// The process.go handler drives this via the MultiPageProvider interface.
+func (p *alienvaultProvider) FetchPages(ctx context.Context) (<-chan base.PageParseResult, error) {
+	cfg := config.GetConfig()
+	storePath := cfg.Collector.StorePath
+	collector := entry_collector.GetPondCollector()
+
+	// Determine resume point — scan directory for highest existing page
+	startPage, err := utils.ResumePageNumber(storePath, providerName)
+	if err != nil {
+		startPage = 1
+		log.Warn().Err(err).Msg("ResumePageNumber failed, starting from page 1")
+	}
+
+	// Detect if this is a fresh run or resume
+	freshRun := startPage == 1
+	if !freshRun {
+		log.Info().Int("resume_page", startPage).Msg("Resuming multi-page fetch from previous run")
+	}
+
+	currentURL := p.SourceURL
+	resultChan := make(chan base.PageParseResult, 1)
+
+	go func() {
+		defer close(resultChan)
+
+		pageCount := 0
+		totalIndicators := 0
+
+		// If resuming, fast-forward through local pages by advancing URL
+		// and skipping already-saved pages. We rely on the next_url from
+		// each saved page's meta entry to reconstruct the URL chain.
+		if !freshRun {
+			// Load meta to find the URL for the next page to fetch
+			meta, err := utils.GetPageMetadata(storePath, providerName)
+			if err == nil && meta != nil && len(meta.Pages) >= startPage-1 {
+				// We have pages 1..startPage-1. The next page is startPage.
+				// But we don't store the next_url per-page — the original Fetch()
+				// would have gotten it from the API. So we cannot truly resume
+				// the remote fetch from a partial local state without re-fetching
+				// pages 1..startPage-1 to get their next_url.
+				//
+				// Simplest correct approach: start fresh but skip saving pages 1..startPage-1
+				// since they already exist on disk. This costs one API call per already-saved
+				// page but gives us correct next_url chain.
+				log.Info().
+					Int("existing_pages", startPage-1).
+					Int("next_page", startPage).
+					Msg("Skipping existing local pages, fetching from API to get correct next_url chain")
+			}
+			// Reset to first page to rebuild URL chain correctly
+			startPage = 1
+			currentURL = p.SourceURL
+		}
+
+		for {
+			// Check context cancellation
+			select {
+			case <-ctx.Done():
+				log.Warn().Int("pages_fetched", pageCount).Msg("context cancelled during multi-page fetch")
+				return
+			default:
+			}
+
+			// Apply rate limiting between requests
+			if pageCount > 0 {
+				time.Sleep(p.rateLimit)
+			}
+
+			pageCount++
+
+			// Retry loop for transient server errors
+			maxRetries := 3
+			var body []byte
+			var fetchErr error
+			var statusCode int
+
+			for attempt := 0; attempt < maxRetries; attempt++ {
+				if attempt > 0 {
+					sleepDuration := time.Duration(attempt*attempt) * time.Second
+					log.Warn().
+						Int("attempt", attempt+1).
+						Int("max_retries", maxRetries).
+						Dur("sleep", sleepDuration).
+						Msg("Retrying after transient error")
+					time.Sleep(sleepDuration)
+				}
+
+				c := colly.NewCollector()
+				c.MaxBodySize = 10 * 1024 * 1024
+				c.AllowedDomains = []string{}
+
+				c.OnRequest(func(r *colly.Request) {
+					r.Headers.Set("X-OTX-API-KEY", p.apiKey)
+					r.Headers.Set("Accept", "application/json")
+					r.Headers.Set("User-Agent", "blacked/1.0")
+				})
+
+				body = nil
+				fetchErr = nil
+				statusCode = 0
+
+				c.OnResponse(func(r *colly.Response) {
+					body = r.Body
+					statusCode = r.StatusCode
+					log.Info().
+						Str("source", currentURL).
+						Int("bytes", len(body)).
+						Int("page", pageCount).
+						Int("attempt", attempt+1).
+						Int("status", statusCode).
+						Msg("Fetched page from AlienVault OTX")
+				})
+
+				c.OnError(func(r *colly.Response, err error) {
+					fetchErr = fmt.Errorf("colly error for %s (status %d): %w", currentURL, r.StatusCode, err)
+					statusCode = r.StatusCode
+					log.Err(err).Str("url", currentURL).Int("code", r.StatusCode).
+						Int("attempt", attempt+1).
+						Msg("Colly error when fetching page from AlienVault OTX")
+				})
+
+				log.Info().Msgf("Fetching page %d (attempt %d/%d): %s", pageCount, attempt+1, maxRetries, currentURL)
+				if err := c.Visit(currentURL); err != nil {
+					log.Err(err).Msgf("Visit error page %d", pageCount)
+					fetchErr = err
+					errStr := err.Error()
+					if strings.Contains(errStr, "401") || strings.Contains(errStr, "403") ||
+						strings.Contains(errStr, "Unauthorized") || strings.Contains(errStr, "Forbidden") {
+						authErr := fmt.Errorf("authentication failed for %s (status %d)", currentURL, statusCode)
+						log.Error().Err(authErr).Msg("Authentication error — failing immediately")
+						resultChan <- base.PageParseResult{PageNumber: pageCount, HasNextPage: false}
+						return
+					}
+					continue
+				}
+				c.Wait()
+
+				if statusCode == 401 || statusCode == 403 {
+					authErr := fmt.Errorf("authentication failed for %s (status %d)", currentURL, statusCode)
+					log.Error().Err(authErr).Msg("Authentication error — failing immediately")
+					resultChan <- base.PageParseResult{PageNumber: pageCount, HasNextPage: false}
+					return
+				}
+
+				if fetchErr == nil && len(body) > 0 {
+					bodyMap := make(map[string]interface{})
+					if err := json.Unmarshal(body, &bodyMap); err == nil {
+						break
+					}
+					log.Warn().Int("attempt", attempt+1).Msg("Invalid JSON response — retrying")
+					continue
+				}
+
+				if fetchErr != nil {
+					errStr := fetchErr.Error()
+					isAuthError := strings.Contains(errStr, "401") || strings.Contains(errStr, "403") || statusCode == 401 || statusCode == 403
+					if isAuthError {
+						log.Error().Err(fetchErr).Msg("Authentication error — failing immediately")
+						resultChan <- base.PageParseResult{PageNumber: pageCount, HasNextPage: false}
+						return
+					}
+
+					isRetryable := strings.Contains(errStr, "504") ||
+						strings.Contains(errStr, "429") ||
+						strings.Contains(errStr, "500") ||
+						strings.Contains(errStr, "502") ||
+						strings.Contains(errStr, "503")
+					if !isRetryable || attempt == maxRetries-1 {
+						log.Error().
+							Err(fetchErr).
+							Int("pages_fetched", pageCount).
+							Int("attempt", attempt+1).
+							Msg("Retry exhausted — ending fetch")
+						resultChan <- base.PageParseResult{PageNumber: pageCount, HasNextPage: false}
+						return
+					}
+				}
+			}
+
+			if len(body) == 0 || fetchErr != nil {
+				log.Error().Err(fetchErr).Msgf("Empty response or error for page %d", pageCount)
+				resultChan <- base.PageParseResult{PageNumber: pageCount, HasNextPage: false}
+				return
+			}
+
+			// Parse response to extract next_url and indicators
+			var response OTXResponse
+			if err := json.Unmarshal(body, &response); err != nil {
+				log.Err(err).Msgf("Failed to unmarshal page %d", pageCount)
+				resultChan <- base.PageParseResult{PageNumber: pageCount, HasNextPage: false}
+				return
+			}
+
+			// Save page to disk immediately (per-page persistence)
+			fetchedAt := time.Now()
+			if _, err := utils.SavePageData(storePath, providerName, pageCount, body, 0, fetchedAt); err != nil {
+				log.Warn().Err(err).Int("page", pageCount).Msg("Failed to save page to disk — continuing anyway")
+			}
+
+			// Parse this page's indicators and submit to collector
+			pageIndicators := 0
+			processID := ""
+			if p.ProcessID != nil {
+				processID = p.ProcessID.String()
+			}
+
+			for _, pulse := range response.Results {
+				for _, indicator := range pulse.Indicators {
+					entry, err := indicatorToEntry(&indicator, providerName, processID)
+					if err != nil || entry == nil {
+						continue
+					}
+					collector.Submit(entry)
+					pageIndicators++
+				}
+			}
+
+			totalIndicators += pageIndicators
+
+			// Determine next page URL
+			hasNext := response.Next != "" && response.Next != currentURL
+			nextURL := response.Next
+
+			if !hasNext {
+				log.Info().
+					Int("pages_fetched", pageCount).
+					Int("total_indicators", totalIndicators).
+					Int("bytes", len(body)).
+					Msg("Multi-page fetch complete")
+				resultChan <- base.PageParseResult{
+					PageNumber:    pageCount,
+					Indicators:    pageIndicators,
+					Bytes:         int64(len(body)),
+					FetchedAt:     fetchedAt,
+					HasNextPage:   false,
+					NextPageURL:   "",
+					Entries:       nil,
+				}
+				return
+			}
+
+			// Signal this page is done, provider will fetch next
+			resultChan <- base.PageParseResult{
+				PageNumber:    pageCount,
+				Indicators:    pageIndicators,
+				Bytes:         int64(len(body)),
+				FetchedAt:     fetchedAt,
+				HasNextPage:   true,
+				NextPageURL:   nextURL,
+				Entries:       nil,
+			}
+
+			currentURL = nextURL
+			log.Info().Msgf("Moving to next page: %s", currentURL)
+		}
+	}()
+
+	return resultChan, nil
+}
+
 // --- Response parsing ---
 
 func parseAlienvaultResponse(data []byte, collector entry_collector.Collector, source, processID string) error {

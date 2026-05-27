@@ -35,6 +35,7 @@ type ResponseMetadata struct {
 	CreatedAt time.Time `json:"created_at"`
 	// You can add more metadata fields here in the future if needed.
 	Description string `json:"description,omitempty"` // Example of storing a description
+	Bytes       int64  `json:"bytes,omitempty"`       // Size of the response in bytes
 }
 
 func GetResponseReader(sourceURL string, fetchFunc func() (io.Reader, error), providerName string, processID string, cacheTTL time.Duration) (io.Reader, *ResponseMetadata, error) {
@@ -127,10 +128,12 @@ func saveResponseToFile(dataFilename string, metaFilename string, data io.Reader
 	}
 	defer dataFile.Close()
 
-	if _, err := io.Copy(dataFile, data); err != nil { // Copy from io.Reader to file
+	bytesWritten, err := io.Copy(dataFile, data) // Copy from io.Reader to file
+	if err != nil { // Copy from io.Reader to file
 		log.Err(err).Str("file", dataFilename).Msg("Failed to write response data to file")
 		return ErrWriteResponseData
 	}
+	metadata.Bytes = bytesWritten
 
 	metaJSON, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
