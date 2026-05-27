@@ -38,7 +38,7 @@ func NewBloomManager(expectedItemsPerSet uint) *BloomManager {
 	}
 
 	for _, t := range allTypes {
-		bm.sets[t] = NewBloomSet(t, expectedItemsPerSet)
+		bm.sets[t] = NewBloomSet(t, expectedItemsPerSet, 0)
 	}
 
 	return bm

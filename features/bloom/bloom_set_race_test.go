@@ -8,7 +8,7 @@ import (
 // TestResetSourceRaceCondition tests that ResetSource doesn't cause race conditions
 // when concurrent Test() calls are happening.
 func TestResetSourceRaceCondition(t *testing.T) {
-	bs := NewBloomSet(BloomDomain, 1000)
+	bs := NewBloomSet(BloomDomain, 1000, 0)
 	
 	// Add some initial data
 	bs.Add("source1", "test1.example.com")
