@@ -213,7 +213,7 @@ func (b *BaseProvider) FetchWithContext(ctx context.Context) (io.Reader, error) 
 		
 		var responseBody []byte
 		var fetchErr error
-		c := b.CollyClient.Clone()
+		c := colly.NewCollector()
 		
 		// Apply timeout from resilience config
 		c.SetRequestTimeout(resCfg.Timeout)
