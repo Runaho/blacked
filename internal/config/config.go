@@ -42,6 +42,7 @@ type CollectorConfig struct {
 	CronSchedule   string `koanf:"cron_schedule" default:"0 0 0 * * *"`
 	StoreResponses bool   `koanf:"store_responses" default:"true"`
 	StorePath      string `koanf:"store_path" default:"./responses"`
+	RetentionDays  int    `koanf:"retention_days" default:"30"`
 }
 
 type ProviderOptions struct {

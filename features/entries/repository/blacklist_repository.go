@@ -4,6 +4,7 @@ import (
 	"blacked/features/entries"
 	"blacked/features/entries/enums"
 	"context"
+	"time"
 )
 
 // BlacklistRepository interface defines the data access methods for blacklist entries.
@@ -25,4 +26,5 @@ type BlacklistRepository interface {
 	QueryLink(ctx context.Context, link string) ([]entries.Hit, error)
 	QueryLinkByType(ctx context.Context, link string, queryType *enums.QueryType) ([]entries.Hit, error)
 	QueryExactURLMatch(ctx context.Context, normalizedLink string) []entries.Hit
+	HardDeleteOlderThan(ctx context.Context, cutoff time.Time) error
 }

@@ -44,11 +44,11 @@ func NewSQLiteRepository(db *sql.DB) *SQLiteRepository {
 func (r *SQLiteRepository) StreamEntriesCount(ctx context.Context) (int, error) {
 	query := `
 	SELECT
-        COUNT(DISTINCT source_url)
-    FROM
-        entries
-    WHERE
-        deleted_at IS NULL;
+		COUNT(DISTINCT source_url)
+	FROM
+		entries
+	WHERE
+		deleted_at IS NULL;
 	`
 
 	row := r.db.QueryRowContext(ctx, query)
@@ -63,11 +63,11 @@ func (r *SQLiteRepository) StreamEntriesCount(ctx context.Context) (int, error) 
 func (r *SQLiteRepository) StreamEntriesCountBySource(ctx context.Context, source string) (int, error) {
 	query := `
 	SELECT
-        COUNT(DISTINCT source_url)
-    FROM
-        entries
-    WHERE
-        deleted_at IS NULL AND source = ?;
+		COUNT(DISTINCT source_url)
+	FROM
+		entries
+	WHERE
+		deleted_at IS NULL AND source = ?;
 	`
 
 	row := r.db.QueryRowContext(ctx, query, source)
@@ -96,15 +96,15 @@ func (r *SQLiteRepository) StreamEntries(ctx context.Context, out chan<- entries
 
 	query := `
 	SELECT
-        source_url,
-        GROUP_CONCAT(id, ',') as ids
-    FROM
-    	entries
-    WHERE
-        deleted_at IS NULL
-    GROUP BY
-    	source_url;
-    `
+		source_url,
+		GROUP_CONCAT(id, ',') as ids
+	FROM
+		entries
+	WHERE
+		deleted_at IS NULL
+	GROUP BY
+		source_url;
+	`
 
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
@@ -468,22 +468,22 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []*entr
 	defer tx.Rollback()
 
 	stmt, err := tx.PrepareContext(ctx, `
-        INSERT INTO entries (
-            id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, category, confidence, created_at, updated_at, deleted_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
-        ON CONFLICT (source_url, source, host) DO UPDATE SET
-            process_id = EXCLUDED.process_id,
-            scheme = EXCLUDED.scheme,
-            domain = EXCLUDED.domain,
-            host = EXCLUDED.host,
-            sub_domains = EXCLUDED.sub_domains,
-            path = EXCLUDED.path,
-            raw_query = EXCLUDED.raw_query,
-            category = EXCLUDED.category,
-            confidence = EXCLUDED.confidence,
-            updated_at = EXCLUDED.updated_at,
-            deleted_at = NULL
-    `)
+		INSERT INTO entries (
+			id, process_id, scheme, domain, host, sub_domains, path, raw_query, source_url, source, category, confidence, created_at, updated_at, deleted_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+		ON CONFLICT (source_url, source, host) DO UPDATE SET
+			process_id = EXCLUDED.process_id,
+			scheme = EXCLUDED.scheme,
+			domain = EXCLUDED.domain,
+			host = EXCLUDED.host,
+			sub_domains = EXCLUDED.sub_domains,
+			path = EXCLUDED.path,
+			raw_query = EXCLUDED.raw_query,
+			category = EXCLUDED.category,
+			confidence = EXCLUDED.confidence,
+			updated_at = EXCLUDED.updated_at,
+			deleted_at = NULL
+	`)
 	if err != nil {
 		log.Err(err).Msg("Failed to prepare batch insert statement")
 		return ErrTxPrepare
@@ -504,8 +504,8 @@ func (r *SQLiteRepository) BatchSaveEntries(ctx context.Context, entries []*entr
 
 		_, err := stmt.ExecContext(ctx,
 			entry.ID, entry.ProcessID, entry.Scheme, entry.Domain, entry.Host, subDomainsStr,
-		entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Category, entry.Confidence,
-		entry.CreatedAt, entry.UpdatedAt,
+			entry.Path, entry.RawQuery, entry.SourceURL, entry.Source, entry.Category, entry.Confidence,
+			entry.CreatedAt, entry.UpdatedAt,
 		)
 		if err != nil {
 			log.Error().Err(err).Str("entry_id", entry.ID).Str("source_url", entry.SourceURL).Msg("Error executing batch statement for entry")
@@ -920,4 +920,37 @@ func (r *SQLiteRepository) queryPathMatch(ctx context.Context, path string) []en
 	log.Debug().Dur("duration", time.Since(startTime)).Str("match_type", "PATH").Msg("Path match query completed")
 
 	return hits
+}
+
+// HardDeleteOlderThan permanently deletes entries that were soft-deleted before the cutoff time
+func (r *SQLiteRepository) HardDeleteOlderThan(ctx context.Context, cutoff time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		log.Err(err).Msg("Failed to begin transaction for HardDeleteOlderThan")
+		return ErrTx
+	}
+	defer tx.Rollback()
+
+	cutoffUnix := cutoff.UnixNano()
+	result, err := tx.ExecContext(ctx, `
+		DELETE FROM entries 
+		WHERE deleted_at < ? AND deleted_at IS NOT NULL
+	`, cutoffUnix)
+
+	if err != nil {
+		log.Error().Err(err).Time("cutoff", cutoff).Msg("Failed to hard delete entries older than cutoff")
+		return ErrDelete
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to get rows affected count during HardDeleteOlderThan")
+	} else {
+		log.Info().
+			Int64("rows_deleted", rowsAffected).
+			Time("cutoff", cutoff).
+			Msg("Hard deleted entries older than cutoff")
+	}
+
+	return tx.Commit()
 }
