@@ -677,6 +677,18 @@ func (c *PondCollector) RemoveStaleEntriesAndSyncBloom(ctx context.Context, prov
 		Str("process_id", processID).
 		Msg("Bloom filter rebuild completed")
 
+	// Hard delete entries older than the retention period
+	retentionDays := config.GetConfig().Collector.RetentionDays
+	cutoff := time.Now().AddDate(0, 0, -retentionDays)
+	if err := c.repo.HardDeleteOlderThan(ctx, cutoff); err != nil {
+		log.Error().Err(err).
+			Str("provider", providerName).
+			Str("process_id", processID).
+			Int("retention_days", retentionDays).
+			Msg("Failed to hard delete entries older than retention period")
+		return err
+	}
+
 	return nil
 }
 
