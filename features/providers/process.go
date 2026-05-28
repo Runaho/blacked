@@ -199,6 +199,9 @@ func (p Providers) processProvider(
 	startedAt := time.Now()
 	strProcessID := processID.String()
 
+	// Get ProcessManager for per-provider status updates
+	pm := GetProcessManager()
+
 	// Start tracing span
 	tracer := otel.Tracer("blacked/providers")
 	ctx, span := tracer.Start(ctx, "provider.process",
@@ -209,6 +212,9 @@ func (p Providers) processProvider(
 		),
 	)
 	defer span.End()
+
+	// Update provider status to running
+	pm.UpdateProviderStatus(name, "running", "fetching_page", 0, 0, 0, 0, nil, 0)
 
 	// Track metrics if enabled in Prometheus
 	if trackMetrics {
@@ -261,6 +267,10 @@ func (p Providers) processProvider(
 			Str("provider", name).
 			Msg("Error fetching data")
 
+		// Update provider status to error
+		errStr := err.Error()
+		pm.UpdateProviderStatus(name, "error", "failed", 0, 0, 0, 0, &errStr, 0)
+
 		// Update per-provider metrics on failure
 		if trackMetrics {
 			mc, _ := collector.GetMetricsCollector()
@@ -276,13 +286,22 @@ func (p Providers) processProvider(
 	}
 	span.AddEvent("data fetched successfully")
 
+	// Record bytes transferred for fetch
+	var bytesTransferred int64
+	if meta != nil {
+		bytesTransferred = meta.Bytes
+	}
+
+	// Update provider status to parsing phase
+	pm.UpdateProviderStatus(name, "running", "parsing", 0, 0, bytesTransferred, 0, nil, 0)
+
 	// Record success + bytes + duration for the HTTP fetch
 	if trackMetrics {
 		mc, _ := collector.GetMetricsCollector()
 		if mc != nil {
 			mc.RecordProviderRequest(name, "success")
-			if meta != nil && meta.Bytes > 0 {
-				mc.RecordProviderBytesTransferred(name, meta.Bytes)
+			if bytesTransferred > 0 {
+				mc.RecordProviderBytesTransferred(name, bytesTransferred)
 			}
 			mc.RecordProviderFetchDuration(name, time.Since(fetchStart))
 		}
@@ -305,6 +324,9 @@ func (p Providers) processProvider(
 	// Start tracking provider metrics in the pond collector
 	pondCollector.StartProviderProcessing(name, strProcessID)
 
+	// Update provider status to writing_db phase
+	pm.UpdateProviderStatus(name, "running", "writing_db", 0, 0, bytesTransferred, 0, nil, 0)
+
 	// Parse the data - this delegates to the provider's implementation
 	span.AddEvent("parsing provider data")
 	if err := provider.Parse(reader); err != nil {
@@ -315,6 +337,10 @@ func (p Providers) processProvider(
 			Str("source", source).
 			Str("provider", name).
 			Msg("Error parsing data")
+
+		// Update provider status to error
+		errStr := err.Error()
+		pm.UpdateProviderStatus(name, "error", "failed", 0, 0, bytesTransferred, 0, &errStr, 0)
 
 		// Finish tracking in the collector
 		pondCollector.FinishProviderProcessing(name, strProcessID)
@@ -352,6 +378,9 @@ func (p Providers) processProvider(
 	if cfg.APP.Environment == "development" {
 		utils.RemoveStoredResponse(name)
 	}
+
+	// Update provider status to completed
+	pm.UpdateProviderStatus(name, "done", "completed", 0, 0, bytesTransferred, 0, nil, entriesProcessed)
 
 	// Update Prometheus metrics on success
 	if trackMetrics {
@@ -394,6 +423,9 @@ func (p Providers) processMultiPageProvider(
 	cfg := config.GetConfig()
 	storePath := cfg.Collector.StorePath
 
+	// Get ProcessManager for per-provider status updates
+	pm := GetProcessManager()
+
 	// Start tracing span
 	tracer := otel.Tracer("blacked/providers")
 	ctx, span := tracer.Start(ctx, "provider.process.multipage",
@@ -403,6 +435,9 @@ func (p Providers) processMultiPageProvider(
 		),
 	)
 	defer span.End()
+
+	// Update provider status to running
+	pm.UpdateProviderStatus(name, "running", "fetching_page", 0, 0, 0, 0, nil, 0)
 
 	// Track metrics
 	if trackMetrics {
@@ -447,6 +482,9 @@ func (p Providers) processMultiPageProvider(
 			totalIndicators += result.Indicators
 			totalBytes += result.Bytes
 
+			// Update provider status with page progress
+			pm.UpdateProviderStatus(name, "running", "fetching_page", pageCount, 0, totalBytes, 0, nil, totalIndicators)
+
 			// Record per-page metrics
 			if trackMetrics {
 				mc, _ := collector.GetMetricsCollector()
@@ -482,6 +520,14 @@ func (p Providers) processMultiPageProvider(
 
 done:
 	entriesProcessed, processingTime, _ := pondCollector.FinishProviderProcessing(name, strProcessID)
+
+	// Update provider status based on outcome
+	if lastErr != nil {
+		errStr := lastErr.Error()
+		pm.UpdateProviderStatus(name, "error", "failed", pageCount, pageCount, totalBytes, 0, &errStr, entriesProcessed)
+	} else {
+		pm.UpdateProviderStatus(name, "done", "completed", pageCount, pageCount, totalBytes, 0, nil, entriesProcessed)
+	}
 
 	// Remove stale entries and sync bloom after provider finishes
 	if err := pondCollector.RemoveStaleEntriesAndSyncBloom(context.Background(), name, strProcessID); err != nil {

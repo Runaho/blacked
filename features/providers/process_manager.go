@@ -86,10 +86,23 @@ func (pm *ProcessManager) TryStartProcess(ctx context.Context, source string, pr
 			if !pm.isRunning.Load() {
 				processID := uuid.New().String()
 
+				// Initialize per-provider status tracking
+				providerStatuses := make([]*ProviderStatus, 0, len(providersToProcess))
+				now := time.Now()
+				for _, name := range providersToProcess {
+					providerStatuses = append(providerStatuses, &ProviderStatus{
+						Name:          name,
+						Status:        "pending",
+						CurrentAction: "pending",
+						StartedAt:     &now,
+					})
+				}
+
 				pm.currentProcess = &ProcessStatus{
 					ID:                 processID,
 					Status:             "running",
-					StartTime:          time.Now(),
+					StartTime:          now,
+					Providers:          providerStatuses,
 					ProvidersProcessed: providersToProcess,
 					ProvidersRemoved:   providersToRemove,
 				}
@@ -254,6 +267,54 @@ func (pm *ProcessManager) GetRecentProcesses(limit int) []*ProcessStatus {
 	}
 
 	return result
+}
+
+// GetProviderStatus returns the status of a specific provider within the current process
+func (pm *ProcessManager) GetProviderStatus(providerName string) *ProviderStatus {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	if pm.currentProcess == nil {
+		return nil
+	}
+
+	for _, ps := range pm.currentProcess.Providers {
+		if ps.Name == providerName {
+			return ps
+		}
+	}
+	return nil
+}
+
+// UpdateProviderStatus updates the status of a specific provider within the current process
+func (pm *ProcessManager) UpdateProviderStatus(providerName string, status string, currentAction string, pageCurrent int, pageTotal int, bytesTransferred int64, retryCount int, lastError *string, entriesProcessed int) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	if pm.currentProcess == nil {
+		return
+	}
+
+	now := time.Now()
+	for _, ps := range pm.currentProcess.Providers {
+		if ps.Name == providerName {
+			ps.Status = status
+			ps.CurrentAction = currentAction
+			ps.PageCurrent = pageCurrent
+			ps.PageTotal = pageTotal
+			ps.BytesTransferred = bytesTransferred
+			ps.RetryCount = retryCount
+			ps.LastError = lastError
+			ps.EntriesProcessed = entriesProcessed
+			if status == "running" && ps.StartedAt == nil {
+				ps.StartedAt = &now
+			}
+			if status == "done" || status == "error" || status == "skipped" {
+				ps.CompletedAt = &now
+			}
+			return
+		}
+	}
 }
 
 // ResetForTesting resets the process manager state (for tests only)

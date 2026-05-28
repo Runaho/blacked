@@ -179,12 +179,15 @@ func (s *ProviderProcessService) GetProcessStatus(ctx context.Context, processID
 }
 
 func (s *ProviderProcessService) ListProcesses(ctx context.Context) ([]*providers.ProcessStatus, error) {
+	startTime := time.Now()
+
 	// Get processes from database
 	dbStatuses, err := s.repo.ListProcesses(ctx)
 	if err != nil {
 		log.Err(err).Msg("Failed to list processes")
 		return nil, ErrListProcesses
 	}
+	dbElapsed := time.Since(startTime)
 
 	// Create a map of DB process IDs for quick lookup
 	dbProcessIDs := make(map[string]bool)
@@ -193,8 +196,10 @@ func (s *ProviderProcessService) ListProcesses(ctx context.Context) ([]*provider
 	}
 
 	// Get in-memory processes (current + recent history) from ProcessManager
+	pmStart := time.Now()
 	pm := providers.GetProcessManager()
 	inMemoryProcesses := pm.GetRecentProcesses(50) // Get up to 50 recent processes
+	pmElapsed := time.Since(pmStart)
 
 	// Initialize result as empty slice (not nil) so JSON returns [] instead of null
 	result := make([]*providers.ProcessStatus, 0)
@@ -208,6 +213,16 @@ func (s *ProviderProcessService) ListProcesses(ctx context.Context) ([]*provider
 
 	// Append DB processes
 	result = append(result, dbStatuses...)
+
+	totalElapsed := time.Since(startTime)
+	log.Info().
+		Dur("db_query_time", dbElapsed).
+		Dur("pm_query_time", pmElapsed).
+		Dur("total_time", totalElapsed).
+		Int("in_memory_count", len(inMemoryProcesses)).
+		Int("db_count", len(dbStatuses)).
+		Int("total_count", len(result)).
+		Msg("ListProcesses completed")
 
 	return result, nil
 }
