@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -127,7 +128,7 @@ func (p *alienvaultProvider) Fetch() (io.Reader, error) {
 	pageCount := 0
 	totalIndicators := 0
 
-for {
+	for {
 		// Apply rate limiting between requests
 		if pageCount > 0 {
 			time.Sleep(p.rateLimit)
@@ -346,30 +347,76 @@ func (p *alienvaultProvider) FetchPages(ctx context.Context) (<-chan base.PagePa
 		pageCount := 0
 		totalIndicators := 0
 
-		// If resuming, fast-forward through local pages by advancing URL
-		// and skipping already-saved pages. We rely on the next_url from
-		// each saved page's meta entry to reconstruct the URL chain.
+		// If resuming, read pages from disk and parse them, then continue from network.
+		// Skip rate limit for disk reads. Use stored next_url to resume correctly.
 		if !freshRun {
-			// Load meta to find the URL for the next page to fetch
 			meta, err := utils.GetPageMetadata(storePath, providerName)
-			if err == nil && meta != nil && len(meta.Pages) >= startPage-1 {
-				// We have pages 1..startPage-1. The next page is startPage.
-				// But we don't store the next_url per-page — the original Fetch()
-				// would have gotten it from the API. So we cannot truly resume
-				// the remote fetch from a partial local state without re-fetching
-				// pages 1..startPage-1 to get their next_url.
-				//
-				// Simplest correct approach: start fresh but skip saving pages 1..startPage-1
-				// since they already exist on disk. This costs one API call per already-saved
-				// page but gives us correct next_url chain.
-				log.Info().
-					Int("existing_pages", startPage-1).
-					Int("next_page", startPage).
-					Msg("Skipping existing local pages, fetching from API to get correct next_url chain")
+			if err != nil || meta == nil || len(meta.Pages) < startPage-1 {
+				log.Warn().
+					Err(err).
+					Int("start_page", startPage).
+					Int("meta_pages", func() int { if meta == nil { return 0 }; return len(meta.Pages) }()).
+					Msg("Cannot read meta or not enough pages — falling back to network fetch from start")
+				startPage = 1
+				currentURL = p.SourceURL
+			} else {
+				// Reconstruct URL chain from stored next_page_urls.
+				// Read pages 1..startPage-1 from disk, parse and submit entries.
+				for i := 1; i < startPage; i++ {
+					pageInfo := meta.Pages[i-1]
+					pagePath := storePath + "/" + providerName + "/" + pageInfo.File
+					data, err := os.ReadFile(pagePath)
+					if err != nil {
+						log.Warn().Err(err).Int("page", i).Msg("Failed to read page from disk — skipping")
+						continue
+					}
+
+					var response OTXResponse
+					if err := json.Unmarshal(data, &response); err != nil {
+						log.Warn().Err(err).Int("page", i).Msg("Failed to unmarshal page from disk — skipping")
+						continue
+					}
+
+					pageIndicators := 0
+					processID := ""
+					if p.ProcessID != nil {
+						processID = p.ProcessID.String()
+					}
+					for _, pulse := range response.Results {
+						for _, indicator := range pulse.Indicators {
+							entry, err := indicatorToEntry(&indicator, providerName, processID)
+							if err != nil || entry == nil {
+								continue
+							}
+							collector.Submit(entry)
+							pageIndicators++
+						}
+					}
+					pageCount++
+					totalIndicators += pageIndicators
+
+					log.Info().
+						Int("page", i).
+						Int("indicators", pageIndicators).
+						Str("next_url", pageInfo.NextPageURL).
+						Msg("Processed page from disk")
+				}
+
+				// Set currentURL for the next network fetch.
+				// Use stored next_page_url from the last disk page if available,
+				// otherwise fall back to SourceURL (network will detect if more pages exist).
+				lastPageInfo := meta.Pages[startPage-2]
+				if lastPageInfo.NextPageURL != "" {
+					currentURL = lastPageInfo.NextPageURL
+					log.Info().Str("resume_url", currentURL).Msg("Resuming from stored next_page_url")
+				} else {
+					// Disk page has no next_url — it may be the last page of a previous run,
+					// or the previous run was interrupted before the next_url was stored.
+					// Resume from SourceURL and let the API decide if there are more pages.
+					currentURL = p.SourceURL
+					log.Info().Msg("No stored next_page_url — resuming from SourceURL")
+				}
 			}
-			// Reset to first page to rebuild URL chain correctly
-			startPage = 1
-			currentURL = p.SourceURL
 		}
 
 		for {
@@ -381,7 +428,8 @@ func (p *alienvaultProvider) FetchPages(ctx context.Context) (<-chan base.PagePa
 			default:
 			}
 
-			// Apply rate limiting between requests
+			// Apply rate limiting between network requests only (pageCount already
+			// accounts for disk pages when resuming).
 			if pageCount > 0 {
 				time.Sleep(p.rateLimit)
 			}
@@ -511,9 +559,10 @@ func (p *alienvaultProvider) FetchPages(ctx context.Context) (<-chan base.PagePa
 				return
 			}
 
-			// Save page to disk immediately (per-page persistence)
+			// Save page to disk immediately (per-page persistence), including next_page_url
 			fetchedAt := time.Now()
-			if _, err := utils.SavePageData(storePath, providerName, pageCount, body, 0, fetchedAt); err != nil {
+			nextPageURL := response.Next
+			if _, err := utils.SavePageData(storePath, providerName, pageCount, body, 0, fetchedAt, nextPageURL); err != nil {
 				log.Warn().Err(err).Int("page", pageCount).Msg("Failed to save page to disk — continuing anyway")
 			}
 
@@ -537,11 +586,35 @@ func (p *alienvaultProvider) FetchPages(ctx context.Context) (<-chan base.PagePa
 
 			totalIndicators += pageIndicators
 
-			// Determine next page URL
+			// Determine if there is a next page.
+			// response.Next == "" means no more pages. But if currentURL != p.SourceURL
+			// (i.e., we resumed from a stored next_url), empty response.Next means
+			// the previous fetch was interrupted mid-page — we should NOT treat this as done.
 			hasNext := response.Next != "" && response.Next != currentURL
 			nextURL := response.Next
 
 			if !hasNext {
+				// If we are on a resumed URL (not the first page) and the response has no next_url,
+				// this page was already fetched — the previous run stored it with next_url="".
+				// It is not a new page, so we are done.
+				if pageCount >= startPage && currentURL != p.SourceURL {
+					log.Info().
+						Int("pages_fetched", pageCount).
+						Int("total_indicators", totalIndicators).
+						Int("bytes", len(body)).
+						Msg("Multi-page fetch complete")
+					resultChan <- base.PageParseResult{
+						PageNumber:    pageCount,
+						Indicators:    pageIndicators,
+						Bytes:         int64(len(body)),
+						FetchedAt:     fetchedAt,
+						HasNextPage:   false,
+						NextPageURL:   "",
+						Entries:       nil,
+					}
+					return
+				}
+				// Fresh run or first page: no more pages from API
 				log.Info().
 					Int("pages_fetched", pageCount).
 					Int("total_indicators", totalIndicators).
