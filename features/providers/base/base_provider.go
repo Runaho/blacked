@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"blacked/features/entries"
 	"blacked/features/entries/repository"
 	"blacked/features/entry_collector"
 	"blacked/internal/config"
@@ -39,6 +40,32 @@ var (
 	ErrProcessIDNotSet = errors.New("process ID not set")
 )
 
+// MultiPageProvider is implemented by providers that fetch data in multiple pages.
+// Per-page persistence is used: each page is saved to disk as page_NNN.dat immediately
+// after fetch, and parsing happens incrementally. This bounds memory usage to a single
+// page (~100KB) regardless of total page count.
+type MultiPageProvider interface {
+	// FetchPages yields parsed entries from each page until all pages are exhausted
+	// or the context is cancelled. Each yielded page's entries have already been
+	// submitted to the collector. Closing the channel means the provider is done
+	// (either success or terminal error — not a partial yield that can be resumed).
+	FetchPages(ctx context.Context) (<-chan PageParseResult, error)
+}
+
+// PageParseResult holds the entries parsed from a single page, plus metadata.
+type PageParseResult struct {
+	PageNumber    int
+	Indicators    int    // count of entries yielded
+	Bytes         int64  // bytes transferred for this page
+	FetchedAt     time.Time
+	HasNextPage   bool
+	NextPageURL   string
+	Entries       []*entries.Entry
+}
+
+// Provider defines the interface for all data providers.
+// Single-page providers implement Fetch() only.
+// Multi-page providers additionally implement MultiPageProvider.
 type Provider interface {
 	GetName() string
 	Source() string

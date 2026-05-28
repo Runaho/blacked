@@ -51,6 +51,12 @@ type MetricsCollector struct {
 	QueueHighWatermark  *prometheus.GaugeVec   // High watermark (peak queue depth)
 	BackpressureEvents  *prometheus.CounterVec // Count of backpressure activation events
 	QueueDroppedBatches *prometheus.CounterVec // Count of batches dropped due to saturation
+
+	// Per-provider fetch metrics
+	ProviderRequestsTotal      *prometheus.CounterVec   // HTTP requests made per provider, labeled by status (success/failure)
+	ProviderPagesFetchedTotal  *prometheus.CounterVec   // Pages fetched per provider (for multi-page providers like AlienVault)
+	ProviderBytesTransferredTotal *prometheus.CounterVec // Bytes downloaded per provider
+	ProviderFetchDurationSeconds *prometheus.HistogramVec // Fetch time histogram per provider
 }
 
 func GetMetricsCollector() (*MetricsCollector, error) {
@@ -177,6 +183,28 @@ func NewMetricsCollector(providerNames []string) *MetricsCollector {
 				Name: "blacked_queue_dropped_batches_total",
 				Help: "Number of batches dropped due to queue saturation.",
 			}, nil),
+
+			// Per-provider fetch metrics
+			ProviderRequestsTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: "blacked_provider_requests_total",
+				Help: "Total number of HTTP requests made per provider, labeled by status.",
+			}, []string{"provider", "status"}),
+
+			ProviderPagesFetchedTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: "blacked_provider_pages_fetched_total",
+				Help: "Total number of pages fetched per provider (for multi-page providers like AlienVault).",
+			}, []string{"provider"}),
+
+			ProviderBytesTransferredTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: "blacked_provider_bytes_transferred_total",
+				Help: "Total bytes downloaded per provider.",
+			}, []string{"provider"}),
+
+			ProviderFetchDurationSeconds: promauto.NewHistogramVec(prometheus.HistogramOpts{
+				Name:    "blacked_provider_fetch_duration_seconds",
+				Help:    "HTTP fetch duration histogram per provider.",
+				Buckets: []float64{0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30},
+			}, []string{"provider"}),
 		}
 		// Populate _mc’s providerMetrics
 		for _, name := range providerNames {
@@ -200,7 +228,13 @@ func (mc *MetricsCollector) GetProviderMetrics(providerName string) *ProviderMet
 
 // SetSyncRunning - Now updates Prometheus counter and status
 func (mc *MetricsCollector) SetSyncRunning(providerName string) {
+	if mc == nil {
+		return
+	}
 	metrics := mc.GetProviderMetrics(providerName)
+	if metrics == nil {
+		return
+	}
 	metrics.SyncStatus = "running"
 	mc.syncCount.With(prometheus.Labels{"provider": providerName}).Inc()     // Increment sync count in Prometheus.
 	mc.syncDuration.With(prometheus.Labels{"provider": providerName}).Set(0) // Reset duration gauge for new run
@@ -208,7 +242,13 @@ func (mc *MetricsCollector) SetSyncRunning(providerName string) {
 
 // SetSyncSuccess - Update Prometheus counter and status
 func (mc *MetricsCollector) SetSyncSuccess(providerName string, duration time.Duration) {
+	if mc == nil {
+		return
+	}
 	metrics := mc.GetProviderMetrics(providerName)
+	if metrics == nil {
+		return
+	}
 	metrics.SyncStatus = "success"
 	mc.syncSuccessCount.With(prometheus.Labels{"provider": providerName}).Inc()               // Increment success count
 	mc.syncDuration.With(prometheus.Labels{"provider": providerName}).Set(duration.Seconds()) // Set duration gauge in seconds
@@ -324,4 +364,27 @@ func (mc *MetricsCollector) RecordBackpressureEvent() {
 // RecordDroppedBatch increments the dropped batch counter and returns true if counter was updated.
 func (mc *MetricsCollector) RecordDroppedBatch(batchSize int) {
 	mc.QueueDroppedBatches.With(nil).Add(float64(batchSize))
+}
+
+// -- Per-provider fetch metrics helpers --
+
+// RecordProviderRequest increments the HTTP request counter with status label.
+// status should be "success" or "failure".
+func (mc *MetricsCollector) RecordProviderRequest(providerName, status string) {
+	mc.ProviderRequestsTotal.With(prometheus.Labels{"provider": providerName, "status": status}).Inc()
+}
+
+// RecordProviderPagesFetched increments the pages-fetched counter for multi-page providers.
+func (mc *MetricsCollector) RecordProviderPagesFetched(providerName string) {
+	mc.ProviderPagesFetchedTotal.With(prometheus.Labels{"provider": providerName}).Inc()
+}
+
+// RecordProviderBytesTransferred records bytes downloaded for a provider.
+func (mc *MetricsCollector) RecordProviderBytesTransferred(providerName string, bytes int64) {
+	mc.ProviderBytesTransferredTotal.With(prometheus.Labels{"provider": providerName}).Add(float64(bytes))
+}
+
+// RecordProviderFetchDuration records the HTTP fetch duration for a provider.
+func (mc *MetricsCollector) RecordProviderFetchDuration(providerName string, duration time.Duration) {
+	mc.ProviderFetchDurationSeconds.With(prometheus.Labels{"provider": providerName}).Observe(duration.Seconds())
 }

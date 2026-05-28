@@ -228,19 +228,29 @@ func (p Providers) processProvider(
 
 	provider.SetProcessID(processID)
 
-	// Fetch data with provider-specific TTL derived from cron schedule
+// Fetch data with provider-specific TTL derived from cron schedule
 	cronSchedule := provider.GetCronSchedule()
 	ttl := utils.ParseTTLFromCron(cronSchedule)
 
+	// Track fetch start time for duration metric
+	fetchStart := time.Now()
+
+	// Detect multi-page provider and use per-page persistence path
+	if mpp, ok := provider.(base.MultiPageProvider); ok {
+		p.processMultiPageProvider(ctx, mpp, pondCollector, trackMetrics, errChan)
+		return
+	}
+
+	// Single-page provider — existing GetResponseReader path
 	fetchSpan := trace.SpanFromContext(ctx)
 	fetchSpan.AddEvent("fetching data from source")
-	
+
 	// Wrap FetchWithContext to match GetResponseReader's expected signature
 	// FetchWithContext includes: timeout override (default 30s), retry with exponential backoff, circuit breaker
 	fetchFunc := func() (io.Reader, error) {
 		return provider.FetchWithContext(ctx)
 	}
-	
+
 	reader, meta, err := utils.GetResponseReader(source, fetchFunc, name, strProcessID, ttl)
 	if err != nil {
 		span.RecordError(err)
@@ -251,10 +261,12 @@ func (p Providers) processProvider(
 			Str("provider", name).
 			Msg("Error fetching data")
 
-		// Update metrics on failure
+		// Update per-provider metrics on failure
 		if trackMetrics {
 			mc, _ := collector.GetMetricsCollector()
 			if mc != nil {
+				mc.RecordProviderRequest(name, "failure")
+				mc.RecordProviderFetchDuration(name, time.Since(fetchStart))
 				mc.SetSyncFailed(name, err, time.Since(startedAt))
 			}
 		}
@@ -263,6 +275,18 @@ func (p Providers) processProvider(
 		return
 	}
 	span.AddEvent("data fetched successfully")
+
+	// Record success + bytes + duration for the HTTP fetch
+	if trackMetrics {
+		mc, _ := collector.GetMetricsCollector()
+		if mc != nil {
+			mc.RecordProviderRequest(name, "success")
+			if meta != nil && meta.Bytes > 0 {
+				mc.RecordProviderBytesTransferred(name, meta.Bytes)
+			}
+			mc.RecordProviderFetchDuration(name, time.Since(fetchStart))
+		}
+	}
 
 	// Metadata is only used for caching - processID should NEVER be reused from cache
 	// Each run must have a unique processID to properly track which entries belong to it
@@ -348,4 +372,163 @@ func (p Providers) processProvider(
 		Int("entries_processed", entriesProcessed).
 		Float64("entries_per_second", entriesPerSecond).
 		Msg("Finished processing provider")
+}
+
+// processMultiPageProvider handles providers that fetch in pages using per-page persistence.
+// Memory usage is bounded by a single page size (~100KB) regardless of total page count.
+// Each page is saved to disk as page_NNN.dat immediately after fetch, then parsed.
+// On crash, ResumePageNumber scans the directory to resume from the next uncompleted page.
+func (p Providers) processMultiPageProvider(
+	ctx context.Context,
+	provider base.MultiPageProvider,
+	pondCollector entry_collector.Collector,
+	trackMetrics bool,
+	errChan chan error,
+) {
+	startedAt := time.Now()
+	name := provider.(base.Provider).GetName()
+	processID := uuid.New()
+	strProcessID := processID.String()
+
+	// Get config for store path
+	cfg := config.GetConfig()
+	storePath := cfg.Collector.StorePath
+
+	// Start tracing span
+	tracer := otel.Tracer("blacked/providers")
+	ctx, span := tracer.Start(ctx, "provider.process.multipage",
+		trace.WithAttributes(
+			attribute.String("provider.name", name),
+			attribute.String("process.id", strProcessID),
+		),
+	)
+	defer span.End()
+
+	// Track metrics
+	if trackMetrics {
+		mc, err := collector.GetMetricsCollector()
+		if err == nil && mc != nil {
+			mc.SetSyncRunning(name)
+		}
+	}
+
+	providerLogger := log.With().
+		Str("process_id", strProcessID).
+		Str("provider", name).
+		Logger()
+
+	providerLogger.Info().Time("starts", startedAt).Msg("Processing multi-page provider")
+
+	// Start provider processing in collector
+	provider.(base.Provider).SetProcessID(processID)
+	provider.(base.Provider).SetRepository(nil) // not used in multi-page path
+	pondCollector.StartProviderProcessing(name, strProcessID)
+
+	// Fetch pages with per-page persistence
+	resultChan, fetchErr := provider.FetchPages(ctx)
+
+	totalIndicators := 0
+	pageCount := 0
+	var lastErr error
+	totalBytes := int64(0)
+
+	for {
+		select {
+		case <-ctx.Done():
+			providerLogger.Warn().Msg("context cancelled — stopping multi-page processing")
+			span.SetStatus(codes.Error, "context cancelled")
+			break
+		case result, ok := <-resultChan:
+			if !ok {
+				// Channel closed — fetch done (success or terminal error)
+				goto done
+			}
+			pageCount++
+			totalIndicators += result.Indicators
+			totalBytes += result.Bytes
+
+			// Record per-page metrics
+			if trackMetrics {
+				mc, _ := collector.GetMetricsCollector()
+				if mc != nil {
+					mc.RecordProviderPagesFetched(name)
+					if result.Bytes > 0 {
+						mc.RecordProviderBytesTransferred(name, result.Bytes)
+					}
+				}
+			}
+
+			providerLogger.Info().
+				Int("page", result.PageNumber).
+				Int("indicators", result.Indicators).
+				Int64("bytes", result.Bytes).
+				Bool("has_next", result.HasNextPage).
+				Msg("Processed page from multi-page provider")
+
+			if !result.HasNextPage {
+				// No more pages — signal end
+				goto done
+			}
+		}
+
+		// Check if fetch returned an error
+		if fetchErr != nil {
+			lastErr = fetchErr
+			providerLogger.Err(fetchErr).Msg("FetchPages error")
+			span.RecordError(fetchErr)
+			break
+		}
+	}
+
+done:
+	entriesProcessed, processingTime, _ := pondCollector.FinishProviderProcessing(name, strProcessID)
+
+	// Remove stale entries and sync bloom after provider finishes
+	if err := pondCollector.RemoveStaleEntriesAndSyncBloom(context.Background(), name, strProcessID); err != nil {
+		providerLogger.Err(err).
+			Str("provider", name).
+			Str("process_id", strProcessID).
+			Msg("Failed to remove stale entries and sync bloom")
+	}
+
+	// Mark fetch complete in meta file
+	if err := utils.MarkProviderFetchComplete(storePath, name, totalIndicators); err != nil {
+		providerLogger.Warn().Err(err).Msg("Failed to mark fetch complete in meta file")
+	}
+
+	// Cleanup per-page data directory in development mode
+	if cfg.APP.Environment == "development" {
+		// In dev, we can clean up after successful completion
+	}
+
+	// Update metrics
+	if trackMetrics {
+		mc, _ := collector.GetMetricsCollector()
+		if mc != nil {
+			// Record request count and fetch duration for multi-page provider
+			mc.RecordProviderRequest(name, "success")
+			mc.RecordProviderFetchDuration(name, time.Since(startedAt))
+			if lastErr != nil {
+				mc.SetSyncFailed(name, lastErr, time.Since(startedAt))
+			} else {
+				mc.SetSyncSuccess(name, time.Since(startedAt))
+			}
+		}
+	}
+
+	var entriesPerSecond float64
+	if processingTime.Seconds() > 0 {
+		entriesPerSecond = float64(entriesProcessed) / processingTime.Seconds()
+	}
+
+	if lastErr != nil {
+		errChan <- lastErr
+	}
+
+	providerLogger.Info().
+		TimeDiff("duration", time.Now(), startedAt).
+		Int("pages", pageCount).
+		Int("entries_processed", entriesProcessed).
+		Float64("entries_per_second", entriesPerSecond).
+		Msg("Finished processing multi-page provider")
 }
