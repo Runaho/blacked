@@ -99,9 +99,16 @@ func TestParse_IPv6(t *testing.T) {
 
 	err := parseBlocklistDeData(data, collector, testSourceURL, providerName, testPID, nil)
 	require.NoError(t, err)
-	assert.Equal(t, 2, len(collector.entries))
+	assert.Equal(t, 3, len(collector.entries))
 	assert.Equal(t, "1.1.1.1", collector.entries[0].Host)
-	assert.Equal(t, "2.2.2.2", collector.entries[1].Host)
+	assert.Equal(t, "::1", collector.entries[1].Host)
+	assert.Equal(t, "2.2.2.2", collector.entries[2].Host)
+
+	// Verify IPv6 entry has Host, Domain, and IP populated
+	e := collector.entries[1]
+	assert.Equal(t, "::1", e.Host)
+	assert.Equal(t, "::1", e.Domain)
+	assert.Equal(t, "::1", e.IP)
 }
 
 func TestParse_CommentLines(t *testing.T) {
@@ -268,6 +275,7 @@ func TestEntryFields(t *testing.T) {
 	e := collector.entries[0]
 	assert.Equal(t, "1.1.1.1", e.Host)
 	assert.Equal(t, "1.1.1.1", e.Domain)
+	assert.Equal(t, "1.1.1.1", e.IP)
 	assert.Nil(t, e.SubDomains)
 	assert.Empty(t, e.Scheme)
 	assert.Empty(t, e.Path)
