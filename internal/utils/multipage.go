@@ -71,8 +71,8 @@ func SavePageData(storePath, providerName string, pageNum int, data []byte, indi
 	// Load or create meta file
 	metaPath := filepath.Join(dir, providerName+".meta.json")
 	meta, err := loadPageMetadata(metaPath)
-	if err != nil {
-		// Create fresh meta if doesn't exist
+	if err != nil || meta == nil {
+		// Create fresh meta if doesn't exist or failed to load
 		meta = &PageMetadata{
 			Provider:     providerName,
 			FetchStarted: fetchedAt,
