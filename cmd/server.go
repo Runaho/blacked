@@ -56,10 +56,10 @@ func serve(c *cli.Context) (err error) {
 	}
 	log.Debug().Msg("Providers initialized")
 
-	// Run startup decision engine — determines whether to skip, restore, or fetch each provider
-	if err := runner.RunStartupProviders(c.Context, *app.GetProviders()); err != nil {
-		log.Error().Err(err).Msg("Startup provider evaluation failed, continuing with server startup")
-	}
+	// Run startup decision engine asynchronously (non-blocking).
+	// Server starts serving requests while startup providers run in background.
+	// Startup process is observable via /provider/process/status/:processID
+	runner.RunStartupProvidersAsync(c.Context, *app.GetProviders())
 
 	if _, err := runner.InitializeRunner(*app.GetProviders()); err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize runner")

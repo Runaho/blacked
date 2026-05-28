@@ -242,7 +242,68 @@ func runFullFetchForProvider(ctx context.Context, provider base.Provider) error 
 	})
 }
 
+// RunStartupProvidersAsync evaluates startup state and executes actions asynchronously (non-blocking).
+// This allows the server to start serving requests while provider startup processing continues in the background.
+// The startup process is observable via /provider/process/status/:processID endpoints.
+func RunStartupProvidersAsync(ctx context.Context, providerList []base.Provider) {
+	if len(providerList) == 0 {
+		log.Warn().Msg("no providers for startup evaluation")
+		return
+	}
+
+	// Get decisions first (fast, synchronous) - this does DB lookups
+	decisions, err := EvaluateStartupState(ctx, providerList)
+	if err != nil {
+		log.Err(err).Msg("startup evaluation failed, proceeding with fallback")
+		// Fall back to simple full fetch for all providers
+		decisions = make([]ProviderStartupDecision, len(providerList))
+		for i, p := range providerList {
+			decisions[i] = ProviderStartupDecision{
+				ProviderName: p.GetName(),
+				Action:       StartupFullFetch,
+				Reason:       "evaluation failed, fallback to full fetch",
+			}
+		}
+	}
+
+	// Get provider names for process tracking
+	providerNames := make([]string, len(providerList))
+	for i, p := range providerList {
+		providerNames[i] = p.GetName()
+	}
+
+	// Try to acquire process lock via ProcessManager
+	pm := providers.GetProcessManager()
+	processID, err := pm.TryStartProcess(ctx, "startup", providerNames, nil)
+	if err != nil {
+		log.Warn().Err(err).Msg("Cannot run startup providers - another process is running")
+		return
+	}
+
+	log.Info().
+		Str("process_id", processID).
+		Int("providers", len(providerList)).
+		Str("decisions", StartupSummary(decisions)).
+		Msg("Starting async startup provider processing")
+
+	// Run in background goroutine - this is the async part that doesn't block server startup
+	go func() {
+		var processErr error
+		defer func() {
+			pm.FinishProcess(processID, processErr)
+		}()
+
+		if err := ExecuteStartupActions(context.Background(), decisions, providerList); err != nil {
+			processErr = err
+			log.Err(err).Msg("Async startup provider execution failed")
+		} else {
+			log.Info().Msg("Async startup provider execution completed")
+		}
+	}()
+}
+
 // RunStartupProviders evaluates startup state and executes the decided actions.
+// This is the synchronous version - prefer RunStartupProvidersAsync for non-blocking operation.
 func RunStartupProviders(ctx context.Context, providers []base.Provider) error {
 	if len(providers) == 0 {
 		log.Warn().Msg("no providers for startup evaluation")
