@@ -135,11 +135,6 @@ func parseBlocklistDeData(
 			skippedCount++
 			continue
 		}
-		if parsed.To4() == nil {
-			log.Debug().Str("ip", ip).Msg("IPv6 detected — skipping")
-			skippedCount++
-			continue
-		}
 
 		category := resolveCategory(ip, sets)
 
@@ -150,6 +145,7 @@ func parseBlocklistDeData(
 
 		entry.Host = ip
 		entry.Domain = ip
+		entry.IP = ip
 		entry.SourceURL = sourceURL
 
 		collector.Submit(entry)
