@@ -12,18 +12,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// MultiPageProvider is implemented by providers that fetch data in multiple pages.
-// This allows per-page persistence instead of merging all pages into a single response.
-type MultiPageProvider interface {
-	// FetchPages returns a channel that yields page data until closed.
-	// Each yielded page is already saved to disk (path in PageData.PagePath).
-	// The provider's Fetch() should be refactored to use this pattern.
-	FetchPages() (<-chan PageData, error)
-
-	// ProviderName returns the provider's canonical name (used for directory structure).
-	ProviderName() string
-}
-
 // PageData represents a single page of provider data that has been persisted to disk.
 type PageData struct {
 	PageNumber    int
@@ -50,21 +38,6 @@ type PageInfo struct {
 	File       string    `json:"file"`
 	FetchedAt  time.Time `json:"fetched_at"`
 	Indicators int       `json:"indicators"`
-}
-
-// MultiPageResponse wraps a paginated fetch result with metadata.
-// Returned by providers that fetch in pages.
-type MultiPageResponse struct {
-	Pages    []MultiPagePage
-	HasNext  bool
-	NextURL  string
-}
-
-// MultiPagePage is a single page from a multi-page fetch.
-type MultiPagePage struct {
-	PageNumber   int
-	ResponseData []byte
-	NextURL      string
 }
 
 // --- Per-page persistence functions ---
