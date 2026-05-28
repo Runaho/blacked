@@ -35,9 +35,10 @@ type PageMetadata struct {
 
 // PageInfo describes a single page file on disk.
 type PageInfo struct {
-	File       string    `json:"file"`
-	FetchedAt  time.Time `json:"fetched_at"`
-	Indicators int       `json:"indicators"`
+	File        string    `json:"file"`
+	FetchedAt   time.Time `json:"fetched_at"`
+	Indicators  int       `json:"indicators"`
+	NextPageURL string    `json:"next_page_url,omitempty"`
 }
 
 // --- Per-page persistence functions ---
@@ -54,7 +55,8 @@ func GetProviderDataDir(storePath, providerName string) (string, error) {
 
 // SavePageData saves a single page's raw response to disk and updates the meta file.
 // pageNum is 1-indexed. indicatorCount may be 0 if not yet parsed.
-func SavePageData(storePath, providerName string, pageNum int, data []byte, indicatorCount int, fetchedAt time.Time) (string, error) {
+// nextPageURL is stored in metadata to enable resume without re-fetching.
+func SavePageData(storePath, providerName string, pageNum int, data []byte, indicatorCount int, fetchedAt time.Time, nextPageURL string) (string, error) {
 	dir, err := GetProviderDataDir(storePath, providerName)
 	if err != nil {
 		return "", err
@@ -85,9 +87,10 @@ func SavePageData(storePath, providerName string, pageNum int, data []byte, indi
 		meta.Pages = append(meta.Pages, PageInfo{})
 	}
 	meta.Pages[pageNum-1] = PageInfo{
-		File:       pageFilename,
-		FetchedAt:  fetchedAt,
-		Indicators: indicatorCount,
+		File:        pageFilename,
+		FetchedAt:   fetchedAt,
+		Indicators:  indicatorCount,
+		NextPageURL: nextPageURL,
 	}
 	if pageNum > meta.TotalPages {
 		meta.TotalPages = pageNum
@@ -102,6 +105,7 @@ func SavePageData(storePath, providerName string, pageNum int, data []byte, indi
 		Int("page", pageNum).
 		Str("file", pageFilename).
 		Int("bytes", len(data)).
+		Str("next_page_url", nextPageURL).
 		Msg("Page saved to disk")
 
 	return pagePath, nil
