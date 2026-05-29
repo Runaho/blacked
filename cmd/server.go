@@ -56,16 +56,17 @@ func serve(c *cli.Context) (err error) {
 	}
 	log.Debug().Msg("Providers initialized")
 
-	// Run startup decision engine asynchronously (non-blocking).
-	// Server starts serving requests while startup providers run in background.
-	// Startup process is observable via /provider/process/status/:processID
-	runner.RunStartupProvidersAsync(c.Context, *app.GetProviders())
-
-	if _, err := runner.InitializeRunner(*app.GetProviders()); err != nil {
+	// Initialize runner first — registers all providers with their cron schedules.
+	r, err := runner.InitializeRunner(*app.GetProviders())
+	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize runner")
 	}
-
 	defer runner.ShutdownRunner(c.Context)
+
+	// Run all provider jobs asynchronously at startup (non-blocking).
+	// Server starts serving while providers process in background.
+	// Observable via /provider/process/status/:processID
+	r.RunProviderJobsAsync()
 
 	// Graceful shutdown with context timeout using native http.Server.Shutdown()
 	// This properly drains in-flight requests before closing connections

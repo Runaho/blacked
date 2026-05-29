@@ -2,25 +2,50 @@ package alienvault
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"blacked/features/entries"
+	"blacked/features/entry_collector"
+	"blacked/features/providers/base"
 	"blacked/internal/config"
+	"blacked/internal/utils"
 
 	"github.com/gocolly/colly/v2"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 )
 
 func init() {
 	// Disable logging for cleaner test output
 	zerolog.SetGlobalLevel(zerolog.Disabled)
+}
+
+// setupPondCollector initializes a global pond collector with in-memory DB for tests.
+func setupPondCollector(t *testing.T) {
+	t.Helper()
+	db, err := sql.Open("sqlite", ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+	_ = entry_collector.InitPondCollector(context.Background(), db)
+}
+
+// setGlobalStorePath sets the global config's StorePath for FetchPages (which reads from global config).
+// Returns cleanup function that restores the original value.
+func setGlobalStorePath(tmpDir string) func() {
+	orig := config.GetConfig().Collector.StorePath
+	config.GetConfig().Collector.StorePath = tmpDir
+	return func() { config.GetConfig().Collector.StorePath = orig }
 }
 
 func TestNewAlienvaultProvider(t *testing.T) {
@@ -549,6 +574,230 @@ func TestAlienvaultProvider_Fetch(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 1, merged.Count)
 		assert.Len(t, merged.Results, 1)
+	})
+}
+
+func TestAlienvaultProvider_FetchPages(t *testing.T) {
+	t.Run("single page with per-page file written to disk", func(t *testing.T) {
+		setupPondCollector(t)
+		tmpDir := t.TempDir()
+		defer setGlobalStorePath(tmpDir)()
+
+		response := OTXResponse{
+			Count: 1,
+			Next:  "", // No more pages
+			Results: []OTXPulse{
+				{
+					ID: "pulse-1", Name: "Single Page",
+					Indicators: []OTXIndicator{
+						{Type: "IPv4", Indicator: "1.2.3.4"},
+						{Type: "domain", Indicator: "evil.example.com"},
+					},
+				},
+			},
+		}
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(response)
+		}))
+		defer server.Close()
+
+		cfg := &config.Config{
+			Providers: map[string]*config.ProviderOptions{
+				"alienvault": {
+					Enabled:   boolPtr(true),
+					SourceURL: server.URL,
+					APIKey:    "test-api-key",
+				},
+			},
+			Collector: config.CollectorConfig{
+				StorePath: tmpDir,
+			},
+		}
+
+		customColly := colly.NewCollector()
+		customColly.AllowedDomains = []string{}
+
+		provider := NewAlienvaultProvider(cfg, customColly)
+		require.NotNil(t, provider)
+		avProvider := provider.(*alienvaultProvider)
+		avProvider.rateLimit = 10 * time.Millisecond
+
+		ctx := context.Background()
+		resultChan, err := avProvider.FetchPages(ctx)
+		require.NoError(t, err)
+
+		var results []base.PageParseResult
+		for r := range resultChan {
+			results = append(results, r)
+		}
+
+		// Should have exactly 1 page result
+		require.Len(t, results, 1)
+		assert.Equal(t, 1, results[0].PageNumber)
+		assert.Equal(t, 2, results[0].Indicators)
+		assert.False(t, results[0].HasNextPage)
+
+		// Verify page_001.dat was written to disk
+		pagePath := filepath.Join(tmpDir, "alienvault", "page_001.dat")
+		_, err = os.Stat(pagePath)
+		assert.NoError(t, err, "page_001.dat should exist on disk")
+
+		// Verify meta file was written
+		metaPath := filepath.Join(tmpDir, "alienvault", "alienvault.meta.json")
+		metaBytes, err := os.ReadFile(metaPath)
+		require.NoError(t, err)
+		assert.Contains(t, string(metaBytes), `"status": "in_progress"`) // MarkProviderFetchComplete called by process.go, not FetchPages
+
+		// Verify page content matches
+		pageBytes, err := os.ReadFile(pagePath)
+		require.NoError(t, err)
+		var savedPage OTXResponse
+		err = json.Unmarshal(pageBytes, &savedPage)
+		require.NoError(t, err)
+		assert.Equal(t, 1, savedPage.Count)
+		assert.Len(t, savedPage.Results, 1)
+		assert.Equal(t, "pulse-1", savedPage.Results[0].ID)
+	})
+
+	t.Run("multiple pages create sequential page files", func(t *testing.T) {
+		setupPondCollector(t)
+		tmpDir := t.TempDir()
+		defer setGlobalStorePath(tmpDir)()
+		var serverURL string
+		pageCount := 0
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			pageCount++
+			var resp OTXResponse
+			switch pageCount {
+			case 1:
+				resp = OTXResponse{
+					Count: 2, Next: serverURL + "?page=2",
+					Results: []OTXPulse{
+						{ID: "p1", Name: "Page 1", Indicators: []OTXIndicator{{Type: "IPv4", Indicator: "1.1.1.1"}}},
+					},
+				}
+			case 2:
+				resp = OTXResponse{
+					Count: 2, Next: serverURL + "?page=3",
+					Results: []OTXPulse{
+						{ID: "p2", Name: "Page 2", Indicators: []OTXIndicator{{Type: "IPv4", Indicator: "2.2.2.2"}}},
+					},
+				}
+			case 3:
+				resp = OTXResponse{
+					Count: 1, Next: "",
+					Results: []OTXPulse{
+						{ID: "p3", Name: "Page 3", Indicators: []OTXIndicator{{Type: "IPv4", Indicator: "3.3.3.3"}}},
+					},
+				}
+			default:
+				t.Fatalf("Unexpected page request: %d", pageCount)
+			}
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(resp)
+		}))
+		defer server.Close()
+		serverURL = server.URL
+
+		cfg := &config.Config{
+			Providers: map[string]*config.ProviderOptions{
+				"alienvault": {
+					Enabled:   boolPtr(true),
+					SourceURL: server.URL,
+					APIKey:    "test-api-key",
+				},
+			},
+			Collector: config.CollectorConfig{
+				StorePath: tmpDir,
+			},
+		}
+
+		customColly := colly.NewCollector()
+		customColly.AllowedDomains = []string{}
+
+		provider := NewAlienvaultProvider(cfg, customColly)
+		require.NotNil(t, provider)
+		avProvider := provider.(*alienvaultProvider)
+		avProvider.rateLimit = 10 * time.Millisecond
+
+		ctx := context.Background()
+		resultChan, err := avProvider.FetchPages(ctx)
+		require.NoError(t, err)
+
+		var results []base.PageParseResult
+		for r := range resultChan {
+			results = append(results, r)
+		}
+
+		// Should have 3 page results, with last indicating no more pages
+		require.Len(t, results, 3)
+		assert.True(t, results[0].HasNextPage)
+		assert.True(t, results[1].HasNextPage)
+		assert.False(t, results[2].HasNextPage)
+
+		// Verify all 3 page files exist on disk
+		for i := 1; i <= 3; i++ {
+			pagePath := filepath.Join(tmpDir, "alienvault", fmt.Sprintf("page_%03d.dat", i))
+			_, err := os.Stat(pagePath)
+			assert.NoError(t, err, "page_%03d.dat should exist", i)
+		}
+
+		// Verify meta file has all pages tracked
+		meta, err := utils.GetPageMetadata(tmpDir, "alienvault")
+		require.NoError(t, err)
+		require.NotNil(t, meta)
+		assert.Equal(t, 3, meta.TotalPages)
+		assert.Len(t, meta.Pages, 3)
+		assert.Equal(t, "in_progress", meta.Status)
+	})
+
+	t.Run("authentication error returns single result with HasNextPage=false", func(t *testing.T) {
+		setupPondCollector(t)
+		tmpDir := t.TempDir()
+		defer setGlobalStorePath(tmpDir)()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error": "Invalid API key"}`))
+		}))
+		defer server.Close()
+
+		cfg := &config.Config{
+			Providers: map[string]*config.ProviderOptions{
+				"alienvault": {
+					Enabled:   boolPtr(true),
+					SourceURL: server.URL,
+					APIKey:    "wrong-key",
+				},
+			},
+			Collector: config.CollectorConfig{
+				StorePath: tmpDir,
+			},
+		}
+
+		customColly := colly.NewCollector()
+		customColly.AllowedDomains = []string{}
+
+		provider := NewAlienvaultProvider(cfg, customColly)
+		require.NotNil(t, provider)
+		avProvider := provider.(*alienvaultProvider)
+		avProvider.rateLimit = 10 * time.Millisecond
+
+		ctx := context.Background()
+		resultChan, err := avProvider.FetchPages(ctx)
+		require.NoError(t, err)
+
+		var results []base.PageParseResult
+		for r := range resultChan {
+			results = append(results, r)
+		}
+
+		// Should have 1 result with HasNextPage=false (terminal error)
+		require.Len(t, results, 1)
+		assert.False(t, results[0].HasNextPage)
+		assert.Equal(t, 1, results[0].PageNumber)
 	})
 }
 

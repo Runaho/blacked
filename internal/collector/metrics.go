@@ -23,6 +23,7 @@ type ProviderMetrics struct {
 }
 
 type MetricsCollector struct {
+	mu               sync.RWMutex
 	providerMetrics  map[string]*ProviderMetrics // Keep providerMetrics map for *status* tracking (optional, can be removed if not needed)
 	syncCount        *prometheus.CounterVec      // Counter for total syncs initiated per provider
 	syncSuccessCount *prometheus.CounterVec      // Counter for successful syncs per provider
@@ -220,6 +221,8 @@ func NewMetricsCollector(providerNames []string) *MetricsCollector {
 
 // GetProviderMetrics -  Mostly for status tracking (optional now). Prometheus metrics themselves handle aggregation
 func (mc *MetricsCollector) GetProviderMetrics(providerName string) *ProviderMetrics {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
 	if _, exists := mc.providerMetrics[providerName]; !exists {
 		mc.providerMetrics[providerName] = &ProviderMetrics{SyncStatus: "idle"}
 	}
